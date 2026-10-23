@@ -16,7 +16,7 @@ foldhash = "0.2"
 ring = "0.17"
 rusqlite = { version = "0.40", features = ["bundled"] }
 serde = { version = "1", features = ["derive"] }
-serde_json = "1"
+serde_json = { version = "1", features = ["arbitrary_precision"] }
 tiny_http = "0.12"
 # Verification only: pinned to the Verus release in CI, never in a normal build.
 vstd = "=0.0.0-2026-10-18-0147"

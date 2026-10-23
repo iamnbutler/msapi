@@ -121,7 +121,7 @@ goes through a proven function.
 | `PUT`/`PATCH …/stat` | `captured_at_ok`, `ignore_defense_ok`, `cooldown_reduction_ok`, `percentage_ok`, `range_ok`, and `implied_total` for tooltip warnings |
 | `/v1/auth/passkey/*` | `base64url::decode` (every binary field and the challenge), `Cbor::decode`, `PublicKey::from_cose`, `bytes_eq` (type, credential ID), `origin_ok`, `rp_id_hash_ok`, `es256_point`, `auth_data_layout`, `presence_ok`, `counter_ok`, `length_ok` (display name) |
 | every query parameter | `parse_query` |
-| stat fields with decimals | `parse_decimal` |
+| stat fields with decimals | `parse_decimal` in, `format_decimal` out (exact JSON text) |
 | new IDs (audit and history order) | `next_id`, then `base32::encode_u128` (proven order-preserving) |
 | token secrets | `base32::encode` |
 | every write (the durable log) | `encode_statement`; on restore `frames`, `decode_batch`, `next_batch_ok` |
@@ -186,9 +186,13 @@ These parts are not proven. They are covered by tests instead.
   passing its three fields to the proven `breakdown_total` (the struct derives
   serde, so Verus does not see it), the `Sum` impls (std's `Iterator::fold`
   over the proven `+`, since Verus cannot specify a generic iterator), and the
-  `From`, `Debug` and serde impls of the unit types (`Fixed` crosses JSON as
-  an `f64`). Their `Display` and `FromStr` only write or read the bytes of the
-  proven `format_decimal`, `format_uint` and `parse_decimal`.
+  `From`, `Debug` and serde impls of the unit types. Their `Display`,
+  `FromStr` and JSON impls only write or read the bytes of the proven
+  `format_decimal`, `format_uint` and `parse_decimal`: `Fixed` crosses JSON as
+  its exact decimal text (`serde_json`'s `arbitrary_precision`), never as an
+  `f64`. A decimal inside a `serde_json::Value` comes back as the `f64` whose
+  shortest form is its original text, and std's float formatting recovers
+  that text.
 - **Spec against reality:** that the specs are the game's formulas and the
   RFCs' formats is checked by golden tests and known vectors, not proofs.
 - **The verifier itself:** Verus, Z3, and `vstd`'s specs of the standard
