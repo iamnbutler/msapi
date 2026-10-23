@@ -2,8 +2,12 @@
 
 use std::fmt;
 use std::str::FromStr;
+use std::sync::LazyLock;
 
 use serde::{Deserialize, Serialize};
+
+use crate::ascii::lowercase;
+use crate::lookup::Index;
 
 /// A separately operated MapleStory service, each with its own accounts and worlds.
 ///
@@ -74,13 +78,37 @@ impl fmt::Display for Region {
     }
 }
 
+/// Each region's wire name, lowercased → position in [`Region::ALL`].
+#[allow(
+    clippy::expect_used,
+    reason = "the table is constant, so build either always or never succeeds; tests build it"
+)]
+static INDEX: LazyLock<Index> = LazyLock::new(|| {
+    let keys = Region::ALL.iter().map(|r| lowercase(r.as_str().as_bytes())).collect();
+    Index::build(keys, (0..Region::ALL.len()).collect()).expect("two regions share a name")
+});
+
 impl FromStr for Region {
     type Err = String;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        Self::ALL
-            .into_iter()
-            .find(|r| crate::ascii::eq_ignore_case(r.as_str().as_bytes(), s.as_bytes()))
+        INDEX
+            .get(&lowercase(s.as_bytes()))
+            .map(|i| Self::ALL[i])
             .ok_or_else(|| format!("unknown region `{s}`; expected one of gms, kms, msea, tms, jms"))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn every_region_parses_by_name_in_any_case() {
+        for r in Region::ALL {
+            assert_eq!(r.as_str().parse::<Region>(), Ok(r));
+            assert_eq!(r.as_str().to_ascii_uppercase().parse::<Region>(), Ok(r));
+        }
+        assert!("eu".parse::<Region>().is_err());
     }
 }
