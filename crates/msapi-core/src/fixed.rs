@@ -108,9 +108,6 @@ impl fmt::Display for FixedError {
 
 impl std::error::Error for FixedError {}
 
-/// Largest magnitude accepted from a float: beyond 2^53 an `f64` is no longer exact.
-const MAX_EXACT_F64: f64 = 9_007_199_254_740_992.0;
-
 impl<const DP: u32> Fixed<DP> {
     /// Number of raw units in `1`.
     pub const SCALE: i64 = 10_i64.pow(DP);
@@ -126,46 +123,6 @@ impl<const DP: u32> Fixed<DP> {
     #[must_use]
     pub const fn from_int(n: i64) -> Self {
         Self(n * Self::SCALE)
-    }
-
-    /// The value as a float, for display or for JSON.
-    #[must_use]
-    #[allow(
-        clippy::cast_precision_loss,
-        reason = "raw is bounded by MAX_EXACT_F64 on every constructor that takes input"
-    )]
-    pub fn to_f64(self) -> f64 {
-        self.0 as f64 / Self::SCALE as f64
-    }
-
-    /// Converts a float, rejecting values with more than `DP` decimals.
-    ///
-    /// JSON numbers arrive as `f64`, so `93.14` is really `93.1400000000000005`.
-    /// The check allows for that representation error and nothing more.
-    ///
-    /// ```
-    /// use msapi_core::Pct;
-    /// assert_eq!(Pct::from_f64(93.14).unwrap().raw(), 9314);
-    /// assert!(Pct::from_f64(0.125).is_err());
-    /// assert!(Pct::from_f64(f64::NAN).is_err());
-    /// ```
-    pub fn from_f64(x: f64) -> Result<Self, FixedError> {
-        if !x.is_finite() {
-            return Err(FixedError::Invalid(x.to_string()));
-        }
-        #[allow(clippy::cast_precision_loss, reason = "SCALE is at most 10^DP, far below 2^53")]
-        let scaled = x * Self::SCALE as f64;
-        if scaled.abs() >= MAX_EXACT_F64 {
-            return Err(FixedError::OutOfRange);
-        }
-        let rounded = scaled.round();
-        // Relative tolerance: representation error grows with magnitude.
-        let tolerance = 1e-9 * scaled.abs().max(1.0);
-        if (scaled - rounded).abs() > tolerance {
-            return Err(FixedError::TooPrecise { max_decimals: DP });
-        }
-        #[allow(clippy::cast_possible_truncation, reason = "bounded by MAX_EXACT_F64 above")]
-        Ok(Self(rounded as i64))
     }
 }
 
@@ -210,17 +167,37 @@ impl<const DP: u32> fmt::Debug for Fixed<DP> {
     }
 }
 
-impl<const DP: u32> Serialize for Fixed<DP> {
-    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        serializer.serialize_f64(self.to_f64())
+/// The struct name and field `serde_json` (with `arbitrary_precision`) uses
+/// for a number kept as its exact text.
+const NUMBER_TOKEN: &str = "$serde_json::private::Number";
+
+impl<const DP: u32> Fixed<DP> {
+    /// Parses a JSON number's text with the proven [`parse_decimal`].
+    fn from_number_text<E: de::Error>(text: &str) -> Result<Self, E> {
+        text.parse().map_err(E::custom)
     }
 }
 
+/// JSON carries the exact digits from the proven `format_decimal`, as a
+/// number: `93.14`, `100.00`.
+impl<const DP: u32> Serialize for Fixed<DP> {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        use serde::ser::SerializeStruct;
+        let _ = Self::SCALE; // `DP <= 18`, as `format_decimal` requires.
+        let text: String = format_decimal(self.0, DP).into_iter().map(char::from).collect();
+        let mut s = serializer.serialize_struct(NUMBER_TOKEN, 1)?;
+        s.serialize_field(NUMBER_TOKEN, &text)?;
+        s.end()
+    }
+}
+
+/// Every JSON number is read from its text by the proven `parse_decimal`; no
+/// float arithmetic is involved.
 impl<'de, const DP: u32> Deserialize<'de> for Fixed<DP> {
     fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         struct FixedVisitor<const DP: u32>;
 
-        impl<const DP: u32> Visitor<'_> for FixedVisitor<DP> {
+        impl<'de, const DP: u32> Visitor<'de> for FixedVisitor<DP> {
             type Value = Fixed<DP>;
 
             fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -228,16 +205,23 @@ impl<'de, const DP: u32> Deserialize<'de> for Fixed<DP> {
             }
 
             fn visit_i64<E: de::Error>(self, v: i64) -> Result<Self::Value, E> {
-                v.checked_mul(Fixed::<DP>::SCALE).map(Fixed).ok_or_else(|| E::custom(FixedError::OutOfRange))
+                Fixed::from_number_text(&v.to_string())
             }
 
             fn visit_u64<E: de::Error>(self, v: u64) -> Result<Self::Value, E> {
-                let v = i64::try_from(v).map_err(|_| E::custom(FixedError::OutOfRange))?;
-                self.visit_i64(v)
+                Fixed::from_number_text(&v.to_string())
             }
 
-            fn visit_f64<E: de::Error>(self, v: f64) -> Result<Self::Value, E> {
-                Fixed::from_f64(v).map_err(E::custom)
+            // `serde_json` parsing text hands over any non-integer number as
+            // its exact text, as a one-entry map.
+            fn visit_map<A: de::MapAccess<'de>>(self, mut map: A) -> Result<Self::Value, A::Error> {
+                match map.next_key::<String>()? {
+                    Some(key) if key == NUMBER_TOKEN => {
+                        let text: String = map.next_value()?;
+                        Fixed::from_number_text(&text)
+                    }
+                    _ => Err(de::Error::invalid_type(de::Unexpected::Map, &self)),
+                }
             }
         }
 
@@ -290,13 +274,20 @@ mod tests {
     }
 
     #[test]
-    fn every_two_decimal_value_survives_float_conversion() {
-        // Exhaustive over 0.00..=1000.00: the tolerance must accept every
-        // exactly representable display value and nothing between them.
-        for raw in 0..=100_000 {
-            let f = Pct::from_raw(raw).to_f64();
-            assert_eq!(Pct::from_f64(f).unwrap().raw(), raw);
+    fn json_numbers_are_exact() {
+        assert_eq!(serde_json::to_string(&Pct::from_raw(9314)).unwrap(), "93.14");
+        assert_eq!(serde_json::to_string(&Pct::from_int(100)).unwrap(), "100.00");
+        assert_eq!(serde_json::to_string(&Pct::from_raw(-5)).unwrap(), "-0.05");
+        assert_eq!(serde_json::from_str::<Pct>("-0").unwrap().raw(), 0);
+        assert!(serde_json::from_str::<Pct>("1e2").is_err(), "exponents are refused");
+        assert!(serde_json::from_str::<Pct>("93.140").is_err(), "digits beyond the precision are refused");
+        // Through a `Value` and back to text, as PATCH bodies are, every value survives.
+        for raw in (-100_000..100_000).step_by(7) {
+            let v = serde_json::to_value(Pct::from_raw(raw)).unwrap();
+            assert_eq!(serde_json::from_str::<Pct>(&v.to_string()).unwrap().raw(), raw);
         }
-        assert!(Pct::from_f64(10.005).is_err());
+        let big = i64::MAX;
+        let json = serde_json::to_string(&Pct::from_raw(big)).unwrap();
+        assert_eq!(serde_json::from_str::<Pct>(&json).unwrap().raw(), big);
     }
 }

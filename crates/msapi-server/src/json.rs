@@ -54,6 +54,12 @@ fn from_model(value: Json) -> Value {
     }
 }
 
+/// Reads a merged document as `T` by way of its JSON text, so exact decimals
+/// take the same path as a request body (`Value` would hand them over as `f64`).
+pub fn decode<T: serde::de::DeserializeOwned>(doc: &Value) -> serde_json::Result<T> {
+    serde_json::from_str(&doc.to_string())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

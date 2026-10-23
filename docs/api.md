@@ -130,6 +130,10 @@ Send `0` only when the screen shows 0.
 **Exact decimals.** Percentages are numbers with at most two decimals, exactly
 as displayed: `162.27`, not `"162.27%"` or `1.6227`. More precision than the
 game shows is rejected, because it means the value was computed, not read.
+Responses always write every decimal place (`100.00`, `40.50`). Send plain
+decimal numbers: exponent forms like `1e2` and extra trailing zeros (`93.140`)
+are rejected. Numbers are read and written as exact decimal text, never as
+floating point.
 
 ```json
 {

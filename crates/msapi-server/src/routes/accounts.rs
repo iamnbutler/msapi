@@ -189,7 +189,7 @@ pub fn update(conn: &mut Connection, ctx: &Ctx, req: &Request, id: &str) -> Resu
     let before = load(conn, ctx, id)?;
     let mut doc = serde_json::to_value(&before.input).map_err(|_| ApiError::internal())?;
     merge_patch(&mut doc, &patch);
-    let input: AccountInput = serde_json::from_value(doc).map_err(|e| ApiError::invalid_json(&e))?;
+    let input: AccountInput = crate::json::decode(&doc).map_err(|e| ApiError::invalid_json(&e))?;
     if input.region != before.input.region {
         return Err(ApiError::invalid("an account's region cannot change; create a new account instead"));
     }
