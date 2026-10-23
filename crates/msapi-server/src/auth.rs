@@ -22,8 +22,17 @@ use msapi_core::scope;
 
 use crate::error::ApiError;
 use crate::ids;
+#[cfg(feature = "verus")]
+use msapi_core::policy::{bit_set, reaches_spec, subset};
+#[cfg(feature = "verus")]
+use vstd::prelude::*;
+#[cfg(feature = "verus")]
+use vstd::string::StringSliceAdditionalSpecFns;
+#[cfg(feature = "verus")]
+use vstd::utf8::encode_utf8;
 
 /// One permission.
+#[cfg_attr(feature = "verus", verus_verify)]
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub enum Scope {
     /// Read accounts.
@@ -65,10 +74,48 @@ impl Scope {
     }
 }
 
+#[cfg_attr(feature = "verus", verus_verify)]
+impl Scope {
+    /// The scope at index `k` of [`Scope::ALL`].
+    #[cfg_attr(feature = "verus", verus_spec(r =>
+        ensures
+            r matches Some(s) ==> s as u16 == k,
+            k < scope::COUNT ==> r is Some,
+    ))]
+    #[must_use]
+    pub fn from_index(k: u16) -> Option<Self> {
+        match k {
+            0 => Some(Self::AccountsRead),
+            1 => Some(Self::AccountsWrite),
+            2 => Some(Self::CharactersRead),
+            3 => Some(Self::CharactersWrite),
+            4 => Some(Self::Delete),
+            5 => Some(Self::TokensRead),
+            6 => Some(Self::TokensWrite),
+            7 => Some(Self::AuditRead),
+            _ => None,
+        }
+    }
+
+    /// The scope `name` names: the proven [`scope::scope_index`].
+    #[cfg_attr(feature = "verus", verus_spec(r =>
+        ensures
+            r matches Some(s) ==> scope::index_of(name.spec_bytes()) == Some(s as u16),
+            scope::index_of(name.spec_bytes()) is None ==> r is None,
+    ))]
+    #[must_use]
+    pub fn parse(name: &str) -> Option<Self> {
+        match scope::scope_index(name.as_bytes()) {
+            Some(k) => Self::from_index(k),
+            None => None,
+        }
+    }
+}
+
 impl FromStr for Scope {
     type Err = String;
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        scope::scope_index(s.as_bytes()).map(|k| Self::ALL[usize::from(k)]).ok_or_else(|| unknown_scope(s))
+        Self::parse(s).ok_or_else(|| unknown_scope(s))
     }
 }
 
@@ -77,37 +124,59 @@ fn unknown_scope(name: &str) -> String {
     format!("unknown scope `{name}`; known scopes: {}", known.join(", "))
 }
 
-/// A set of scopes.
+/// A set of scopes: bit `i` is scope `i` of [`Scope::ALL`].
+#[cfg_attr(feature = "verus", verus_verify)]
 #[derive(Clone, Copy, PartialEq, Eq, Default, Hash)]
 pub struct Scopes(u16);
 
+#[cfg(feature = "verus")]
+verus! {
+
+impl Scopes {
+    /// The set as bits.
+    pub closed spec fn bits(self) -> u16 {
+        self.0
+    }
+}
+
+} // verus!
+
+#[cfg_attr(feature = "verus", verus_verify)]
 impl Scopes {
     /// Every scope, as a root token has.
+    #[cfg_attr(feature = "verus", verus_spec(r =>
+        ensures forall|j: u16| j < 16 ==> (bit_set(r.bits(), j) <==> j < scope::COUNT),
+    ))]
     #[must_use]
     pub fn all() -> Self {
-        Self::ALL_SET
+        Self(policy::first(scope::COUNT))
     }
 
-    const ALL_SET: Self = Self(policy::first(scope::COUNT));
-
     /// Whether `scope` is in the set.
+    #[cfg_attr(feature = "verus", verus_spec(r => ensures r == bit_set(self.bits(), scope as u16)))]
     #[must_use]
     pub const fn contains(self, scope: Scope) -> bool {
         policy::contains(self.0, scope as u16)
     }
 
     /// Whether every scope in `self` is also in `other`.
+    #[cfg_attr(feature = "verus", verus_spec(r => ensures r == subset(self.bits(), other.bits())))]
     #[must_use]
     pub const fn is_subset_of(self, other: Self) -> bool {
         policy::is_subset(self.0, other.0)
     }
 
     /// The scopes in `self` that are not in `other`.
+    #[cfg_attr(feature = "verus", verus_spec(r =>
+        ensures forall|i: u16| i < 16 ==> (bit_set(r.bits(), i) <==> bit_set(self.bits(), i) && !bit_set(other.bits(), i)),
+    ))]
     #[must_use]
     pub const fn minus(self, other: Self) -> Self {
         Self(policy::minus(self.0, other.0))
     }
+}
 
+impl Scopes {
     /// The scopes, in declaration order.
     pub fn iter(self) -> impl Iterator<Item = Scope> {
         Scope::ALL.into_iter().filter(move |s| self.contains(*s))
@@ -156,6 +225,7 @@ impl<'de> Deserialize<'de> for Scopes {
 }
 
 /// Who is making a request, as established by their token.
+#[cfg_attr(feature = "verus", verus_verify)]
 #[derive(Clone, Debug)]
 pub struct Principal {
     /// The user.
@@ -186,24 +256,71 @@ impl Principal {
 
     /// Fails unless the token may touch `account_id`.
     pub fn require_account(&self, account_id: &str) -> Result<(), ApiError> {
-        let allowed = self.account_ids.as_deref().map(as_bytes);
-        if policy::reaches(account_id.as_bytes(), allowed.as_deref()) {
+        if self.reaches_account(account_id) {
             return Ok(());
         }
         let ids = self.account_ids.as_deref().unwrap_or_default().join(", ");
         Err(ApiError::forbidden(format!("token `{}` is limited to accounts {ids}", self.label)))
     }
+}
 
-    /// Whether the token may touch `account_id`.
+#[cfg_attr(feature = "verus", verus_verify)]
+impl Principal {
+    /// Whether the token may touch `account_id`: the proven
+    /// [`policy::reaches`] over the token's account list.
+    #[cfg_attr(feature = "verus", verus_spec(r =>
+        ensures r == match self.account_ids {
+            None => true,
+            Some(ids) => exists|i: int| 0 <= i < ids@.len() && #[trigger] encode_utf8(ids@[i]@) == account_id.spec_bytes(),
+        },
+    ))]
     #[must_use]
     pub fn reaches_account(&self, account_id: &str) -> bool {
-        self.require_account(account_id).is_ok()
+        match &self.account_ids {
+            None => policy::reaches(account_id.as_bytes(), None),
+            Some(ids) => {
+                let allowed = as_bytes(ids);
+                let r = policy::reaches(account_id.as_bytes(), Some(allowed.as_slice()));
+                proof! {
+                    if r {
+                        let j = choose|j: int| 0 <= j < allowed@.len() && (#[trigger] allowed@[j])@ == account_id.spec_bytes();
+                        assert(encode_utf8(ids@[j]@) == account_id.spec_bytes());
+                    } else {
+                        assert forall|i: int| 0 <= i < ids@.len() implies #[trigger] encode_utf8(ids@[i]@) != account_id.spec_bytes() by {
+                            assert(allowed@[i]@ == encode_utf8(ids@[i]@));
+                        }
+                    }
+                }
+                r
+            }
+        }
     }
 }
 
 /// Views IDs as the byte strings `msapi_core::policy` compares.
+#[cfg_attr(feature = "verus", verus_verify)]
+#[cfg_attr(feature = "verus", verus_spec(r =>
+    ensures
+        r@.len() == ids@.len(),
+        forall|i: int| 0 <= i < ids@.len() ==> #[trigger] r@[i]@ == encode_utf8(ids@[i]@),
+))]
 pub(crate) fn as_bytes(ids: &[String]) -> Vec<&[u8]> {
-    ids.iter().map(String::as_bytes).collect()
+    let mut out: Vec<&[u8]> = Vec::new();
+    let mut i: usize = 0;
+    #[cfg_attr(feature = "verus", verus_spec(
+        invariant
+            i <= ids@.len(),
+            out@.len() == i,
+            forall|j: int| 0 <= j < i ==> #[trigger] out@[j]@ == encode_utf8(ids@[j]@),
+        decreases ids@.len() - i
+    ))]
+    while i < ids.len() {
+        // vstd specifies `str::as_bytes`, not `String::as_bytes`.
+        #[allow(clippy::redundant_as_str, reason = "Verus needs the `&str` step")]
+        out.push(ids[i].as_str().as_bytes());
+        i += 1;
+    }
+    out
 }
 
 /// Resolves an `Authorization` header to a principal.

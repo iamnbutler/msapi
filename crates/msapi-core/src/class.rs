@@ -1,7 +1,6 @@
 //! The class (job) roster.
 
-#[cfg(not(feature = "verus"))]
-use serde::Serialize;
+use serde::ser::{Serialize, SerializeStruct, Serializer};
 #[cfg(feature = "verus")]
 use vstd::prelude::*;
 
@@ -9,11 +8,9 @@ use crate::fixed::{Fixed, Pct};
 use crate::units::WeaponMastery;
 
 /// The five class archetypes, plus Xenon's hybrid.
-// Verus checks these types, and refuses serde's derive on a checked type, so
-// the derive is left out of the proof build; proofs never serialize.
+// Verus checks these types and refuses serde's derive on a checked type, so
+// their serde impls are written out below, the same in both builds.
 #[cfg_attr(feature = "verus", verus_verify)]
-#[cfg_attr(not(feature = "verus"), derive(Serialize))]
-#[cfg_attr(not(feature = "verus"), serde(rename_all = "kebab-case"))]
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub enum JobType {
     /// Warrior.
@@ -32,8 +29,6 @@ pub enum JobType {
 
 /// A stat that feeds a class's damage.
 #[cfg_attr(feature = "verus", verus_verify)]
-#[cfg_attr(not(feature = "verus"), derive(Serialize))]
-#[cfg_attr(not(feature = "verus"), serde(rename_all = "lowercase"))]
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub enum MainStat {
     /// STR.
@@ -50,7 +45,6 @@ pub enum MainStat {
 
 /// One playable class.
 #[cfg_attr(feature = "verus", verus_verify)]
-#[cfg_attr(not(feature = "verus"), derive(Serialize))]
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub struct Class {
     /// Stable kebab-case ID, e.g. `"night-walker"`.
@@ -72,6 +66,47 @@ pub struct Class {
     /// False where no published table covers the class and `mastery` was inferred
     /// from its job type. Mastery only moves the low end of the damage range.
     pub mastery_verified: bool,
+}
+
+impl Serialize for JobType {
+    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        s.serialize_str(match self {
+            Self::Warrior => "warrior",
+            Self::Magician => "magician",
+            Self::Bowman => "bowman",
+            Self::Thief => "thief",
+            Self::Pirate => "pirate",
+            Self::ThiefPirate => "thief-pirate",
+        })
+    }
+}
+
+impl Serialize for MainStat {
+    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        s.serialize_str(match self {
+            Self::Str => "str",
+            Self::Dex => "dex",
+            Self::Int => "int",
+            Self::Luk => "luk",
+            Self::Hp => "hp",
+        })
+    }
+}
+
+impl Serialize for Class {
+    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        let mut st = s.serialize_struct("Class", 9)?;
+        st.serialize_field("id", self.id)?;
+        st.serialize_field("name", self.name)?;
+        st.serialize_field("job_type", &self.job_type)?;
+        st.serialize_field("primary", self.primary)?;
+        st.serialize_field("secondary", self.secondary)?;
+        st.serialize_field("uses_magic_attack", &self.uses_magic_attack)?;
+        st.serialize_field("weapon_constant", &self.weapon_constant)?;
+        st.serialize_field("mastery", &self.mastery)?;
+        st.serialize_field("mastery_verified", &self.mastery_verified)?;
+        st.end()
+    }
 }
 
 /// A job's weapon multiplier, to four decimals (Xenon's is 1.3125).

@@ -36,8 +36,12 @@ use msapi_core::webauthn::{self, ALGORITHMS, Cbor, PublicKey};
 use crate::audit::{Ctx, Target, Write};
 use crate::auth::{Principal, Scopes};
 use crate::error::ApiError;
-use crate::http::{Request, Response};
+use crate::http::{Request, Response, latin1};
 use crate::ids;
+#[cfg(feature = "verus")]
+use vstd::prelude::*;
+#[cfg(feature = "verus")]
+use vstd::string::StringSliceAdditionalSpecFns;
 
 /// How long a ceremony may take, from start to finish.
 const CEREMONY: Duration = Duration::from_secs(5 * 60);
@@ -411,14 +415,31 @@ fn is_primary_key_violation(err: &rusqlite::Error) -> bool {
 }
 
 /// Base64url without padding.
+#[cfg_attr(feature = "verus", verus_verify)]
+#[cfg_attr(feature = "verus", verus_spec(r =>
+    ensures
+        r@.len() == base64url::encode_spec(bytes@).len(),
+        forall|i: int| 0 <= i < r@.len() ==> #[trigger] r@[i] == (base64url::encode_spec(bytes@)[i] as char),
+))]
 #[must_use]
 pub fn b64url(bytes: &[u8]) -> String {
-    base64url::encode(bytes).into_iter().map(char::from).collect()
+    latin1(&base64url::encode(bytes))
 }
 
 /// Decodes base64url, with or without padding.
+#[cfg_attr(feature = "verus", verus_verify)]
+#[cfg_attr(feature = "verus", verus_spec(r =>
+    ensures
+        match r {
+            Ok(b) => base64url::encode_spec(b@) == base64url::unpadded(text.spec_bytes()),
+            Err(e) => e.status == 400 && forall|b: Seq<u8>| base64url::encode_spec(b) != base64url::unpadded(text.spec_bytes()),
+        }
+))]
 pub fn b64url_decode(text: &str) -> Result<Vec<u8>, ApiError> {
-    base64url::decode(text.as_bytes()).ok_or_else(|| ApiError::bad_request("expected base64url"))
+    match base64url::decode(text.as_bytes()) {
+        Some(bytes) => Ok(bytes),
+        None => Err(ApiError::bad_request("expected base64url")),
+    }
 }
 
 #[cfg(test)]

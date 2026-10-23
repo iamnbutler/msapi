@@ -240,8 +240,8 @@ pub struct StatWindow {
 }
 
 /// How serious an [`Issue`] is.
-#[derive(Clone, Copy, PartialEq, Eq, Debug, Serialize)]
-#[serde(rename_all = "lowercase")]
+#[cfg_attr(feature = "verus", verus_verify)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Severity {
     /// The value is impossible; the write is refused.
     Error,
@@ -250,7 +250,8 @@ pub enum Severity {
 }
 
 /// A problem found by [`StatWindow::check`].
-#[derive(Clone, PartialEq, Eq, Debug, Serialize)]
+#[cfg_attr(feature = "verus", verus_verify)]
+#[derive(Clone, PartialEq, Eq, Debug)]
 pub struct Issue {
     /// Error or warning.
     pub severity: Severity,
@@ -258,6 +259,28 @@ pub struct Issue {
     pub field: &'static str,
     /// What is wrong, phrased for whoever is reading the screen.
     pub message: String,
+}
+
+// Verus checks these types and refuses serde's derive on a checked type, so
+// their serde impls are written out, the same in both builds.
+impl Serialize for Severity {
+    fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        s.serialize_str(match self {
+            Self::Error => "error",
+            Self::Warning => "warning",
+        })
+    }
+}
+
+impl Serialize for Issue {
+    fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        use serde::ser::SerializeStruct;
+        let mut st = s.serialize_struct("Issue", 3)?;
+        st.serialize_field("severity", &self.severity)?;
+        st.serialize_field("field", self.field)?;
+        st.serialize_field("message", &self.message)?;
+        st.end()
+    }
 }
 
 /// One tooltip set against the total the window shows, as raw counts.

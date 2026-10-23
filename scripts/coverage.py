@@ -213,17 +213,19 @@ def render(rows, allow):
     for crate in ("msapi-core", "msapi-server"):
         lines.append(f"| `{crate}` | {by[(crate, 'spec')]} | {by[(crate, 'checked')]} | {by[(crate, 'unverified')]} |")
     cats = Counter()
+    seen = Counter()
     for p, _, name, st in rows:
         if st == "unverified":
-            cats[allow_category(p, name, allow)] += 1
+            cats[allow_entry(p, name, allow, seen)[0]] += 1
     lines += ["", "## Unverified functions by reason", "", "| reason | functions |", "|---|---:|"]
     for cat, n in sorted(cats.items()):
         lines.append(f"| {CATEGORY.get(cat, cat)} | {n} |")
     lines += ["", "## Every function", "", "| function | file | status | why unverified |", "|---|---|---|---|"]
+    seen = Counter()
     for p, line, name, st in rows:
         why = ""
         if st == "unverified":
-            why = "; ".join(r for _, r in allow.get(f"{p}::{name}", [])[:1])
+            why = allow_entry(p, name, allow, seen)[1]
         lines.append(f"| `{name}` | `{p}:{line}` | {st} | {why} |")
     return "\n".join(lines) + "\n"
 
@@ -237,9 +239,16 @@ CATEGORY = {
 }
 
 
-def allow_category(p, name, allow):
-    e = allow.get(f"{p}::{name}")
-    return e[0][0] if e else "missing"
+def allow_entry(p, name, allow, seen):
+    """The (category, reason) for this function. Same-named functions in one
+    file (two `From` impls, say) take their entries in file order."""
+    key = f"{p}::{name}"
+    e = allow.get(key)
+    if not e:
+        return ("missing", "")
+    i = min(seen[key], len(e) - 1)
+    seen[key] += 1
+    return e[i]
 
 
 def main():
