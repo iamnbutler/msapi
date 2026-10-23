@@ -4,7 +4,7 @@ use rusqlite::{Connection, OptionalExtension, params};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 
-use msapi_core::{DataCenter, Region, Timestamp, WorldType, world};
+use msapi_core::{DataCenter, Region, Timestamp, WorldType, rules, world};
 
 use super::enum_from_sql;
 use crate::audit::{Ctx, Target, Write};
@@ -33,10 +33,10 @@ impl AccountInput {
                 self.region
             )));
         }
-        if self.label.as_ref().is_some_and(|l| l.chars().count() > 100) {
+        if self.label.as_ref().is_some_and(|l| !rules::length_ok(l.chars().count(), 0, 100)) {
             return Err(ApiError::invalid("label must be at most 100 characters"));
         }
-        if self.notes.as_ref().is_some_and(|n| n.chars().count() > 4000) {
+        if self.notes.as_ref().is_some_and(|n| !rules::length_ok(n.chars().count(), 0, 4000)) {
             return Err(ApiError::invalid("notes must be at most 4000 characters"));
         }
         Ok(())

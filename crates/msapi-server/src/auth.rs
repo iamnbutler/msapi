@@ -16,7 +16,7 @@ use rusqlite::{Connection, OptionalExtension, params};
 use serde::{Deserialize, Serialize};
 
 use msapi_core::Timestamp;
-use msapi_core::policy::{self, AccountCheck, MintRefusal, Parent};
+use msapi_core::policy::{self, AccountCheck, Link, MintRefusal, Parent};
 
 use crate::error::ApiError;
 use crate::ids;
@@ -236,21 +236,21 @@ pub fn authenticate(conn: &Connection, authorization: Option<&str>) -> Result<Pr
     };
 
     // The token and every ancestor must be live; the earliest expiry wins.
-    let (dead, earliest_expiry): (i64, Option<i64>) = conn.query_row(
-        "WITH RECURSIVE chain(id, parent_id, revoked_at, expires_at) AS (
-             SELECT id, parent_id, revoked_at, expires_at FROM tokens WHERE id = ?1
-             UNION ALL
-             SELECT t.id, t.parent_id, t.revoked_at, t.expires_at FROM tokens t JOIN chain c ON t.id = c.parent_id
-         )
-         SELECT COUNT(*) FILTER (WHERE revoked_at IS NOT NULL OR (expires_at IS NOT NULL AND expires_at <= ?2)),
-                MIN(expires_at)
-         FROM chain",
-        params![token_id, now],
-        |r| Ok((r.get(0)?, r.get(1)?)),
-    )?;
-    if dead > 0 {
+    // SQL gathers the chain; `policy::chain_expiry` (checked by Verus) decides.
+    let chain: Vec<Link> = conn
+        .prepare_cached(
+            "WITH RECURSIVE chain(id, parent_id, revoked_at, expires_at) AS (
+                 SELECT id, parent_id, revoked_at, expires_at FROM tokens WHERE id = ?1
+                 UNION ALL
+                 SELECT t.id, t.parent_id, t.revoked_at, t.expires_at FROM tokens t JOIN chain c ON t.id = c.parent_id
+             )
+             SELECT revoked_at IS NOT NULL, expires_at FROM chain",
+        )?
+        .query_map([&token_id], |r| Ok(Link { revoked: r.get(0)?, expires_at: r.get(1)? }))?
+        .collect::<rusqlite::Result<_>>()?;
+    let Some(earliest_expiry) = policy::chain_expiry(&chain, now) else {
         return Err(ApiError::unauthorized("token is revoked or expired, or was minted from one that is"));
-    }
+    };
 
     conn.execute(
         "UPDATE tokens SET last_used_at = ?2 WHERE id = ?1 AND (last_used_at IS NULL OR last_used_at < ?2 - 60000)",
@@ -340,7 +340,7 @@ impl MintRequest {
     /// (0 for a root token). `owned_accounts` are the user's account IDs.
     pub fn validate(self, parent: &Principal, depth: u64, owned_accounts: &[String]) -> Result<Mint, ApiError> {
         let label = self.label.trim().to_owned();
-        if label.is_empty() || label.chars().count() > 100 {
+        if !msapi_core::rules::length_ok(label.chars().count(), 1, 100) {
             return Err(ApiError::invalid("label must be 1-100 characters"));
         }
         // The rules themselves are in `msapi_core::policy`, checked by Verus; this

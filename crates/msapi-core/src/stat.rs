@@ -3,6 +3,7 @@
 use serde::{Deserialize, Serialize};
 
 use crate::fixed::Pct;
+use crate::rules;
 use crate::time::Timestamp;
 use crate::units::{
     AbilityPoints, AbnormalStatusDamage, AdditionalExp, ArcanePower, AttackPower, BuffDuration, CombatPower,
@@ -251,26 +252,24 @@ impl StatWindow {
     pub fn check(&self) -> Vec<Issue> {
         let mut issues = Vec::new();
         let mut error = |field, message: String| issues.push(Issue { severity: Severity::Error, field, message });
-        let hundred = Pct::from_int(100);
-
         if let Some(ied) = self.ignore_defense
-            && ied.pct() >= hundred
+            && !rules::ignore_defense_ok(ied.pct().raw())
         {
             error("ignore_defense", format!("Ignore Enemy Defense is always below 100%, got {ied}"));
         }
         if let Some(cdr) = self.cooldown_reduction_percent
-            && cdr.pct() > hundred
+            && !rules::cooldown_reduction_ok(cdr.pct().raw())
         {
             error("cooldown_reduction_percent", format!("cooldown reduction cannot exceed 100%, got {cdr}"));
         }
         if let (Some(min), Some(max)) = (self.stat_attack_min, self.stat_attack_max)
-            && min > max
+            && !rules::range_ok(min.get(), max.get())
         {
             error("stat_attack_min", format!("damage range minimum {min} is above the maximum {max}"));
         }
         for (field, value) in self.percentages() {
             if let Some(v) = value
-                && v < Pct::ZERO
+                && !rules::percentage_ok(v.raw())
             {
                 error(field, format!("{field} cannot be negative, got {v}"));
             }

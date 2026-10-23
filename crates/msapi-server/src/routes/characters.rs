@@ -9,6 +9,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::json;
 
 use msapi_core::class::Class;
+use msapi_core::rules;
 use msapi_core::{
     CharacterName, ClassLevel, DataCenter, ExpRate, Gender, JobType, Level, Liberation, Region, Timestamp, World,
     WorldType, class, world,
@@ -74,7 +75,7 @@ impl CharacterInput {
             ApiError::invalid(format!("unknown class `{}`; see /v1/ref/classes", self.character_class))
         })?;
         if let Some(rate) = self.character_exp_rate
-            && !(ExpRate::ZERO..ExpRate::from_int(100)).contains(&rate)
+            && !rules::exp_rate_ok(rate.raw())
         {
             return Err(ApiError::invalid(format!("character_exp_rate must be in [0, 100), got {rate}")));
         }
@@ -84,7 +85,7 @@ impl CharacterInput {
             .transpose()
             .map_err(|_| ApiError::invalid("character_exp is too large"))?;
         let too_long = |field: &str, value: &Option<String>, max: usize| -> Result<(), ApiError> {
-            if value.as_ref().is_some_and(|v| v.chars().count() > max) {
+            if value.as_ref().is_some_and(|v| !rules::length_ok(v.chars().count(), 0, max)) {
                 return Err(ApiError::invalid(format!("{field} must be at most {max} characters")));
             }
             Ok(())

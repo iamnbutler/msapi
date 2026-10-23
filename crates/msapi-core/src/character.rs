@@ -102,7 +102,7 @@ macro_rules! bounded_int {
             pub fn new(v: i64) -> Result<Self, String> {
                 <$ty>::try_from(v)
                     .ok()
-                    .filter(|v| (Self::MIN..=Self::MAX).contains(v))
+                    .filter(|_| crate::rules::in_range(v, i64::from(Self::MIN), i64::from(Self::MAX)))
                     .map(Self)
                     .ok_or_else(|| format!(concat!($what, " must be between {} and {}, got {}"), Self::MIN, Self::MAX, v))
             }

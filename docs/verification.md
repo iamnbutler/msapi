@@ -65,8 +65,37 @@ the game displayed (for example a real character's 236,118 CP).
 | --- | --- |
 | `contains`, `minus`, `is_subset` | bit-level set semantics; `minus(a, b) = 0` exactly when `a ⊆ b` |
 | `check_mint` | an `Ok` grant has a non-empty subset of the parent's scopes. Its accounts are non-empty, all owned and all reachable. It is account-limited whenever the parent is, sits within the depth limit, and expires no later than the parent and within 30 days |
+| `chain_expiry` | a token works exactly when no token in its chain is revoked or expired, and then expires at the earliest expiry in the chain (or never, if none expire) |
 | `next_id` | strictly greater than the last ID, and at least the time-based candidate |
 | `page_size` | 50 by default, else exactly 1-200 |
+
+### `rules.rs`: what the routes accept
+
+| Function | Proven |
+| --- | --- |
+| `in_range` | `min <= v <= max` (character level 1-300, class level 0-6) |
+| `length_ok` | `min <= chars <= max` (labels, notes, names, display names) |
+| `ignore_defense_ok`, `cooldown_reduction_ok`, `percentage_ok`, `exp_rate_ok`, `range_ok` | the stat window's and character's hard limits, exactly as stated |
+| `captured_at_ok` | `captured_at <= now + 5 min` in exact integers, with no overflow at the ends of `i64` |
+| `next_batch_ok` | a log batch is applied only if it is exactly the next one |
+
+### Every route's decisions
+
+The handlers parse, query and store; each accept-or-refuse decision they make
+goes through a proven function.
+
+| Route | Decided by |
+| --- | --- |
+| every authenticated route | `chain_expiry` (is the token alive, and until when), `contains` (scope) |
+| `POST /v1/tokens` | `check_mint`, `length_ok` (label) |
+| `GET` lists (`limit`) | `page_size` |
+| `POST`/`PATCH /v1/accounts` | `length_ok` (label, notes) |
+| `POST`/`PATCH /v1/characters…` | `in_range` (levels), `exp_rate_ok`, `length_ok` |
+| `PUT`/`PATCH …/stat` | `captured_at_ok`, `ignore_defense_ok`, `cooldown_reduction_ok`, `percentage_ok`, `range_ok`, and `implied_total` for tooltip warnings |
+| `/v1/auth/passkey/*` | `auth_data_layout`, `cbor_head`, `presence_ok`, `counter_ok`, `length_ok` (display name) |
+| new IDs (audit and history order) | `next_id` |
+| restore from the log | `next_batch_ok` |
+| calculators (`calc`, `units`) | the `formula.rs` and `ratio.rs` functions above |
 
 ### `webauthn.rs`: passkey bytes and rules
 
@@ -95,6 +124,8 @@ These parts are not proven. They are covered by tests instead.
   `stat` that unwrap unit types, and in `auth.rs` the mapping from account IDs
   to `AccountCheck { owned, reachable }`.
 - **Hand-built constants:** `Ratio::ZERO` and `Ratio::ONE`.
-- **Validation:** label lengths and `StatWindow::check`'s range rules.
+- **What feeds the rules:** which fields exist and their types (serde),
+  string-to-enum lookups (worlds, classes, regions), URL checks on
+  `character_image`, and account ownership (a SQL query).
 - **The verifier itself:** Verus, Z3, and `vstd`'s specs of the standard
   library.

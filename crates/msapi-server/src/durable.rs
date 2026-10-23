@@ -275,7 +275,7 @@ pub fn rebuild(path: &Path, state: &[u8]) -> io::Result<(u64, u64)> {
     let conn = Connection::open(path).map_err(other)?;
     let mut seq = snapshot_seq;
     for (n, changes) in frames {
-        if n != seq + 1 {
+        if !msapi_core::rules::next_batch_ok(seq, n) {
             return Err(bad(&format!("log skips from changeset {seq} to {n}")));
         }
         let statements = decode_batch(changes)?;
