@@ -29,6 +29,7 @@ macro_rules! proof {
 mod arith;
 pub mod base32;
 pub mod base64url;
+pub mod batch;
 pub mod calc;
 pub mod character;
 pub mod class;

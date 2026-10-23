@@ -29,6 +29,7 @@ use std::path::Path;
 use std::sync::{Mutex, OnceLock, PoisonError};
 use std::time::{Duration, Instant};
 
+use msapi_core::batch::{self, Param, Statement};
 use rusqlite::types::{ToSqlOutput, Value, ValueRef};
 use rusqlite::{Connection, Row, ToSql, params_from_iter};
 
@@ -112,7 +113,8 @@ impl<'c> Logged<'c> {
             })
             .collect::<rusqlite::Result<Vec<_>>>()?;
         if log().is_some() {
-            encode_statement(&mut self.batch.borrow_mut(), sql, &values);
+            encode_statement(&mut self.batch.borrow_mut(), sql, &values)
+                .ok_or_else(|| rusqlite::Error::ToSqlConversionFailure("statement too large to log".into()))?;
         }
         Ok(values)
     }
@@ -160,84 +162,45 @@ impl Drop for Logged<'_> {
     }
 }
 
-// A batch is a sequence of statements: the SQL (u32 length, UTF-8), the
-// parameter count (u32), then each parameter as a tag byte and its value.
-const NULL: u8 = 0;
-const INTEGER: u8 = 1;
-const REAL: u8 = 2;
-const TEXT: u8 = 3;
-const BLOB: u8 = 4;
-
-fn encode_statement(out: &mut Vec<u8>, sql: &str, values: &[Value]) {
-    fn bytes(out: &mut Vec<u8>, b: &[u8]) {
-        out.extend_from_slice(&u32::try_from(b.len()).unwrap_or(u32::MAX).to_be_bytes());
-        out.extend_from_slice(b);
-    }
-    bytes(out, sql.as_bytes());
-    out.extend_from_slice(&u32::try_from(values.len()).unwrap_or(u32::MAX).to_be_bytes());
-    for v in values {
-        match v {
-            Value::Null => out.push(NULL),
-            Value::Integer(i) => {
-                out.push(INTEGER);
-                out.extend_from_slice(&i.to_be_bytes());
-            }
-            Value::Real(r) => {
-                out.push(REAL);
-                out.extend_from_slice(&r.to_bits().to_be_bytes());
-            }
-            Value::Text(t) => {
-                out.push(TEXT);
-                bytes(out, t.as_bytes());
-            }
-            Value::Blob(b) => {
-                out.push(BLOB);
-                bytes(out, b);
-            }
-        }
-    }
+/// The batch encoding of one statement (see [`msapi_core::batch`]). `None` if
+/// a length does not fit the format's u32.
+fn encode_statement(out: &mut Vec<u8>, sql: &str, values: &[Value]) -> Option<()> {
+    let params = values
+        .iter()
+        .map(|v| match v {
+            Value::Null => Param::Null,
+            Value::Integer(i) => Param::Integer(*i),
+            Value::Real(r) => Param::Real(r.to_bits()),
+            Value::Text(t) => Param::Text(t.as_bytes().to_vec()),
+            Value::Blob(b) => Param::Blob(b.clone()),
+        })
+        .collect();
+    batch::encode_statement(out, &Statement { sql: sql.as_bytes().to_vec(), params }).then_some(())
 }
 
 /// Decodes a batch into its statements.
-fn decode_batch(mut data: &[u8]) -> io::Result<Vec<(String, Vec<Value>)>> {
-    fn take<'a>(data: &mut &'a [u8], n: usize) -> io::Result<&'a [u8]> {
-        let (head, rest) = data.split_at_checked(n).ok_or_else(|| bad("batch ends early"))?;
-        *data = rest;
-        Ok(head)
-    }
-    fn len(data: &mut &[u8]) -> io::Result<usize> {
-        let n = u32::from_be_bytes(take(data, 4)?.try_into().map_err(|_| bad("bad length"))?);
-        usize::try_from(n).map_err(|_| bad("bad length"))
-    }
-    fn word(data: &mut &[u8]) -> io::Result<[u8; 8]> {
-        take(data, 8)?.try_into().map_err(|_| bad("bad number"))
-    }
-    let mut statements = Vec::new();
-    while !data.is_empty() {
-        let n = len(&mut data)?;
-        let sql = String::from_utf8(take(&mut data, n)?.to_vec()).map_err(|_| bad("SQL is not UTF-8"))?;
-        let count = len(&mut data)?;
-        let mut values = Vec::with_capacity(count.min(64));
-        for _ in 0..count {
-            let tag = take(&mut data, 1)?[0];
-            values.push(match tag {
-                NULL => Value::Null,
-                INTEGER => Value::Integer(i64::from_be_bytes(word(&mut data)?)),
-                REAL => Value::Real(f64::from_bits(u64::from_be_bytes(word(&mut data)?))),
-                TEXT => {
-                    let n = len(&mut data)?;
-                    Value::Text(String::from_utf8(take(&mut data, n)?.to_vec()).map_err(|_| bad("text is not UTF-8"))?)
-                }
-                BLOB => {
-                    let n = len(&mut data)?;
-                    Value::Blob(take(&mut data, n)?.to_vec())
-                }
-                _ => return Err(bad("unknown parameter tag")),
-            });
-        }
-        statements.push((sql, values));
-    }
-    Ok(statements)
+fn decode_batch(data: &[u8]) -> io::Result<Vec<(String, Vec<Value>)>> {
+    let statements = batch::decode_batch(data).ok_or_else(|| bad("batch is malformed"))?;
+    statements
+        .into_iter()
+        .map(|s| {
+            let sql = String::from_utf8(s.sql).map_err(|_| bad("SQL is not UTF-8"))?;
+            let values = s
+                .params
+                .into_iter()
+                .map(|p| {
+                    Ok(match p {
+                        Param::Null => Value::Null,
+                        Param::Integer(i) => Value::Integer(i),
+                        Param::Real(bits) => Value::Real(f64::from_bits(bits)),
+                        Param::Text(t) => Value::Text(String::from_utf8(t).map_err(|_| bad("text is not UTF-8"))?),
+                        Param::Blob(b) => Value::Blob(b),
+                    })
+                })
+                .collect::<io::Result<_>>()?;
+            Ok((sql, values))
+        })
+        .collect()
 }
 
 /// Starts logging to `host` and rebuilds the database at `path` from the log.
@@ -334,11 +297,9 @@ impl<'a> Iterator for Frames<'a> {
     type Item = (u64, &'a [u8]);
 
     fn next(&mut self) -> Option<Self::Item> {
-        let (head, rest) = self.bytes.split_at_checked(16)?;
-        let seq = u64::from_be_bytes(head[..8].try_into().ok()?);
-        let len = usize::try_from(u64::from_be_bytes(head[8..].try_into().ok()?)).ok()?;
-        let (body, rest) = rest.split_at_checked(len)?;
-        self.bytes = rest;
+        let (seq, start, end) = batch::frame_at(self.bytes, 0)?;
+        let body = &self.bytes[start..end];
+        self.bytes = &self.bytes[end..];
         Some((seq, body))
     }
 }
@@ -425,8 +386,8 @@ mod tests {
             Value::Blob(vec![0, 255]),
         ];
         let mut batch = Vec::new();
-        encode_statement(&mut batch, "INSERT INTO t VALUES (?1, ?2, ?3, ?4, ?5)", &values);
-        encode_statement(&mut batch, "DELETE FROM t", &[]);
+        assert!(encode_statement(&mut batch, "INSERT INTO t VALUES (?1, ?2, ?3, ?4, ?5)", &values).is_some());
+        assert!(encode_statement(&mut batch, "DELETE FROM t", &[]).is_some());
         let decoded = decode_batch(&batch).ok();
         assert_eq!(
             decoded,
