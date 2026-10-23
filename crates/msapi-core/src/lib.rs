@@ -17,6 +17,16 @@
 //! - **Every quantity has a unit type.** See [`units`]: STR cannot be added to
 //!   DEX, and Ignore Enemy Defense cannot be added at all.
 
+#![cfg_attr(feature = "verus", feature(proc_macro_hygiene))]
+
+/// Without Verus, `proof! { .. }` blocks are ghost code and compile to nothing.
+#[cfg(not(feature = "verus"))]
+macro_rules! proof {
+    ($($t:tt)*) => {};
+}
+
+#[cfg(feature = "verus")]
+mod arith;
 pub mod calc;
 pub mod character;
 pub mod class;

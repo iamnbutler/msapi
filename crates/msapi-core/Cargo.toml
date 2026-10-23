@@ -10,6 +10,14 @@ publish.workspace = true
 [dependencies]
 foldhash.workspace = true
 serde.workspace = true
+vstd = { workspace = true, optional = true }
+
+[features]
+# Ghost code for `cargo verus verify --features verus`; see docs/verification.md.
+verus = ["dep:vstd"]
+
+[package.metadata.verus]
+verify = true
 
 [dev-dependencies]
 serde_json.workspace = true
