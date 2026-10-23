@@ -17,6 +17,7 @@ use serde::{Deserialize, Serialize};
 
 use msapi_core::Timestamp;
 use msapi_core::policy::{self, AccountCheck, Link, MintRefusal, Parent};
+use msapi_core::scope;
 
 use crate::error::ApiError;
 use crate::ids;
@@ -78,11 +79,13 @@ impl Scope {
 impl FromStr for Scope {
     type Err = String;
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        Self::ALL.into_iter().find(|scope| scope.as_str() == s).ok_or_else(|| {
-            let known: Vec<_> = Self::ALL.iter().map(|s| s.as_str()).collect();
-            format!("unknown scope `{s}`; known scopes: {}", known.join(", "))
-        })
+        Self::ALL.into_iter().find(|scope| scope.as_str() == s).ok_or_else(|| unknown_scope(s))
     }
+}
+
+fn unknown_scope(name: &str) -> String {
+    let known: Vec<_> = Scope::ALL.iter().map(|s| s.as_str()).collect();
+    format!("unknown scope `{name}`; known scopes: {}", known.join(", "))
 }
 
 /// A set of scopes.
@@ -130,8 +133,8 @@ impl FromIterator<Scope> for Scopes {
 
 impl fmt::Display for Scopes {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let names: Vec<_> = self.iter().map(Scope::as_str).collect();
-        f.write_str(&names.join(" "))
+        // Scope names are ASCII, so this never fails.
+        f.write_str(std::str::from_utf8(&scope::format_scopes(self.0)).map_err(|_| fmt::Error)?)
     }
 }
 
@@ -144,7 +147,9 @@ impl fmt::Debug for Scopes {
 impl FromStr for Scopes {
     type Err = String;
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        s.split_whitespace().map(str::parse).collect()
+        // The offending token is bounded by ASCII whitespace or the ends, so
+        // slicing there is on a char boundary.
+        scope::parse_scopes(s.as_bytes()).map(Self).map_err(|(start, end)| unknown_scope(&s[start..end]))
     }
 }
 
@@ -433,7 +438,14 @@ mod tests {
         assert!(s.contains(Scope::CharactersWrite));
         assert!(!s.contains(Scope::Delete));
         assert_eq!(s.to_string().parse::<Scopes>().unwrap(), s);
-        assert!("characters:admin".parse::<Scopes>().is_err());
+        assert_eq!(
+            "delete characters:admin".parse::<Scopes>().unwrap_err(),
+            "characters:admin".parse::<Scope>().unwrap_err()
+        );
+        for (k, s) in Scope::ALL.into_iter().enumerate() {
+            assert_eq!(s.as_str().as_bytes(), scope::scope_name(s as u16), "core and server name scope {k} alike");
+            assert_eq!(s as usize, k);
+        }
         assert_eq!(Scopes::all().iter().count(), Scope::ALL.len());
     }
 

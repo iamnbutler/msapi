@@ -2,7 +2,9 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::ascii::eq_ignore_case;
+use std::sync::LazyLock;
+
+use crate::lookup::{Index, tagged_key};
 use crate::region::Region;
 
 /// Which GMS data center hosts a world.
@@ -121,12 +123,24 @@ pub static WORLDS: &[World] = &[
 /// ```
 #[must_use]
 pub fn find(region: Region, name: &str) -> Option<&'static World> {
-    let name = name.trim();
-    WORLDS.iter().find(|w| {
-        w.region == region
-            && (eq_ignore_case(w.key.as_bytes(), name.as_bytes()) || eq_ignore_case(w.name.as_bytes(), name.as_bytes()))
-    })
+    INDEX.get(&tagged_key(region as u8, name.trim().as_bytes())).map(|i| &WORLDS[i])
 }
+
+/// Each world's key and name, tagged with its region → position in
+/// [`WORLDS`]. [`Index::build`] refuses a catalogue where one region has two
+/// worlds whose keys or names are equal ignoring case.
+#[allow(
+    clippy::expect_used,
+    reason = "the table is constant, so build either always or never succeeds; tests build it"
+)]
+static INDEX: LazyLock<Index> = LazyLock::new(|| {
+    let keys = WORLDS
+        .iter()
+        .flat_map(|w| [tagged_key(w.region as u8, w.key.as_bytes()), tagged_key(w.region as u8, w.name.as_bytes())])
+        .collect();
+    let owners = (0..WORLDS.len()).flat_map(|i| [i, i]).collect();
+    Index::build(keys, owners).expect("two worlds in one region share a key or name")
+});
 
 /// Finds a world by its stable key.
 #[must_use]

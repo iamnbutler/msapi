@@ -157,8 +157,14 @@ goes through a proven function.
 | `decimal::format_decimal` (`Fixed` and its units as text) | equals `decimal_text`: `-` if negative, the whole part's digits with no leading zeros, then `.` and exactly `dp` fraction digits when `dp > 0`; byte-identical to the old `format!` output |
 | `decimal::format_then_parse` | `parse_decimal(format_decimal(v, dp), dp) == Ok(v)` for every `i64` and `dp <= 18` (`lemma_text_round_trip`) |
 | `decimal::format_uint` (flat units, `Ratio` as text) | equals `digits_of`: the decimal digits of `n`, no leading zeros, whose value is `n` |
-| `ascii::eq_ignore_case` (region and world names) | equal lengths and equal bytes after lowercasing ASCII capitals, as `str::eq_ignore_ascii_case` |
+| `ascii::eq_ignore_case` | equal lengths and equal bytes after lowercasing ASCII capitals, as `str::eq_ignore_ascii_case` |
 | `ascii::fold` (class names) | equals `folded`: the ASCII letters and digits in order, lowercased |
+| `ascii::lowercase` (region names) | equals `lowered`: each byte lowercased if an ASCII capital; two names' `lowered` forms are equal exactly when `eq_ignore_case` holds (`lemma_same_folded_lowered`) |
+| `lookup::tagged_key` (world names) | the region's tag, `0xFF`, then the lowercased name; two keys are equal exactly when the regions are and the names are equal ignoring case (`lemma_tagged`) |
+| `lookup::Index::build` (`class::find`, `world::find`, `Region`'s `FromStr`) | `Some` exactly when no key names two entries; the table is built once, and a test builds each |
+| `lookup::Index::get` | `Some(i)`: some key equal to the query names entry `i`, and every key equal to it names `i`; `None`: no key equals the query |
+| `scope::parse_scopes` (stored token scopes) | `Ok(bits)` exactly when every ASCII-whitespace-separated token names a scope, `bits` being their union (`parse`); `Err` gives the range of a token that names none |
+| `scope::format_scopes` | the names of the set scopes in order, separated by single spaces (`fmt`), and `parse(format_scopes(b)) == Some(b & 0xff)` |
 | `query::percent_decode` | equals `decoded`: `+` is a space, `%XX` is that byte, anything else is itself |
 | `json::merge` (every `PATCH`) | the result is `merged(result, target, patch)`, RFC 7396 §2 key by key: a `null` member's key is absent, any other member's key holds the merge of the target's value (or `null`) with it, every other key keeps the target's value, keys are unique, and a non-object patch is the result; `None` exactly when an input repeats an object key (`serde_json` values never do) |
 | `query::parse_query` | equals `pairs`: the `&`-separated segments in order, empty ones skipped, each split at its first `=` (none means an empty value) and both halves `decoded` |
@@ -179,7 +185,8 @@ These parts are not proven. They are covered by tests instead.
 - **Code that only moves data between those and the proofs:** SQL query
   text and account ownership (a SQL query), converting `serde_json` values to
   and from `json::Json` around the merge patch, the rusqlite-value conversions
-  in `durable.rs`, turning ASCII bytes into `String`s, and in `auth.rs` viewing
+  in `durable.rs`, turning ASCII bytes into `String`s, the server's `Scope` names matching
+  `scope::scope_name` (a test checks each), and in `auth.rs` viewing
   account-ID `String`s as their bytes (`String::as_bytes`) for
   `account_checks` and `reaches`.
 - **Unit plumbing that is generic or a trait impl:** `StatBreakdown::implied_total`

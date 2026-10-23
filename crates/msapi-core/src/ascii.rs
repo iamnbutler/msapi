@@ -44,7 +44,53 @@ pub open spec fn folded(s: Seq<u8>) -> Seq<u8>
     }
 }
 
+/// `s` with its ASCII capitals lowercased.
+pub open spec fn lowered(s: Seq<u8>) -> Seq<u8> {
+    s.map_values(|c: u8| lower(c))
+}
+
+/// Equal ignoring ASCII case is equal after lowering.
+pub proof fn lemma_same_folded_lowered(a: Seq<u8>, b: Seq<u8>)
+    ensures same_folded(a, b) == (lowered(a) == lowered(b)),
+{
+    if same_folded(a, b) {
+        assert(lowered(a) =~= lowered(b));
+    }
+    assert(lowered(a).len() == a.len() && lowered(b).len() == b.len());
+    if lowered(a) == lowered(b) {
+        assert forall|i: int| 0 <= i < a.len() implies lower(#[trigger] a[i]) == lower(b[i]) by {
+            assert(lowered(a)[i] == lowered(b)[i]);
+        }
+    }
+}
+
 } // verus!
+
+/// `s` with its ASCII capitals lowercased: `str::to_ascii_lowercase` on bytes.
+#[cfg_attr(feature = "verus", verus_verify)]
+#[cfg_attr(feature = "verus", verus_spec(r => ensures r@ == lowered(s@)))]
+#[must_use]
+pub fn lowercase(s: &[u8]) -> Vec<u8> {
+    let mut out = Vec::new();
+    let mut i: usize = 0;
+    #[cfg_attr(feature = "verus", verus_spec(
+        invariant
+            i <= s@.len(),
+            out@ == lowered(s@.subrange(0, i as int)),
+        decreases s@.len() - i
+    ))]
+    while i < s.len() {
+        proof! {
+            assert(lowered(s@.subrange(0, i + 1)) =~= lowered(s@.subrange(0, i as int)).push(lower(s@[i as int])));
+        }
+        out.push(to_lower(s[i]));
+        i += 1;
+    }
+    proof! {
+        assert(s@.subrange(0, s@.len() as int) =~= s@);
+    }
+    out
+}
 
 /// `c` lowercased if it is an ASCII capital.
 #[cfg_attr(feature = "verus", verus_verify)]
