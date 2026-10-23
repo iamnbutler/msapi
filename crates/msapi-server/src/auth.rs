@@ -16,6 +16,7 @@ use rusqlite::{Connection, OptionalExtension, params};
 use serde::{Deserialize, Serialize};
 
 use msapi_core::Timestamp;
+use msapi_core::policy::{self, AccountCheck, MintRefusal, Parent};
 
 use crate::error::ApiError;
 use crate::ids;
@@ -100,19 +101,19 @@ impl Scopes {
     /// Whether `scope` is in the set.
     #[must_use]
     pub const fn contains(self, scope: Scope) -> bool {
-        self.0 & scope.bit() != 0
+        policy::contains(self.0, scope as u16)
     }
 
     /// Whether every scope in `self` is also in `other`.
     #[must_use]
     pub const fn is_subset_of(self, other: Self) -> bool {
-        self.0 & !other.0 == 0
+        policy::is_subset(self.0, other.0)
     }
 
     /// The scopes in `self` that are not in `other`.
     #[must_use]
     pub const fn minus(self, other: Self) -> Self {
-        Self(self.0 & !other.0)
+        Self(policy::minus(self.0, other.0))
     }
 
     /// The scopes, in declaration order.
@@ -296,11 +297,11 @@ pub fn create_user(conn: &mut Connection, display_name: &str) -> rusqlite::Resul
 }
 
 /// Default lifetime of a delegated token: one day.
-pub const DEFAULT_TTL_SECONDS: u64 = 24 * 60 * 60;
+pub const DEFAULT_TTL_SECONDS: u64 = policy::DEFAULT_TTL_SECONDS;
 /// Longest lifetime of a delegated token: thirty days.
-pub const MAX_TTL_SECONDS: u64 = 30 * 24 * 60 * 60;
+pub const MAX_TTL_SECONDS: u64 = policy::MAX_TTL_SECONDS;
 /// Deepest delegation chain below a root token.
-pub const MAX_DEPTH: usize = 4;
+pub const MAX_DEPTH: u64 = policy::MAX_DEPTH;
 
 /// `POST /v1/tokens` body.
 #[derive(Debug, Deserialize)]
@@ -337,66 +338,68 @@ impl MintRequest {
     ///
     /// `depth` is how many delegations already sit above `parent`
     /// (0 for a root token). `owned_accounts` are the user's account IDs.
-    pub fn validate(self, parent: &Principal, depth: usize, owned_accounts: &[String]) -> Result<Mint, ApiError> {
+    pub fn validate(self, parent: &Principal, depth: u64, owned_accounts: &[String]) -> Result<Mint, ApiError> {
         let label = self.label.trim().to_owned();
         if label.is_empty() || label.chars().count() > 100 {
             return Err(ApiError::invalid("label must be 1-100 characters"));
         }
-        if self.scopes == Scopes::default() {
-            return Err(ApiError::invalid("grant at least one scope"));
-        }
-        let excess = self.scopes.minus(parent.scopes);
-        if excess != Scopes::default() {
-            return Err(ApiError::forbidden(format!("cannot grant scopes this token does not have: {excess}")));
-        }
-        if depth >= MAX_DEPTH {
-            return Err(ApiError::forbidden(format!("delegation chains are limited to {MAX_DEPTH} levels")));
-        }
-
-        let account_ids = match (self.account_ids, &parent.account_ids) {
-            (None, Some(_)) => {
-                return Err(ApiError::invalid(
-                    "this token is limited to specific accounts, so the new token must list account_ids too",
-                ));
+        // The rules themselves are in `msapi_core::policy`, checked by Verus; this
+        // gathers their inputs and words their refusals.
+        let checks: Option<Vec<AccountCheck>> = self.account_ids.as_ref().map(|ids| {
+            ids.iter()
+                .map(|id| AccountCheck {
+                    owned: owned_accounts.contains(id),
+                    reachable: parent.account_ids.as_ref().is_none_or(|allowed| allowed.contains(id)),
+                })
+                .collect()
+        });
+        let decision = policy::check_mint(
+            Parent {
+                scopes: parent.scopes.0,
+                depth,
+                limited: parent.account_ids.is_some(),
+                expires_at: parent.expires_at.map(Timestamp::millis),
+            },
+            self.scopes.0,
+            checks.as_deref(),
+            self.expires_in_seconds,
+            Timestamp::now().millis(),
+        );
+        let account = |i: usize| self.account_ids.as_ref().and_then(|ids| ids.get(i)).map_or("", String::as_str);
+        let expires_at = decision.map_err(|refusal| match refusal {
+            MintRefusal::NoScopes => ApiError::invalid("grant at least one scope"),
+            MintRefusal::ExcessScopes(excess) => {
+                ApiError::forbidden(format!("cannot grant scopes this token does not have: {}", Scopes(excess)))
             }
-            (None, None) => None,
-            (Some(ids), parent_ids) => {
-                if ids.is_empty() {
-                    return Err(ApiError::invalid("account_ids must not be empty; omit it to allow every account"));
-                }
-                for id in &ids {
-                    if !owned_accounts.contains(id) {
-                        return Err(ApiError::not_found(format!("account `{id}`")));
-                    }
-                    if let Some(allowed) = parent_ids
-                        && !allowed.contains(id)
-                    {
-                        return Err(ApiError::forbidden(format!("this token cannot reach account `{id}`")));
-                    }
-                }
-                Some(ids)
+            MintRefusal::TooDeep => {
+                ApiError::forbidden(format!("delegation chains are limited to {MAX_DEPTH} levels"))
             }
-        };
-
-        let ttl = self.expires_in_seconds.unwrap_or(DEFAULT_TTL_SECONDS);
-        if !(60..=MAX_TTL_SECONDS).contains(&ttl) {
-            return Err(ApiError::invalid(format!("expires_in_seconds must be between 60 and {MAX_TTL_SECONDS}")));
-        }
-        let ttl_ms = i64::try_from(ttl * 1000).map_err(|_| ApiError::invalid("expires_in_seconds is too large"))?;
-        let mut expires_at = Timestamp::now().plus_millis(ttl_ms);
-        if let Some(parent_expiry) = parent.expires_at
-            && expires_at > parent_expiry
-        {
-            // The default shortens to fit; an explicit lifetime the caller cannot grant is an error.
-            if self.expires_in_seconds.is_some() {
-                return Err(ApiError::invalid(format!(
-                    "a token cannot outlive the token that mints it; this one expires at {parent_expiry}"
-                )));
+            MintRefusal::MustListAccounts => ApiError::invalid(
+                "this token is limited to specific accounts, so the new token must list account_ids too",
+            ),
+            MintRefusal::EmptyAccounts => {
+                ApiError::invalid("account_ids must not be empty; omit it to allow every account")
             }
-            expires_at = parent_expiry;
-        }
+            MintRefusal::UnknownAccount(i) => ApiError::not_found(format!("account `{}`", account(i))),
+            MintRefusal::UnreachableAccount(i) => {
+                ApiError::forbidden(format!("this token cannot reach account `{}`", account(i)))
+            }
+            MintRefusal::TtlOutOfRange => ApiError::invalid(format!(
+                "expires_in_seconds must be between {} and {MAX_TTL_SECONDS}",
+                policy::MIN_TTL_SECONDS
+            )),
+            MintRefusal::OutlivesParent => ApiError::invalid(format!(
+                "a token cannot outlive the token that mints it; this one expires at {}",
+                parent.expires_at.map(|t| t.to_string()).unwrap_or_default()
+            )),
+        })?;
 
-        Ok(Mint { label, scopes: self.scopes, account_ids, expires_at })
+        Ok(Mint {
+            label,
+            scopes: self.scopes,
+            account_ids: self.account_ids,
+            expires_at: Timestamp::from_millis(expires_at),
+        })
     }
 }
 
