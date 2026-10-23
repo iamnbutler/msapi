@@ -173,6 +173,26 @@ goes through a proven function.
 | `batch::frame_at` | a frame is a big-endian sequence number and length, then the body; it returns exactly the frame at that offset |
 | `batch::frames` | whatever it returns re-encodes, frame after frame, to exactly the whole buffer; whenever the buffer is a run of frames it returns exactly those frames, so a truncated or padded tail is refused rather than dropped |
 
+### `time.rs`: timestamps (`captured_at`, `created_at`, `expires_at`)
+
+The calendar spec counts days: `year_start(y)` is 365 a year plus one per
+leap year before `y`, `month_start` is the month table (plus one after
+February in a leap year), and `day_number(y, m, d)` is days since 1970-01-01.
+The supported range is `0000-01-01T00:00:00.000Z` to
+`9999-12-31T23:59:59.999Z` (`MIN_MS` to `MAX_MS`), the four-digit years
+RFC 3339 can write.
+
+| Function | Proven |
+| --- | --- |
+| `days_from_civil` | equals `day_number` for every valid date, which lies between `0000-01-01` and `9999-12-31` |
+| `civil_from_days` | for every day in range, returns a valid date (month 1 to 12, day within the month, Gregorian leap years) whose `day_number` is that day; `lemma_day_number_injective` says no two valid dates share a day number, so each function undoes the other |
+| `format_rfc3339` (`Display`, serde) | the output is `text(d)`, `YYYY-MM-DDTHH:MM:SS.mmmZ` written digit by digit, for a valid date and time `d` at the timestamp clamped to the range, and `parse_spec` of the output is that clamped timestamp. Out-of-range timestamps (such as `plus_millis` saturating at `i64::MAX`) format as the nearest end of the range, so the output always parses |
+| `parse_rfc3339` (`FromStr`, serde) | equals `parse_spec`: `YYYY-MM-DDTHH:MM:SS[.fraction](Z\|+HH:MM\|-HH:MM)`, `T` and `Z` either case, at least one fraction digit after a `.` with digits past the third dropped, a valid date, hours at most 23 and minutes and seconds at most 59 (offsets too); the value is the instant less the offset, and `None` when that falls outside the range |
+| `lemma_round_trip` | `parse_spec(text(d))` is `d`'s instant for every valid `d`, so parsing a formatted in-range timestamp gives it back |
+
+Formatting is byte-for-byte what the previous Hinnant implementation printed
+for every in-range timestamp; a test compares the two on every day in range.
+
 ## What is trusted
 
 These parts are not proven. They are covered by tests instead.
@@ -188,7 +208,9 @@ These parts are not proven. They are covered by tests instead.
   in `durable.rs`, turning ASCII bytes into `String`s, the server's `Scope` names matching
   `scope::scope_name` (a test checks each), and in `auth.rs` viewing
   account-ID `String`s as their bytes (`String::as_bytes`) for
-  `account_checks` and `reaches`.
+  `account_checks` and `reaches`, and `Timestamp`'s `Display`, `FromStr`
+  and serde impls passing bytes to and from the proven `format_rfc3339` and
+  `parse_rfc3339`. `Timestamp::now` reads the system clock.
 - **Unit plumbing that is generic or a trait impl:** `StatBreakdown::implied_total`
   passing its three fields to the proven `breakdown_total` (the struct derives
   serde, so Verus does not see it), the `Sum` impls (std's `Iterator::fold`
