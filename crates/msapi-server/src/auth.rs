@@ -192,12 +192,12 @@ impl Principal {
 
     /// Fails unless the token may touch `account_id`.
     pub fn require_account(&self, account_id: &str) -> Result<(), ApiError> {
-        match &self.account_ids {
-            Some(ids) if !ids.iter().any(|id| id == account_id) => {
-                Err(ApiError::forbidden(format!("token `{}` is limited to accounts {}", self.label, ids.join(", "))))
-            }
-            _ => Ok(()),
+        let allowed = self.account_ids.as_deref().map(as_bytes);
+        if policy::reaches(account_id.as_bytes(), allowed.as_deref()) {
+            return Ok(());
         }
+        let ids = self.account_ids.as_deref().unwrap_or_default().join(", ");
+        Err(ApiError::forbidden(format!("token `{}` is limited to accounts {ids}", self.label)))
     }
 
     /// Whether the token may touch `account_id`.
@@ -205,6 +205,11 @@ impl Principal {
     pub fn reaches_account(&self, account_id: &str) -> bool {
         self.require_account(account_id).is_ok()
     }
+}
+
+/// Views account IDs as the byte strings `msapi_core::policy` compares.
+fn as_bytes(ids: &[String]) -> Vec<&[u8]> {
+    ids.iter().map(String::as_bytes).collect()
 }
 
 /// Resolves an `Authorization` header to a principal.
@@ -345,14 +350,10 @@ impl MintRequest {
         }
         // The rules themselves are in `msapi_core::policy`, checked by Verus; this
         // gathers their inputs and words their refusals.
-        let checks: Option<Vec<AccountCheck>> = self.account_ids.as_ref().map(|ids| {
-            ids.iter()
-                .map(|id| AccountCheck {
-                    owned: owned_accounts.contains(id),
-                    reachable: parent.account_ids.as_ref().is_none_or(|allowed| allowed.contains(id)),
-                })
-                .collect()
-        });
+        let owned = as_bytes(owned_accounts);
+        let allowed = parent.account_ids.as_deref().map(as_bytes);
+        let checks: Option<Vec<AccountCheck>> =
+            self.account_ids.as_deref().map(|ids| policy::account_checks(&as_bytes(ids), &owned, allowed.as_deref()));
         let decision = policy::check_mint(
             Parent {
                 scopes: parent.scopes.0,

@@ -42,6 +42,17 @@ impl<const DP: u32> Fixed<DP> {
     pub closed spec fn value(self) -> int {
         self.0 as int
     }
+
+    /// The value with raw integer `raw`, for specs.
+    pub closed spec fn of_raw(raw: i64) -> Self {
+        Self(raw)
+    }
+
+    /// `of_raw` keeps the raw integer.
+    pub proof fn lemma_of_raw(raw: i64)
+        ensures Self::of_raw(raw).value() == raw as int,
+    {
+    }
 }
 
 } // verus!
@@ -50,7 +61,7 @@ impl<const DP: u32> Fixed<DP> {
 impl<const DP: u32> Fixed<DP> {
     /// Builds a value from its raw integer representation (`9314` is `93.14` for [`Pct`]).
     #[must_use]
-    #[cfg_attr(feature = "verus", verus_spec(r => ensures r.value() == raw as int))]
+    #[cfg_attr(feature = "verus", verus_spec(r => ensures r.value() == raw as int, r == Self::of_raw(raw)))]
     pub const fn from_raw(raw: i64) -> Self {
         Self(raw)
     }

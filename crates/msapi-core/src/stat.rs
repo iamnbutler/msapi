@@ -2,15 +2,18 @@
 
 use serde::{Deserialize, Serialize};
 
+#[cfg(feature = "verus")]
+use vstd::prelude::*;
+
 use crate::fixed::Pct;
 use crate::rules;
 use crate::time::Timestamp;
 use crate::units::{
     AbilityPoints, AbnormalStatusDamage, AdditionalExp, ArcanePower, AttackPower, BuffDuration, CombatPower,
-    CooldownReductionPct, CooldownSeconds, CooldownSkip, Count, CritDamage, CritRate, DamagePct, Defense, Dex,
-    FinalDamage, IgnoreDefense, IgnoreElementalResistance, Int, ItemDropRate, Jump, Luk, MagicAttack, MaxHp, MaxMp,
-    MesosObtained, Percent, SacredPower, Scalable, Speed, Stance, StarForce, StatAttack, StatusResistance, Str,
-    SummonDuration, WeaponMastery,
+    CooldownReductionPct, CooldownSeconds, CooldownSkip, CritDamage, CritRate, DamagePct, Defense, Dex, FinalDamage,
+    IgnoreDefense, IgnoreElementalResistance, Int, ItemDropRate, Jump, Luk, MagicAttack, MaxHp, MaxMp, MesosObtained,
+    Percent, SacredPower, Scalable, Speed, Stance, StarForce, StatAttack, StatusResistance, Str, SummonDuration,
+    WeaponMastery,
 };
 
 /// A stat as its hover tooltip breaks it down.
@@ -58,10 +61,56 @@ impl<T: Scalable> StatBreakdown<T> {
     /// ```
     #[must_use]
     pub fn implied_total(&self) -> Option<T> {
-        let percent = self.percent.map_or(0, |p| p.pct().raw());
-        crate::formula::implied_total(self.base.get(), percent, self.flat.map_or(0, Count::get)).map(T::from)
+        breakdown_total(self.base, self.percent, self.flat)
     }
 }
+
+/// `floor(base × (1 + percent / 100)) + flat`, with an uncaptured percent or
+/// flat part counted as zero; `None` exactly when the total exceeds `u64`.
+#[cfg_attr(feature = "verus", verus_verify)]
+#[cfg_attr(feature = "verus", verus_spec(r =>
+    ensures
+        r matches Some(t) ==> t.count() == crate::formula::scaled_spec(base.count(), percent_raw(percent))
+            + flat_count(flat),
+        r is None ==> crate::formula::scaled_spec(base.count(), percent_raw(percent)) + flat_count(flat) > u64::MAX,
+))]
+#[must_use]
+#[allow(clippy::manual_map)] // Verus checks the explicit match, not a closure.
+pub fn breakdown_total<T: Scalable>(base: T, percent: Option<T::Percent>, flat: Option<T>) -> Option<T> {
+    let raw = match percent {
+        Some(p) => p.pct().raw(),
+        None => 0,
+    };
+    let flat_n = match flat {
+        Some(f) => f.get(),
+        None => 0,
+    };
+    match crate::formula::implied_total(base.get(), raw, flat_n) {
+        Some(n) => Some(T::of_count(n)),
+        None => None,
+    }
+}
+
+#[cfg(feature = "verus")]
+verus! {
+
+/// A captured percentage in hundredths, or 0.
+pub open spec fn percent_raw<P: Percent>(p: Option<P>) -> int {
+    match p {
+        Some(p) => p.pct_raw(),
+        None => 0,
+    }
+}
+
+/// A captured flat part, or 0.
+pub open spec fn flat_count<T: crate::units::Count>(t: Option<T>) -> int {
+    match t {
+        Some(t) => t.count(),
+        None => 0,
+    }
+}
+
+} // verus!
 
 /// Tooltip breakdowns for the stats that have one.
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Default, Serialize, Deserialize)]
