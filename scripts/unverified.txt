@@ -1,0 +1,223 @@
+# Functions Verus does not check, and why. scripts/coverage.py --check fails
+# on an unverified function missing from this list, and on a stale entry.
+# Format: <file>::<impl>::<fn> | <category> | <reason>
+# Categories: io, lib, shim, glue, test (see scripts/coverage.py).
+
+# msapi-core
+crates/msapi-core/src/calc.rs::fmt::Display for CalcError::fmt | shim | writes a fixed message per error variant
+crates/msapi-core/src/character.rs::CharacterName::new | lib | trims and counts Unicode chars with std, then returns the proven rules::name_check verdict
+crates/msapi-core/src/character.rs::CharacterName::check_region | glue | returns the proven rules::gms_name_ok verdict as a message
+crates/msapi-core/src/character.rs::CharacterName::as_str | glue | returns the stored String
+crates/msapi-core/src/character.rs::TryFrom for CharacterName::try_from | shim | forwards to CharacterName::new
+crates/msapi-core/src/character.rs::From for String::from | shim | unwraps the stored String
+crates/msapi-core/src/character.rs::fmt::Display for CharacterName::fmt | shim | writes the stored String
+crates/msapi-core/src/character.rs::$name::new | glue | returns the proven rules::bounded_* verdict as a message
+crates/msapi-core/src/character.rs::$name::get | glue | returns the stored integer
+crates/msapi-core/src/character.rs::TryFrom for $name::try_from | shim | forwards to new
+crates/msapi-core/src/character.rs::From for i64::from | shim | widens the stored integer
+crates/msapi-core/src/class.rs::row | glue | builds one constant table row; Verus cannot read the &str fields
+crates/msapi-core/src/class.rs::fold | glue | the proven ascii::fold over the &str's bytes
+crates/msapi-core/src/class.rs::find | glue | indexes CLASSES at the position the proven names::class::find returns
+crates/msapi-core/src/fixed.rs::fmt::Display for FixedError::fmt | shim | writes a fixed message per error variant
+crates/msapi-core/src/fixed.rs::FromStr for Fixed::from_str | shim | forwards to the proven parse_decimal
+crates/msapi-core/src/fixed.rs::fmt::Display for Fixed::fmt | shim | writes the bytes of the proven format_decimal
+crates/msapi-core/src/fixed.rs::fmt::Debug for Fixed::fmt | shim | writes the bytes of the proven format_decimal
+crates/msapi-core/src/fixed.rs::Fixed::from_number_text | lib | forwards a serde_json number's text to from_str
+crates/msapi-core/src/fixed.rs::Serialize for Fixed::serialize | lib | hands serde_json the proven format_decimal text as a number
+crates/msapi-core/src/fixed.rs::Deserialize for Fixed::deserialize | lib | takes serde_json's number text to the proven parse_decimal
+crates/msapi-core/src/ratio.rs::PartialOrd for Ratio::partial_cmp | shim | forwards to cmp
+crates/msapi-core/src/ratio.rs::Ord for Ratio::cmp | shim | forwards to the proven Ratio::compare
+crates/msapi-core/src/ratio.rs::fmt::Display for Ratio::fmt | shim | writes numerator/denominator
+crates/msapi-core/src/region.rs::Region::as_str | glue | the proven names::region::text as &str (ASCII, so from_utf8 cannot fail)
+crates/msapi-core/src/region.rs::Region::display_name | glue | a constant label per region
+crates/msapi-core/src/region.rs::Region::is_supported | glue | forwards to the proven world::has_tag
+crates/msapi-core/src/region.rs::fmt::Display for Region::fmt | shim | writes as_str
+crates/msapi-core/src/region.rs::FromStr for Region::from_str | glue | indexes Region::ALL at the position the proven names::region::find returns
+crates/msapi-core/src/stat.rs::StatBreakdown::implied_total | glue | forwards to the proven breakdown_total
+crates/msapi-core/src/stat.rs::tooltip | glue | pairs a breakdown's proven implied_total with its total
+crates/msapi-core/src/stat.rs::StatWindow::check | glue | reads fields into the proven findings and writes one message per finding
+crates/msapi-core/src/time.rs::Timestamp::now | io | reads the system clock
+crates/msapi-core/src/time.rs::fmt::Display for Timestamp::fmt | shim | writes the bytes of the proven format_rfc3339
+crates/msapi-core/src/time.rs::FromStr for Timestamp::from_str | shim | forwards to the proven parse_rfc3339
+crates/msapi-core/src/time.rs::Serialize for Timestamp::serialize | lib | hands serde the Display text
+crates/msapi-core/src/time.rs::Deserialize for Timestamp::deserialize | lib | takes serde's string to from_str
+crates/msapi-core/src/units.rs::Serialize for $name::serialize | lib | hands serde the inner proven value
+crates/msapi-core/src/units.rs::Deserialize for $name::deserialize | lib | takes the inner value from serde
+crates/msapi-core/src/units.rs::From for $name::from | shim | wraps the value
+crates/msapi-core/src/units.rs::fmt::Display for $name::fmt | shim | writes the inner proven value
+crates/msapi-core/src/units.rs::fmt::Debug for $name::fmt | shim | writes the inner proven value
+crates/msapi-core/src/units.rs::FromStr for $name::from_str | shim | forwards to the proven parse_decimal
+crates/msapi-core/src/world.rs::find | glue | indexes WORLDS at the position the proven names::world::find returns
+crates/msapi-core/src/world.rs::by_key | glue | indexes WORLDS at the position the proven key_index returns
+crates/msapi-core/src/world.rs::in_region | glue | indexes WORLDS at the positions the proven with_tag returns
+
+# msapi-server
+crates/msapi-server/src/audit.rs::Write::begin | io | SQLite writes for the audit log
+crates/msapi-server/src/audit.rs::Write::tx | io | SQLite writes for the audit log
+crates/msapi-server/src/audit.rs::Write::execute | io | SQLite writes for the audit log
+crates/msapi-server/src/audit.rs::Write::query_map | io | SQLite writes for the audit log
+crates/msapi-server/src/audit.rs::Write::reserve_event_id | io | SQLite writes for the audit log
+crates/msapi-server/src/audit.rs::Write::commit | io | SQLite writes for the audit log
+crates/msapi-server/src/audit.rs::to_json | lib | turns a serde_json value into the stored text
+crates/msapi-server/src/audit.rs::insert | io | SQLite writes for the audit log
+crates/msapi-server/src/audit.rs::record_refused | io | SQLite writes for the audit log
+crates/msapi-server/src/auth.rs::Scope::as_str | glue | the proven scope::scope_name bytes as &str (ASCII)
+crates/msapi-server/src/auth.rs::FromStr for Scope::from_str | glue | maps the proven scope::scope_index result to the enum
+crates/msapi-server/src/auth.rs::unknown_scope | glue | words the error for an unknown scope
+crates/msapi-server/src/auth.rs::Scopes::all | glue | the proven policy::first set of every scope
+crates/msapi-server/src/auth.rs::Scopes::contains | glue | forwards to the proven policy::contains
+crates/msapi-server/src/auth.rs::Scopes::is_subset_of | glue | forwards to the proven policy::is_subset
+crates/msapi-server/src/auth.rs::Scopes::minus | glue | forwards to the proven policy::minus
+crates/msapi-server/src/auth.rs::Scopes::iter | glue | filters Scope::ALL by the proven contains
+crates/msapi-server/src/auth.rs::FromIterator for Scopes::from_iter | glue | folds the proven policy::with over the scopes
+crates/msapi-server/src/auth.rs::fmt::Display for Scopes::fmt | shim | writes the proven scope::format_scopes bytes
+crates/msapi-server/src/auth.rs::fmt::Debug for Scopes::fmt | shim | writes the proven scope::format_scopes bytes
+crates/msapi-server/src/auth.rs::FromStr for Scopes::from_str | shim | forwards to the proven scope::parse_scopes
+crates/msapi-server/src/auth.rs::Serialize for Scopes::serialize | lib | hands serde the Display text
+crates/msapi-server/src/auth.rs::Deserialize for Scopes::deserialize | lib | takes serde's string to from_str
+crates/msapi-server/src/auth.rs::Principal::require | glue | forwards to the proven contains and words the refusal
+crates/msapi-server/src/auth.rs::Principal::require_account | glue | forwards to the proven policy::reaches and words the refusal
+crates/msapi-server/src/auth.rs::Principal::reaches_account | glue | forwards to require_account
+crates/msapi-server/src/auth.rs::as_bytes | glue | views ID Strings as the byte strings policy compares
+crates/msapi-server/src/auth.rs::authenticate | io | after the proven api::bearer parse, looks the token hash and its chain up in SQLite; the proven policy::chain_expiry decides
+crates/msapi-server/src/auth.rs::create_user | io | inserts the user and root token rows
+crates/msapi-server/src/auth.rs::MintRequest::validate | glue | gathers inputs for the proven policy::check_mint and account_checks, and words the refusals
+crates/msapi-server/src/db.rs::open | io | opens and migrates SQLite
+crates/msapi-server/src/db.rs::open_in_memory | io | opens and migrates SQLite
+crates/msapi-server/src/db.rs::configure | io | opens and migrates SQLite
+crates/msapi-server/src/db.rs::migrate | io | opens and migrates SQLite
+crates/msapi-server/src/durable.rs::log | io | ships and restores the SQLite changeset log over HTTP to the Durable Object
+crates/msapi-server/src/durable.rs::Logged::begin | io | ships and restores the SQLite changeset log over HTTP to the Durable Object
+crates/msapi-server/src/durable.rs::Logged::conn | io | ships and restores the SQLite changeset log over HTTP to the Durable Object
+crates/msapi-server/src/durable.rs::Logged::execute | io | ships and restores the SQLite changeset log over HTTP to the Durable Object
+crates/msapi-server/src/durable.rs::Logged::query_map | io | ships and restores the SQLite changeset log over HTTP to the Durable Object
+crates/msapi-server/src/durable.rs::Logged::record | io | ships and restores the SQLite changeset log over HTTP to the Durable Object
+crates/msapi-server/src/durable.rs::Logged::commit | io | ships and restores the SQLite changeset log over HTTP to the Durable Object
+crates/msapi-server/src/durable.rs::Drop for Logged::drop | io | ships and restores the SQLite changeset log over HTTP to the Durable Object
+crates/msapi-server/src/durable.rs::encode_statement | glue | passes rusqlite values to the proven batch::encode_statement
+crates/msapi-server/src/durable.rs::decode_batch | glue | turns the proven batch::decode_batch output into rusqlite values
+crates/msapi-server/src/durable.rs::restore | io | ships and restores the SQLite changeset log over HTTP to the Durable Object
+crates/msapi-server/src/durable.rs::rebuild | io | ships and restores the SQLite changeset log over HTTP to the Durable Object
+crates/msapi-server/src/durable.rs::checkpoint | io | ships and restores the SQLite changeset log over HTTP to the Durable Object
+crates/msapi-server/src/durable.rs::snapshot | io | ships and restores the SQLite changeset log over HTTP to the Durable Object
+crates/msapi-server/src/durable.rs::fetch_state | io | ships and restores the SQLite changeset log over HTTP to the Durable Object
+crates/msapi-server/src/durable.rs::frames | glue | forwards to the proven batch::frames
+crates/msapi-server/src/durable.rs::send | io | ships and restores the SQLite changeset log over HTTP to the Durable Object
+crates/msapi-server/src/durable.rs::bad | glue | builds an io::Error
+crates/msapi-server/src/durable.rs::other | glue | builds an io::Error
+crates/msapi-server/src/error.rs::ApiError::new | glue | builds an error response
+crates/msapi-server/src/error.rs::ApiError::unavailable | glue | builds an error response
+crates/msapi-server/src/error.rs::ApiError::with_details | glue | builds an error response
+crates/msapi-server/src/error.rs::ApiError::bad_request | glue | builds an error response
+crates/msapi-server/src/error.rs::ApiError::invalid_json | glue | builds an error response
+crates/msapi-server/src/error.rs::ApiError::unauthorized | glue | builds an error response
+crates/msapi-server/src/error.rs::ApiError::forbidden | glue | builds an error response
+crates/msapi-server/src/error.rs::ApiError::not_found | glue | builds an error response
+crates/msapi-server/src/error.rs::ApiError::method_not_allowed | glue | builds an error response
+crates/msapi-server/src/error.rs::ApiError::conflict | glue | builds an error response
+crates/msapi-server/src/error.rs::ApiError::too_large | glue | builds an error response
+crates/msapi-server/src/error.rs::ApiError::unsupported_media_type | glue | builds an error response
+crates/msapi-server/src/error.rs::ApiError::invalid | glue | builds an error response
+crates/msapi-server/src/error.rs::ApiError::not_implemented | glue | builds an error response
+crates/msapi-server/src/error.rs::ApiError::internal | glue | builds an error response
+crates/msapi-server/src/error.rs::ApiError::to_response | glue | builds an error response
+crates/msapi-server/src/error.rs::fmt::Display for ApiError::fmt | glue | builds an error response
+crates/msapi-server/src/error.rs::From for ApiError::from | glue | builds an error response
+crates/msapi-server/src/error.rs::From for ApiError::from | glue | builds an error response
+crates/msapi-server/src/http.rs::word | glue | turns a proven ASCII word into &str
+crates/msapi-server/src/http.rs::method_name | glue | the proven api method name as &str
+crates/msapi-server/src/http.rs::Request::new | glue | splits the target at ? and keeps the proven query::parse_query pairs
+crates/msapi-server/src/http.rs::Request::header | glue | finds a header by its lowercased name
+crates/msapi-server/src/http.rs::Request::query | glue | finds a query pair by name
+crates/msapi-server/src/http.rs::Request::json | lib | decodes the body with serde_json after the proven content-type and size checks
+crates/msapi-server/src/http.rs::parse_query | glue | turns the proven query::parse_query ranges into Strings
+crates/msapi-server/src/http.rs::Response::json | lib | serializes the body with serde_json
+crates/msapi-server/src/http.rs::Response::text | glue | builds a response
+crates/msapi-server/src/http.rs::Response::no_content | glue | builds a response
+crates/msapi-server/src/http.rs::Response::with_header | glue | adds a header
+crates/msapi-server/src/http.rs::Response::json_body | lib | parses the body with serde_json (tests)
+crates/msapi-server/src/ids.rs::base32 | glue | the proven base32::encode bytes as a String
+crates/msapi-server/src/ids.rs::new_id | io | reads the clock and OS randomness; the order rule is the proven policy::next_id and encode_u128
+crates/msapi-server/src/ids.rs::new_token_secret | io | OS randomness through the proven base32::encode
+crates/msapi-server/src/ids.rs::hash_token | lib | SHA-256 from ring
+crates/msapi-server/src/json.rs::merge_patch | glue | converts serde_json values around the proven json::merge
+crates/msapi-server/src/json.rs::to_model | lib | serde_json value to the proven Json model
+crates/msapi-server/src/json.rs::from_model | lib | the proven Json model to a serde_json value
+crates/msapi-server/src/json.rs::decode | lib | decodes a patched document through serde_json text (exact decimals)
+crates/msapi-server/src/main.rs::main | io | process start-up and configuration
+crates/msapi-server/src/main.rs::run | io | process start-up and configuration
+crates/msapi-server/src/main.rs::thread_count | io | process start-up and configuration
+crates/msapi-server/src/passkey.rs::configure | io | reads process configuration
+crates/msapi-server/src/passkey.rs::rp | io | reads process configuration
+crates/msapi-server/src/passkey.rs::pending | io | the in-memory table of in-progress ceremonies
+crates/msapi-server/src/passkey.rs::begin | io | stores a ceremony under a random challenge; the size cap and five-minute expiry use the monotonic clock
+crates/msapi-server/src/passkey.rs::finish | io | takes a ceremony out of the in-memory table if its monotonic-clock age is under five minutes
+crates/msapi-server/src/passkey.rs::handle | io | a passkey ceremony step: SQLite reads and writes around the proven WebAuthn checks
+crates/msapi-server/src/passkey.rs::register_start | io | a passkey ceremony step: SQLite reads and writes around the proven WebAuthn checks
+crates/msapi-server/src/passkey.rs::login_start | io | a passkey ceremony step: SQLite reads and writes around the proven WebAuthn checks
+crates/msapi-server/src/passkey.rs::client_data | lib | parses clientDataJSON with serde_json, then the proven origin and challenge checks
+crates/msapi-server/src/passkey.rs::check_auth_data | glue | forwards to the proven webauthn layout, rp-id-hash and flag checks
+crates/msapi-server/src/passkey.rs::register_finish | io | a passkey ceremony step: SQLite reads and writes around the proven WebAuthn checks
+crates/msapi-server/src/passkey.rs::login_finish | io | a passkey ceremony step: SQLite reads and writes around the proven WebAuthn checks
+crates/msapi-server/src/passkey.rs::verify | lib | ECDSA P-256 signature check from ring over the proven es256_point
+crates/msapi-server/src/passkey.rs::Session::new | io | a passkey ceremony step: SQLite reads and writes around the proven WebAuthn checks
+crates/msapi-server/src/passkey.rs::Session::ctx | io | a passkey ceremony step: SQLite reads and writes around the proven WebAuthn checks
+crates/msapi-server/src/passkey.rs::Session::insert | io | a passkey ceremony step: SQLite reads and writes around the proven WebAuthn checks
+crates/msapi-server/src/passkey.rs::Session::response | io | a passkey ceremony step: SQLite reads and writes around the proven WebAuthn checks
+crates/msapi-server/src/passkey.rs::is_primary_key_violation | lib | matches a rusqlite error code
+crates/msapi-server/src/passkey.rs::b64url | glue | the proven base64url::encode bytes as a String
+crates/msapi-server/src/passkey.rs::b64url_decode | glue | forwards to the proven base64url::decode
+crates/msapi-server/src/routes/accounts.rs::AccountInput::validate | glue | forwards to the proven api account checks and words the error
+crates/msapi-server/src/routes/accounts.rs::load | io | route handler: SQL against SQLite around the proven checks, then the audit row
+crates/msapi-server/src/routes/accounts.rs::list | io | route handler: SQL against SQLite around the proven checks, then the audit row
+crates/msapi-server/src/routes/accounts.rs::get | io | route handler: SQL against SQLite around the proven checks, then the audit row
+crates/msapi-server/src/routes/accounts.rs::create | io | route handler: SQL against SQLite around the proven checks, then the audit row
+crates/msapi-server/src/routes/accounts.rs::update | io | route handler: SQL against SQLite around the proven checks, then the audit row
+crates/msapi-server/src/routes/accounts.rs::delete | io | route handler: SQL against SQLite around the proven checks, then the audit row
+crates/msapi-server/src/routes/audit_log.rs::parse_json | lib | parses a stored JSON column with serde_json
+crates/msapi-server/src/routes/audit_log.rs::from_row | lib | reads a rusqlite row into the view
+crates/msapi-server/src/routes/audit_log.rs::list | io | route handler: SQL against SQLite around the proven checks, then the audit row
+crates/msapi-server/src/routes/characters.rs::CharacterInput::validate | glue | forwards to the proven api character checks and words the error
+crates/msapi-server/src/routes/characters.rs::CharacterView::to_input | glue | copies fields
+crates/msapi-server/src/routes/characters.rs::from_row | lib | reads a rusqlite row into the view
+crates/msapi-server/src/routes/characters.rs::find | io | route handler: SQL against SQLite around the proven checks, then the audit row
+crates/msapi-server/src/routes/characters.rs::account_region | io | route handler: SQL against SQLite around the proven checks, then the audit row
+crates/msapi-server/src/routes/characters.rs::duplicate | glue | words the conflict error
+crates/msapi-server/src/routes/characters.rs::list | io | route handler: SQL against SQLite around the proven checks, then the audit row
+crates/msapi-server/src/routes/characters.rs::get | io | route handler: SQL against SQLite around the proven checks, then the audit row
+crates/msapi-server/src/routes/characters.rs::create | io | route handler: SQL against SQLite around the proven checks, then the audit row
+crates/msapi-server/src/routes/characters.rs::update | io | route handler: SQL against SQLite around the proven checks, then the audit row
+crates/msapi-server/src/routes/characters.rs::delete | io | route handler: SQL against SQLite around the proven checks, then the audit row
+crates/msapi-server/src/routes/meta.rs::public | glue | answers the public routes the proven api::route names
+crates/msapi-server/src/routes/meta.rs::index | glue | a constant JSON index of the routes
+crates/msapi-server/src/routes/mod.rs::planned | glue | pairs the proven api::PLANNED words with their descriptions
+crates/msapi-server/src/routes/mod.rs::run | glue | one match from the proven route to its handler
+crates/msapi-server/src/routes/mod.rs::handle | io | makes the request ID, calls dispatch and logs the request
+crates/msapi-server/src/routes/mod.rs::dispatch | glue | splits the path on /, matches on the proven api::route result, authenticates, and calls run
+crates/msapi-server/src/routes/mod.rs::page | glue | forwards to the proven api::page_limit
+crates/msapi-server/src/routes/mod.rs::opt_bytes | glue | views an optional String as bytes
+crates/msapi-server/src/routes/mod.rs::enum_to_sql | lib | serde_json wire string of an enum
+crates/msapi-server/src/routes/mod.rs::enum_from_sql | lib | serde_json parse of a stored enum
+crates/msapi-server/src/routes/mod.rs::corrupt | lib | builds a rusqlite error
+crates/msapi-server/src/routes/mod.rs::is_unique_violation | lib | matches a rusqlite error code
+crates/msapi-server/src/routes/mod.rs::token_subtree | io | route handler: SQL against SQLite around the proven checks, then the audit row
+crates/msapi-server/src/routes/mod.rs::in_list | io | builds SQL placeholders
+crates/msapi-server/src/routes/stats.rs::from_row | lib | reads a rusqlite row into the view
+crates/msapi-server/src/routes/stats.rs::latest | io | route handler: SQL against SQLite around the proven checks, then the audit row
+crates/msapi-server/src/routes/stats.rs::get | io | route handler: SQL against SQLite around the proven checks, then the audit row
+crates/msapi-server/src/routes/stats.rs::replace | io | route handler: SQL against SQLite around the proven checks, then the audit row
+crates/msapi-server/src/routes/stats.rs::update | io | route handler: SQL against SQLite around the proven checks, then the audit row
+crates/msapi-server/src/routes/stats.rs::record | io | route handler: SQL against SQLite around the proven checks, then the audit row
+crates/msapi-server/src/routes/stats.rs::history | io | route handler: SQL against SQLite around the proven checks, then the audit row
+crates/msapi-server/src/routes/tokens.rs::from_row | lib | reads a rusqlite row into the view
+crates/msapi-server/src/routes/tokens.rs::load | io | route handler: SQL against SQLite around the proven checks, then the audit row
+crates/msapi-server/src/routes/tokens.rs::visible | io | route handler: SQL against SQLite around the proven checks, then the audit row
+crates/msapi-server/src/routes/tokens.rs::me | io | route handler: SQL against SQLite around the proven checks, then the audit row
+crates/msapi-server/src/routes/tokens.rs::list | io | route handler: SQL against SQLite around the proven checks, then the audit row
+crates/msapi-server/src/routes/tokens.rs::get | io | route handler: SQL against SQLite around the proven checks, then the audit row
+crates/msapi-server/src/routes/tokens.rs::mint | io | route handler: SQL against SQLite around the proven checks, then the audit row
+crates/msapi-server/src/routes/tokens.rs::revoke | io | route handler: SQL against SQLite around the proven checks, then the audit row
+crates/msapi-server/src/serve.rs::run | io | tiny_http socket I/O
+crates/msapi-server/src/serve.rs::worker | io | tiny_http socket I/O
+crates/msapi-server/src/serve.rs::read_request | io | tiny_http socket I/O
+crates/msapi-server/src/serve.rs::to_tiny | io | tiny_http socket I/O
