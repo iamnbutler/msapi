@@ -163,6 +163,7 @@ goes through a proven function.
 | `lookup::tagged_key` (world names) | the region's tag, `0xFF`, then the lowercased name; two keys are equal exactly when the regions are and the names are equal ignoring case (`lemma_tagged`) |
 | `lookup::Index::build` (`class::find`, `world::find`, `Region`'s `FromStr`) | `Some` exactly when no key names two entries; the table is built once, and a test builds each |
 | `lookup::Index::get` | `Some(i)`: some key equal to the query names entry `i`, and every key equal to it names `i`; `None`: no key equals the query |
+| `scope::scope_index` (`Scope::from_str`) | `r == index_of(name)`: the scope whose `scope_name` is exactly `name`, or `None` |
 | `scope::parse_scopes` (stored token scopes) | `Ok(bits)` exactly when every ASCII-whitespace-separated token names a scope, `bits` being their union (`parse`); `Err` gives the range of a token that names none |
 | `scope::format_scopes` | the names of the set scopes in order, separated by single spaces (`fmt`), and `parse(format_scopes(b)) == Some(b & 0xff)` |
 | `query::percent_decode` | equals `decoded`: `+` is a space, `%XX` is that byte, anything else is itself |
@@ -205,8 +206,8 @@ These parts are not proven. They are covered by tests instead.
 - **Code that only moves data between those and the proofs:** SQL query
   text and account ownership (a SQL query), converting `serde_json` values to
   and from `json::Json` around the merge patch, the rusqlite-value conversions
-  in `durable.rs`, turning ASCII bytes into `String`s, the server's `Scope` names matching
-  `scope::scope_name` (a test checks each), and in `auth.rs` viewing
+  in `durable.rs`, turning ASCII bytes into `String`s (including `Scope::as_str` over
+  `scope::scope_name`), and in `auth.rs` viewing
   account-ID `String`s as their bytes (`String::as_bytes`) for
   `account_checks` and `reaches`, and `Timestamp`'s `Display`, `FromStr`
   and serde impls passing bytes to and from the proven `format_rfc3339` and
