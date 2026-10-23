@@ -47,6 +47,7 @@ pub mod region;
 pub mod rules;
 pub mod scope;
 pub mod stat;
+pub mod text;
 pub mod time;
 pub mod units;
 pub mod webauthn;
