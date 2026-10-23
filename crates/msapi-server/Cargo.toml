@@ -1,0 +1,23 @@
+[package]
+name = "msapi-server"
+description = "The msapi HTTP service: accounts, characters, tokens and audit."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[[bin]]
+name = "msapi"
+path = "src/main.rs"
+
+[dependencies]
+msapi-core.workspace = true
+ring.workspace = true
+rusqlite.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+tiny_http.workspace = true
+
+[lints]
+workspace = true
