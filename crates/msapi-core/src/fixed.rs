@@ -212,13 +212,6 @@ impl<'de, const DP: u32> Deserialize<'de> for Fixed<DP> {
                 Fixed::from_number_text(&v.to_string())
             }
 
-            // A `serde_json::Value` hands over a decimal as `f64` only when
-            // the float's shortest form is exactly the text it was parsed
-            // from, so that form is the original text.
-            fn visit_f64<E: de::Error>(self, v: f64) -> Result<Self::Value, E> {
-                Fixed::from_number_text(&v.to_string())
-            }
-
             // `serde_json` parsing text hands over any non-integer number as
             // its exact text, as a one-entry map.
             fn visit_map<A: de::MapAccess<'de>>(self, mut map: A) -> Result<Self::Value, A::Error> {
@@ -288,12 +281,10 @@ mod tests {
         assert_eq!(serde_json::from_str::<Pct>("-0").unwrap().raw(), 0);
         assert!(serde_json::from_str::<Pct>("1e2").is_err(), "exponents are refused");
         assert!(serde_json::from_str::<Pct>("93.140").is_err(), "digits beyond the precision are refused");
-        // Through a `Value`, as PATCH bodies are, every two-decimal value survives.
+        // Through a `Value` and back to text, as PATCH bodies are, every value survives.
         for raw in (-100_000..100_000).step_by(7) {
             let v = serde_json::to_value(Pct::from_raw(raw)).unwrap();
-            let text = serde_json::to_string(&v).unwrap();
-            let reparsed: serde_json::Value = serde_json::from_str(&text).unwrap();
-            assert_eq!(serde_json::from_value::<Pct>(reparsed).unwrap().raw(), raw);
+            assert_eq!(serde_json::from_str::<Pct>(&v.to_string()).unwrap().raw(), raw);
         }
         let big = i64::MAX;
         let json = serde_json::to_string(&Pct::from_raw(big)).unwrap();

@@ -75,7 +75,7 @@ pub fn update(conn: &mut Connection, ctx: &Ctx, req: &Request, id: &str) -> Resu
     let mut doc =
         serde_json::to_value(StatWindow { captured_at: None, ..current }).map_err(|_| ApiError::internal())?;
     merge_patch(&mut doc, &patch);
-    let window: StatWindow = serde_json::from_value(doc).map_err(|e| ApiError::invalid_json(&e))?;
+    let window: StatWindow = crate::json::decode(&doc).map_err(|e| ApiError::invalid_json(&e))?;
     record(conn, ctx, id, window)
 }
 

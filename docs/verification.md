@@ -190,9 +190,8 @@ These parts are not proven. They are covered by tests instead.
   `FromStr` and JSON impls only write or read the bytes of the proven
   `format_decimal`, `format_uint` and `parse_decimal`: `Fixed` crosses JSON as
   its exact decimal text (`serde_json`'s `arbitrary_precision`), never as an
-  `f64`. A decimal inside a `serde_json::Value` comes back as the `f64` whose
-  shortest form is its original text, and std's float formatting recovers
-  that text.
+  `f64`. PATCH documents are read back from their JSON text after the merge,
+  so they take the same exact path as request bodies.
 - **Spec against reality:** that the specs are the game's formulas and the
   RFCs' formats is checked by golden tests and known vectors, not proofs.
 - **The verifier itself:** Verus, Z3, and `vstd`'s specs of the standard

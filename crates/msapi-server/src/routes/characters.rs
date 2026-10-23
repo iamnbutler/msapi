@@ -312,9 +312,8 @@ pub fn update(conn: &mut Connection, ctx: &Ctx, req: &Request, id: &str) -> Resu
     let before = find(conn, &ctx.principal, id)?;
     let mut doc = serde_json::to_value(before.to_input()).map_err(|_| ApiError::internal())?;
     merge_patch(&mut doc, &patch);
-    let valid = serde_json::from_value::<CharacterInput>(doc)
-        .map_err(|e| ApiError::invalid_json(&e))?
-        .validate(before.region)?;
+    let valid =
+        crate::json::decode::<CharacterInput>(&doc).map_err(|e| ApiError::invalid_json(&e))?.validate(before.region)?;
 
     let write = Write::begin(conn, ctx)?;
     let updated = write.execute(
