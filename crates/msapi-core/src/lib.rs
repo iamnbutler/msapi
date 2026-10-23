@@ -38,6 +38,7 @@ pub mod class;
 pub mod decimal;
 pub mod fixed;
 pub mod formula;
+pub mod http1;
 pub mod json;
 pub mod lookup;
 pub mod names;

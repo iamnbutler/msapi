@@ -13,6 +13,11 @@
     clippy::cast_lossless,
     reason = "plain casts are what Verus checks; each one here is proven in range"
 )]
+#![allow(
+    clippy::manual_range_contains,
+    clippy::many_single_char_names,
+    reason = "Verus has no spec for `RangeInclusive::contains`; s, i, v, lo, hi name the spec's terms"
+)]
 
 #[cfg(feature = "verus")]
 use vstd::prelude::*;
@@ -295,25 +300,37 @@ pub fn trim_in(s: &[u8], lo: usize, hi: usize) -> (usize, usize) {
 #[cfg_attr(feature = "verus", verus_spec(r => ensures r as nat == chars(s@)))]
 #[must_use]
 pub fn char_count(s: &[u8]) -> usize {
+    proof! { assert(s@.subrange(0, s.len() as int) =~= s@); }
+    char_count_in(s, 0, s.len())
+}
+
+/// How many characters `s[lo..hi]` holds.
+#[cfg_attr(feature = "verus", verus_verify)]
+#[cfg_attr(feature = "verus", verus_spec(r =>
+    requires lo <= hi <= s.len(),
+    ensures r as nat == chars(s@.subrange(lo as int, hi as int)),
+))]
+#[must_use]
+pub fn char_count_in(s: &[u8], lo: usize, hi: usize) -> usize {
     let mut n: usize = 0;
-    let mut i: usize = 0;
+    let mut i: usize = lo;
+    proof! { assert(s@.subrange(lo as int, lo as int) =~= Seq::<u8>::empty()); }
     #[cfg_attr(feature = "verus", verus_spec(
         invariant
-            i <= s.len(),
-            n as nat == chars(s@.subrange(0, i as int)),
-            n <= i,
-        decreases s.len() - i
+            lo <= i <= hi <= s.len(),
+            n as nat == chars(s@.subrange(lo as int, i as int)),
+            n <= i - lo,
+        decreases hi - i
     ))]
-    while i < s.len() {
+    while i < hi {
         proof! {
-            assert(s@.subrange(0, i + 1).drop_last() =~= s@.subrange(0, i as int));
+            assert(s@.subrange(lo as int, i + 1).drop_last() =~= s@.subrange(lo as int, i as int));
         }
         if !(0x80 <= s[i] && s[i] < 0xC0) {
             n += 1;
         }
         i += 1;
     }
-    proof! { assert(s@.subrange(0, s.len() as int) =~= s@); }
     n
 }
 
@@ -349,28 +366,42 @@ pub fn starts_with(s: &[u8], p: &[u8]) -> bool {
 #[cfg_attr(feature = "verus", verus_spec(r => ensures r == parse_u64_spec(s@)))]
 #[must_use]
 pub fn parse_u64(s: &[u8]) -> Option<u64> {
-    let start: usize = if !s.is_empty() && s[0] == 43 { 1 } else { 0 };
-    proof! { assert(u64_digits(s@) =~= s@.skip(start as int)); }
-    if start == s.len() {
+    proof! { assert(s@.subrange(0, s.len() as int) =~= s@); }
+    parse_u64_in(s, 0, s.len())
+}
+
+/// `u64::from_str` on `s[lo..hi]`.
+#[cfg_attr(feature = "verus", verus_verify)]
+#[cfg_attr(feature = "verus", verus_spec(r =>
+    requires lo <= hi <= s.len(),
+    ensures r == parse_u64_spec(s@.subrange(lo as int, hi as int)),
+))]
+#[must_use]
+pub fn parse_u64_in(s: &[u8], lo: usize, hi: usize) -> Option<u64> {
+    let start: usize = if lo < hi && s[lo] == 43 { lo + 1 } else { lo };
+    proof! {
+        assert(u64_digits(s@.subrange(lo as int, hi as int)) =~= s@.subrange(start as int, hi as int));
+    }
+    if start == hi {
         return None;
     }
     let mut v: u64 = 0;
     let mut i: usize = start;
     #[cfg_attr(feature = "verus", verus_spec(
         invariant
-            start <= i <= s.len(),
-            u64_digits(s@) == s@.skip(start as int),
+            lo <= start <= i <= hi <= s.len(),
+            u64_digits(s@.subrange(lo as int, hi as int)) == s@.subrange(start as int, hi as int),
             all_digits(s@.subrange(start as int, i as int)),
             v as nat == digits_value(s@.subrange(start as int, i as int)),
-        decreases s.len() - i
+        decreases hi - i
     ))]
-    while i < s.len() {
+    while i < hi {
         let b = s[i];
         proof! { assert(s@.subrange(start as int, i + 1).drop_last() =~= s@.subrange(start as int, i as int)); }
         if !(48 <= b && b <= 57) {
             proof! {
-                assert(s@.skip(start as int)[i - start] == b);
-                assert(!is_digit(s@.skip(start as int)[i - start]));
+                assert(s@.subrange(start as int, hi as int)[i - start] == b);
+                assert(!is_digit(s@.subrange(start as int, hi as int)[i - start]));
             }
             return None;
         }
@@ -380,7 +411,7 @@ pub fn parse_u64(s: &[u8]) -> Option<u64> {
                 assert(digits_value(s@.subrange(start as int, i + 1)) == v * 10 + d);
                 assert(v * 10 + d > u64::MAX) by (nonlinear_arith)
                     requires v > (u64::MAX - d) / 10, d <= 9;
-                let t = s@.skip(start as int);
+                let t = s@.subrange(start as int, hi as int);
                 assert(t.subrange(0, i + 1 - start) =~= s@.subrange(start as int, i + 1));
                 lemma_digits_prefix(t, i + 1 - start);
             }
@@ -394,7 +425,6 @@ pub fn parse_u64(s: &[u8]) -> Option<u64> {
         v = v * 10 + d;
         i += 1;
     }
-    proof! { assert(s@.subrange(start as int, s.len() as int) =~= s@.skip(start as int)); }
     Some(v)
 }
 
@@ -403,22 +433,36 @@ pub fn parse_u64(s: &[u8]) -> Option<u64> {
 #[cfg_attr(feature = "verus", verus_spec(r => ensures r == parse_hex_spec(s@)))]
 #[must_use]
 pub fn parse_hex(s: &[u8]) -> Option<usize> {
-    let start: usize = if !s.is_empty() && s[0] == 43 { 1 } else { 0 };
-    proof! { assert(u64_digits(s@) =~= s@.skip(start as int)); }
-    if start == s.len() {
+    proof! { assert(s@.subrange(0, s.len() as int) =~= s@); }
+    parse_hex_in(s, 0, s.len())
+}
+
+/// `usize::from_str_radix(_, 16)` on `s[lo..hi]`.
+#[cfg_attr(feature = "verus", verus_verify)]
+#[cfg_attr(feature = "verus", verus_spec(r =>
+    requires lo <= hi <= s.len(),
+    ensures r == parse_hex_spec(s@.subrange(lo as int, hi as int)),
+))]
+#[must_use]
+pub fn parse_hex_in(s: &[u8], lo: usize, hi: usize) -> Option<usize> {
+    let start: usize = if lo < hi && s[lo] == 43 { lo + 1 } else { lo };
+    proof! {
+        assert(u64_digits(s@.subrange(lo as int, hi as int)) =~= s@.subrange(start as int, hi as int));
+    }
+    if start == hi {
         return None;
     }
     let mut v: usize = 0;
     let mut i: usize = start;
     #[cfg_attr(feature = "verus", verus_spec(
         invariant
-            start <= i <= s.len(),
-            u64_digits(s@) == s@.skip(start as int),
+            lo <= start <= i <= hi <= s.len(),
+            u64_digits(s@.subrange(lo as int, hi as int)) == s@.subrange(start as int, hi as int),
             all_hex(s@.subrange(start as int, i as int)),
             v as nat == hex_value(s@.subrange(start as int, i as int)),
-        decreases s.len() - i
+        decreases hi - i
     ))]
-    while i < s.len() {
+    while i < hi {
         let b = s[i];
         proof! { assert(s@.subrange(start as int, i + 1).drop_last() =~= s@.subrange(start as int, i as int)); }
         let d: usize = if 48 <= b && b <= 57 {
@@ -429,9 +473,9 @@ pub fn parse_hex(s: &[u8]) -> Option<usize> {
             (b - 55) as usize
         } else {
             proof! {
-                assert(s@.skip(start as int)[i - start] == b);
-                assert(hex(s@.skip(start as int)[i - start]) is None);
-                assert(!all_hex(s@.skip(start as int)));
+                assert(s@.subrange(start as int, hi as int)[i - start] == b);
+                assert(hex(s@.subrange(start as int, hi as int)[i - start]) is None);
+                assert(!all_hex(s@.subrange(start as int, hi as int)));
             }
             return None;
         };
@@ -440,7 +484,7 @@ pub fn parse_hex(s: &[u8]) -> Option<usize> {
                 assert(hex_value(s@.subrange(start as int, i + 1)) == v * 16 + d);
                 assert(v * 16 + d > usize::MAX) by (nonlinear_arith)
                     requires v > (usize::MAX - d) / 16, d <= 15;
-                let t = s@.skip(start as int);
+                let t = s@.subrange(start as int, hi as int);
                 assert(t.subrange(0, i + 1 - start) =~= s@.subrange(start as int, i + 1));
                 lemma_hex_prefix(t, i + 1 - start);
             }
@@ -454,7 +498,6 @@ pub fn parse_hex(s: &[u8]) -> Option<usize> {
         v = v * 16 + d;
         i += 1;
     }
-    proof! { assert(s@.subrange(start as int, s.len() as int) =~= s@.skip(start as int)); }
     Some(v)
 }
 
@@ -482,7 +525,7 @@ mod tests {
         for c in (0..=0x10_ffff).filter_map(char::from_u32) {
             for s in [format!("{c}"), format!("{c}a{c}"), format!("{c}{c}é{c}{c}")] {
                 let (a, b) = trim(s.as_bytes());
-                assert_eq!(&s[a..b], s.trim(), "{:?}", c);
+                assert_eq!(&s[a..b], s.trim(), "{c:?}");
             }
         }
         for s in SAMPLES {

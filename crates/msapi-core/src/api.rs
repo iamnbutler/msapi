@@ -15,15 +15,23 @@
     clippy::too_many_lines,
     reason = "plain casts are what Verus checks; the tables are one arm per entry"
 )]
+#![allow(
+    clippy::manual_range_contains,
+    clippy::cast_possible_wrap,
+    clippy::if_not_else,
+    clippy::manual_unwrap_or_default,
+    clippy::manual_unwrap_or,
+    reason = "Verus has no specs for `contains` or `unwrap_or_default`; the wrapping cast is guarded and the branch order follows the spec"
+)]
 
 #[cfg(feature = "verus")]
 use vstd::prelude::*;
 
 #[cfg(feature = "verus")]
 use crate::query::find;
+use crate::text::{char_count, parse_u64, starts_with, trim_in};
 #[cfg(feature = "verus")]
-use crate::text::{has_prefix, parse_u64_spec, trimmed};
-use crate::text::{parse_u64, starts_with, trim_in};
+use crate::text::{chars, has_prefix, parse_u64_spec, trimmed};
 use crate::webauthn::bytes_eq;
 
 /// The fixed strings the API compares against or records.
@@ -1085,6 +1093,183 @@ pub const fn body_fits(n: usize) -> bool {
 #[must_use]
 pub const fn session_expiry(now: i64) -> i64 {
     if now <= i64::MAX - SESSION_MS { now + SESSION_MS } else { i64::MAX }
+}
+
+/// Why a character's own fields are refused, in the order they are checked.
+#[cfg_attr(feature = "verus", verus_verify)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum CharacterRefusal {
+    /// `character_exp_rate` is outside `[0, 100%)`.
+    ExpRate,
+    /// `character_exp` does not fit an `i64` (SQLite's integer).
+    ExpTooLarge,
+    /// `character_guild_name` is over 32 characters.
+    GuildTooLong,
+    /// `character_image` is over 4096 characters.
+    ImageTooLong,
+    /// `notes` is over 4000 characters.
+    NotesTooLong,
+    /// `character_image` is not an `https://` URL.
+    ImageNotHttps,
+}
+
+/// Why an account's fields are refused, in the order they are checked.
+#[cfg_attr(feature = "verus", verus_verify)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum AccountRefusal {
+    /// `label` is over 100 characters.
+    LabelTooLong,
+    /// `notes` is over 4000 characters.
+    NotesTooLong,
+}
+
+#[cfg(feature = "verus")]
+verus! {
+
+/// An optional byte slice's contents.
+pub open spec fn opt(v: Option<&[u8]>) -> Option<Seq<u8>> {
+    match v {
+        Some(t) => Some(t@),
+        None => None,
+    }
+}
+
+/// An optional text is absent or at most `max` characters.
+pub open spec fn fits(t: Option<Seq<u8>>, max: nat) -> bool {
+    match t {
+        Some(t) => chars(t) <= max,
+        None => true,
+    }
+}
+
+/// The checks on a character's own fields, in order; on success, the
+/// experience as SQLite stores it.
+pub open spec fn character_spec(
+    exp_rate: Option<i64>,
+    exp: Option<u64>,
+    guild: Option<Seq<u8>>,
+    image: Option<Seq<u8>>,
+    notes: Option<Seq<u8>>,
+) -> Result<Option<i64>, CharacterRefusal> {
+    if exp_rate matches Some(r) && !(0 <= r < 100_000) {
+        Err(CharacterRefusal::ExpRate)
+    } else if exp matches Some(e) && e > i64::MAX {
+        Err(CharacterRefusal::ExpTooLarge)
+    } else if !fits(guild, 32) {
+        Err(CharacterRefusal::GuildTooLong)
+    } else if !fits(image, 4096) {
+        Err(CharacterRefusal::ImageTooLong)
+    } else if !fits(notes, 4000) {
+        Err(CharacterRefusal::NotesTooLong)
+    } else if image matches Some(u) && !has_prefix(u, word(Word::Https)) {
+        Err(CharacterRefusal::ImageNotHttps)
+    } else {
+        Ok(match exp {
+            Some(e) => Some(e as i64),
+            None => None,
+        })
+    }
+}
+
+/// The checks on an account's own fields, in order.
+pub open spec fn account_spec(label: Option<Seq<u8>>, notes: Option<Seq<u8>>) -> Result<(), AccountRefusal> {
+    if !fits(label, 100) {
+        Err(AccountRefusal::LabelTooLong)
+    } else if !fits(notes, 4000) {
+        Err(AccountRefusal::NotesTooLong)
+    } else {
+        Ok(())
+    }
+}
+
+} // verus!
+
+/// Whether an optional text is absent or at most `max` characters.
+#[cfg_attr(feature = "verus", verus_verify)]
+#[cfg_attr(feature = "verus", verus_spec(r => ensures r == fits(opt(t), max as nat)))]
+#[must_use]
+pub fn text_fits(t: Option<&[u8]>, max: usize) -> bool {
+    match t {
+        Some(t) => char_count(t) <= max,
+        None => true,
+    }
+}
+
+/// Checks a character's own fields (the world, class and name are looked up
+/// first): [`character_spec`]. On success, the experience as SQLite stores it.
+#[cfg_attr(feature = "verus", verus_verify)]
+#[cfg_attr(feature = "verus", verus_spec(r =>
+    ensures r == character_spec(exp_rate, exp, opt(guild), opt(image), opt(notes)),
+))]
+#[allow(clippy::collapsible_if, reason = "Verus does not take let chains")]
+pub fn character_fields(
+    exp_rate: Option<i64>,
+    exp: Option<u64>,
+    guild: Option<&[u8]>,
+    image: Option<&[u8]>,
+    notes: Option<&[u8]>,
+) -> Result<Option<i64>, CharacterRefusal> {
+    if let Some(r) = exp_rate {
+        if !crate::rules::exp_rate_ok(r) {
+            return Err(CharacterRefusal::ExpRate);
+        }
+    }
+    let stored = match exp {
+        Some(e) => {
+            if e > i64::MAX as u64 {
+                return Err(CharacterRefusal::ExpTooLarge);
+            }
+            Some(e as i64)
+        }
+        None => None,
+    };
+    if !text_fits(guild, 32) {
+        return Err(CharacterRefusal::GuildTooLong);
+    }
+    if !text_fits(image, 4096) {
+        return Err(CharacterRefusal::ImageTooLong);
+    }
+    if !text_fits(notes, 4000) {
+        return Err(CharacterRefusal::NotesTooLong);
+    }
+    if let Some(u) = image {
+        if !starts_with(u, word_bytes(Word::Https)) {
+            return Err(CharacterRefusal::ImageNotHttps);
+        }
+    }
+    Ok(stored)
+}
+
+/// Checks an account's own fields (the region is checked first):
+/// [`account_spec`].
+#[cfg_attr(feature = "verus", verus_verify)]
+#[cfg_attr(feature = "verus", verus_spec(r => ensures r == account_spec(opt(label), opt(notes))))]
+pub fn account_fields(label: Option<&[u8]>, notes: Option<&[u8]>) -> Result<(), AccountRefusal> {
+    if !text_fits(label, 100) {
+        return Err(AccountRefusal::LabelTooLong);
+    }
+    if !text_fits(notes, 4000) {
+        return Err(AccountRefusal::NotesTooLong);
+    }
+    Ok(())
+}
+
+/// A required name (a token label, a display name): the range of `s` left
+/// after trimming, if that is `min..=max` characters.
+#[cfg_attr(feature = "verus", verus_verify)]
+#[cfg_attr(feature = "verus", verus_spec(r =>
+    ensures
+        match r {
+            Some((a, b)) => a <= b <= s.len() && s@.subrange(a as int, b as int) == trimmed(s@)
+                && min <= chars(trimmed(s@)) <= max,
+            None => !(min <= chars(trimmed(s@)) <= max),
+        },
+))]
+#[must_use]
+pub fn name_in(s: &[u8], min: usize, max: usize) -> Option<(usize, usize)> {
+    let (a, b) = crate::text::trim(s);
+    let n = crate::text::char_count_in(s, a, b);
+    if min <= n && n <= max { Some((a, b)) } else { None }
 }
 
 #[cfg(test)]
