@@ -60,6 +60,27 @@ computes these expressions exactly. Whether the expressions are the game's
 formulas is a separate question, which the golden tests answer against numbers
 the game displayed (for example a real character's 236,118 CP).
 
+### `units.rs` and `calc.rs`: the typed wrappers
+
+Each wrapper unwraps its unit types and calls a formula above; the proof says
+its result is that formula's spec applied to the unwrapped values, and that
+each error is returned exactly in its case. `value()` is a unit's raw integer.
+
+| Function | Proven |
+| --- | --- |
+| `DamagePct::factor`, `FinalDamage::factor` | the ratio `(10000 + p) / 10000` (floored at 0), in lowest terms |
+| `IgnoreDefense::remaining` | `(10000 - p) / 10000` |
+| `FinalDamage::stack`, `IgnoreDefense::stack` | `stack_final_damage` and `stack_ignore_defense` of the sources' raw values |
+| `IgnoreDefense::defense_factor`, `CritDamage::crit_factor` | `defense_factor` of the unwrapped values (PDR clamped); `max(0, 13500 + cd) / 10000` |
+| every unit's `new`, `get`, `pct`, `raw`, `plus`; `Fixed::from_raw`, `raw` | the value in is the value out; `plus` (and so `+`) saturates at the ends of `u64` or `i64` |
+| `StatValue::for_class` | `Unsupported` exactly when the class's stats name HP; otherwise `stat_value` of the class's primary and secondary totals, `Overflow` exactly when that exceeds `u64` |
+| `JobAttack::for_class` | magic attack exactly when the class uses it |
+| `ScaledAttack::total` | `scaled` of the flat attack and its percent, `Overflow` exactly on overflow |
+| `displayed_range` | `displayed_range`'s spec of the unwrapped inputs; the only error is `Overflow` |
+| `bow_normalised_attack` | `bow_normalised`'s spec, and `Ok` whenever it and the intermediate product fit |
+| `combat_power` | `combat_power`'s spec of the unwrapped inputs and class Final Damage list |
+| `Ratio::ZERO`, `Ratio::ONE` | built by `Ratio::from_int`, so in lowest terms and equal to 0 and 1 |
+
 ### `policy.rs`: token rules
 
 | Function | Proven |
@@ -99,7 +120,7 @@ goes through a proven function.
 | new IDs (audit and history order) | `next_id`, then `base32::encode_u128` (proven order-preserving) |
 | token secrets | `base32::encode` |
 | every write (the durable log) | `encode_statement`; on restore `frame_at`, `decode_batch`, `next_batch_ok` |
-| calculators (`calc`, `units`) | the `formula.rs` and `ratio.rs` functions above |
+| calculators (`calc`, `units`) | the wrappers above, and through them `formula.rs` and `ratio.rs` |
 
 ### `webauthn.rs`: passkey bytes and rules
 
@@ -143,12 +164,15 @@ These parts are not proven. They are covered by tests instead.
   log (`deploy/src/index.ts`, TypeScript).
 - **Code that only moves data between those and the proofs:** SQL query
   text and account ownership (a SQL query), JSON merge patch (`serde_json`
-  values), the
-  rusqlite-value conversions in `durable.rs` and its iterator over frames, the
-  `&` and `=` split in query strings, turning ASCII bytes into `String`s, the
-  `units`, `calc` and `stat` wrappers that unwrap unit types, and in `auth.rs`
-  the mapping to `AccountCheck { owned, reachable }`.
-- **Hand-built constants:** `Ratio::ZERO` and `Ratio::ONE`.
+  values), the rusqlite-value conversions in `durable.rs` and its iterator
+  over frames, the `&` and `=` split in query strings, turning ASCII bytes into
+  `String`s, and in `auth.rs` the mapping to `AccountCheck { owned, reachable }`.
+- **Unit plumbing that is generic or a trait impl:** `StatBreakdown::implied_total`
+  in `stat.rs` (generic over the `Scalable` trait and its associated percent
+  type, which Verus cannot specify through; it calls the proven
+  `formula::implied_total`), the `AddAssign` and `Sum` impls (which call the
+  proven `plus`), and the `Count`, `Percent`, `Scalable`, `From`, `FromStr`,
+  `Display`, `Debug` and serde impls of the unit types.
 - **Spec against reality:** that the specs are the game's formulas and the
   RFCs' formats is checked by golden tests and known vectors, not proofs.
 - **The verifier itself:** Verus, Z3, and `vstd`'s specs of the standard

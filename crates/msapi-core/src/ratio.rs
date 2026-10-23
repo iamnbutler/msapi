@@ -88,16 +88,15 @@ const fn gcd(a: u128, b: u128) -> u128 {
     x
 }
 
-// Verus does not check constants built by hand; both are in lowest terms.
-impl Ratio {
-    /// Zero.
-    pub const ZERO: Self = Self { num: 0, den: 1 };
-    /// One.
-    pub const ONE: Self = Self { num: 1, den: 1 };
-}
-
 #[cfg_attr(feature = "verus", verus_verify)]
 impl Ratio {
+    /// Zero.
+    #[cfg_attr(feature = "verus", verus_spec(ensures Self::ZERO.wf(), Self::ZERO.is(0, 1), Self::ZERO.n() == 0, Self::ZERO.d() == 1))]
+    pub const ZERO: Self = Self::from_int(0);
+    /// One.
+    #[cfg_attr(feature = "verus", verus_spec(ensures Self::ONE.wf(), Self::ONE.is(1, 1), Self::ONE.n() == 1, Self::ONE.d() == 1))]
+    pub const ONE: Self = Self::from_int(1);
+
     /// `num / den` in lowest terms. `None` if `den` is zero.
     #[must_use]
     #[cfg_attr(feature = "verus", verus_spec(r =>

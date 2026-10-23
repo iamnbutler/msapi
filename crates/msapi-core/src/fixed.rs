@@ -7,6 +7,8 @@ use serde::de::{self, Visitor};
 
 use crate::decimal::{DecimalError, parse_decimal};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
+#[cfg(feature = "verus")]
+use vstd::prelude::*;
 
 /// A decimal with exactly `DP` fractional digits, stored as an integer count
 /// of `10^-DP` units.
@@ -28,8 +30,38 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 /// assert!("93.145".parse::<Pct>().is_err());
 /// # Ok::<(), msapi_core::FixedError>(())
 /// ```
+#[cfg_attr(feature = "verus", verus_verify)]
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
 pub struct Fixed<const DP: u32>(i64);
+
+#[cfg(feature = "verus")]
+verus! {
+
+impl<const DP: u32> Fixed<DP> {
+    /// The raw integer, for specs: `93.14%` is `9314`.
+    pub closed spec fn value(self) -> int {
+        self.0 as int
+    }
+}
+
+} // verus!
+
+#[cfg_attr(feature = "verus", verus_verify)]
+impl<const DP: u32> Fixed<DP> {
+    /// Builds a value from its raw integer representation (`9314` is `93.14` for [`Pct`]).
+    #[must_use]
+    #[cfg_attr(feature = "verus", verus_spec(r => ensures r.value() == raw as int))]
+    pub const fn from_raw(raw: i64) -> Self {
+        Self(raw)
+    }
+
+    /// The raw integer representation.
+    #[must_use]
+    #[cfg_attr(feature = "verus", verus_spec(r => ensures r as int == self.value()))]
+    pub const fn raw(self) -> i64 {
+        self.0
+    }
+}
 
 /// A displayed percentage with two decimal places (`380.00`, `93.14`).
 pub type Pct = Fixed<2>;
@@ -75,12 +107,6 @@ impl<const DP: u32> Fixed<DP> {
     /// Zero.
     pub const ZERO: Self = Self(0);
 
-    /// Builds a value from its raw integer representation (`9314` is `93.14` for [`Pct`]).
-    #[must_use]
-    pub const fn from_raw(raw: i64) -> Self {
-        Self(raw)
-    }
-
     /// Builds a value from a whole number.
     ///
     /// ```
@@ -89,12 +115,6 @@ impl<const DP: u32> Fixed<DP> {
     #[must_use]
     pub const fn from_int(n: i64) -> Self {
         Self(n * Self::SCALE)
-    }
-
-    /// The raw integer representation.
-    #[must_use]
-    pub const fn raw(self) -> i64 {
-        self.0
     }
 
     /// The value as a float, for display or for JSON.
