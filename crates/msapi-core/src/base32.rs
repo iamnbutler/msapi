@@ -11,12 +11,14 @@
     clippy::cast_lossless,
     reason = "plain casts are what Verus checks; each one here is proven in range"
 )]
+#![allow(
+    clippy::manual_div_ceil,
+    clippy::many_single_char_names,
+    reason = "Verus has no spec for `div_ceil`; i, j, k, d, b are the digit, bit and value of the spec"
+)]
 
 #[cfg(feature = "verus")]
 use vstd::prelude::*;
-
-/// The alphabet, digit 0 first. [`digit_char`] computes the same mapping.
-pub const ALPHABET: &[u8; 32] = b"0123456789abcdefghjkmnpqrstvwxyz";
 
 #[cfg(feature = "verus")]
 verus! {
@@ -36,6 +38,109 @@ pub open spec fn alpha(d: int) -> int {
     } else {
         118 + (d - 27)
     }
+}
+
+/// The alphabet as a table, digit 0 first: `0-9 a-z` without `i l o u`.
+pub open spec fn crockford() -> Seq<u8> {
+    seq![b'0', b'1', b'2', b'3', b'4', b'5', b'6', b'7', b'8', b'9', b'a', b'b', b'c', b'd', b'e', b'f', b'g', b'h', b'j', b'k', b'm', b'n', b'p', b'q', b'r', b's', b't', b'v', b'w', b'x', b'y', b'z']
+}
+
+/// [`alpha`] is the table.
+pub proof fn lemma_alpha_table(d: int)
+    requires 0 <= d < 32,
+    ensures alpha(d) == crockford()[d] as int,
+{
+    if d == 0 {
+        assert(crockford()[0] == b'0');
+    } else if d == 1 {
+        assert(crockford()[1] == b'1');
+    } else if d == 2 {
+        assert(crockford()[2] == b'2');
+    } else if d == 3 {
+        assert(crockford()[3] == b'3');
+    } else if d == 4 {
+        assert(crockford()[4] == b'4');
+    } else if d == 5 {
+        assert(crockford()[5] == b'5');
+    } else if d == 6 {
+        assert(crockford()[6] == b'6');
+    } else if d == 7 {
+        assert(crockford()[7] == b'7');
+    } else if d == 8 {
+        assert(crockford()[8] == b'8');
+    } else if d == 9 {
+        assert(crockford()[9] == b'9');
+    } else if d == 10 {
+        assert(crockford()[10] == b'a');
+    } else if d == 11 {
+        assert(crockford()[11] == b'b');
+    } else if d == 12 {
+        assert(crockford()[12] == b'c');
+    } else if d == 13 {
+        assert(crockford()[13] == b'd');
+    } else if d == 14 {
+        assert(crockford()[14] == b'e');
+    } else if d == 15 {
+        assert(crockford()[15] == b'f');
+    } else if d == 16 {
+        assert(crockford()[16] == b'g');
+    } else if d == 17 {
+        assert(crockford()[17] == b'h');
+    } else if d == 18 {
+        assert(crockford()[18] == b'j');
+    } else if d == 19 {
+        assert(crockford()[19] == b'k');
+    } else if d == 20 {
+        assert(crockford()[20] == b'm');
+    } else if d == 21 {
+        assert(crockford()[21] == b'n');
+    } else if d == 22 {
+        assert(crockford()[22] == b'p');
+    } else if d == 23 {
+        assert(crockford()[23] == b'q');
+    } else if d == 24 {
+        assert(crockford()[24] == b'r');
+    } else if d == 25 {
+        assert(crockford()[25] == b's');
+    } else if d == 26 {
+        assert(crockford()[26] == b't');
+    } else if d == 27 {
+        assert(crockford()[27] == b'v');
+    } else if d == 28 {
+        assert(crockford()[28] == b'w');
+    } else if d == 29 {
+        assert(crockford()[29] == b'x');
+    } else if d == 30 {
+        assert(crockford()[30] == b'y');
+    } else if d == 31 {
+        assert(crockford()[31] == b'z');
+    }
+}
+
+/// Bit `k` of `b`, most significant bit of `b[0]` first; 0 past the end.
+pub open spec fn bit(b: Seq<u8>, k: int) -> int {
+    if 0 <= k < b.len() * 8 {
+        ((b[k / 8] >> ((7 - k % 8) as u8)) & 1u8) as int
+    } else {
+        0
+    }
+}
+
+/// Five-bit group `i` of `b`, zero-padded past the end.
+pub open spec fn group(b: Seq<u8>, i: int) -> int {
+    16 * bit(b, 5 * i) + 8 * bit(b, 5 * i + 1) + 4 * bit(b, 5 * i + 2) + 2 * bit(b, 5 * i + 3) + bit(b, 5 * i + 4)
+}
+
+/// The first `j` bits of group `i`, as a number.
+pub open spec fn partial(b: Seq<u8>, i: int, j: int) -> int
+    decreases j,
+{
+    if j <= 0 { 0 } else { 2 * partial(b, i, j - 1) + bit(b, 5 * i + j - 1) }
+}
+
+/// The 16 big-endian bytes of `v`.
+pub open spec fn be_bytes(v: u128) -> Seq<u8> {
+    Seq::new(16, |q: int| ((v >> ((120 - 8 * q) as u128)) & 0xff) as u8)
 }
 
 /// Whether `c` is a lowercase Crockford character: `0-9` and `a-z` without
@@ -71,10 +176,13 @@ pub open spec fn lex_lt(x: Seq<u8>, y: Seq<u8>) -> bool {
 #[cfg_attr(feature = "verus", verus_verify)]
 #[cfg_attr(feature = "verus", verus_spec(r =>
     requires d < 32,
-    ensures r as int == alpha(d as int), is_crockford(r),
+    ensures r as int == alpha(d as int), r == crockford()[d as int], is_crockford(r),
 ))]
 #[must_use]
 pub const fn digit_char(d: u8) -> u8 {
+    proof! {
+        lemma_alpha_table(d as int);
+    }
     if d < 10 {
         b'0' + d
     } else if d < 18 {
@@ -136,49 +244,77 @@ pub fn encode_u128(v: u128) -> [u8; 26] {
     requires bytes@.len() * 8 + 4 <= usize::MAX,
     ensures
         r@.len() == (bytes@.len() * 8 + 4) / 5,
+        forall|i: int| 0 <= i < r@.len() ==> (#[trigger] r@[i]) == crockford()[group(bytes@, i)],
         forall|i: int| 0 <= i < r@.len() ==> is_crockford(#[trigger] r@[i]),
 ))]
 #[must_use]
 pub fn encode(bytes: &[u8]) -> Vec<u8> {
-    let mut out = Vec::with_capacity(bytes.len() * 8 / 5 + 1);
-    let (mut acc, mut bits) = (0u32, 0u32);
-    let mut n: usize = 0;
+    let total = bytes.len() * 8;
+    let len = (total + 4) / 5;
+    let mut out = Vec::with_capacity(len);
+    let mut i: usize = 0;
     #[cfg_attr(feature = "verus", verus_spec(
         invariant
-            n <= bytes.len(),
-            bytes@.len() * 8 + 4 <= usize::MAX,
-            bits < 5,
-            out@.len() * 5 + bits == n * 8,
-            forall|j: int| 0 <= j < out@.len() ==> is_crockford(#[trigger] out@[j]),
-        decreases bytes.len() - n
+            total == bytes@.len() * 8,
+            total + 4 <= usize::MAX,
+            len == (total + 4) / 5,
+            i <= len,
+            out@.len() == i,
+            forall|j: int| 0 <= j < i ==> (#[trigger] out@[j]) == crockford()[group(bytes@, j)],
+            forall|j: int| 0 <= j < i ==> is_crockford(#[trigger] out@[j]),
+        decreases len - i
     ))]
-    while n < bytes.len() {
-        acc = (acc << 8) | bytes[n] as u32;
-        bits += 8;
-        n += 1;
+    while i < len {
+        let mut d: u8 = 0;
+        let mut j: usize = 0;
         #[cfg_attr(feature = "verus", verus_spec(
             invariant
-                bits < 13,
-                out@.len() * 5 + bits == n * 8,
-                forall|j: int| 0 <= j < out@.len() ==> is_crockford(#[trigger] out@[j]),
-            decreases bits
+                total == bytes@.len() * 8,
+                total + 4 <= usize::MAX,
+                i < len,
+                len == (total + 4) / 5,
+                j <= 5,
+                out@.len() == i,
+                forall|m: int| 0 <= m < i ==> (#[trigger] out@[m]) == crockford()[group(bytes@, m)],
+                forall|m: int| 0 <= m < i ==> is_crockford(#[trigger] out@[m]),
+                d as int == partial(bytes@, i as int, j as int),
+                (d as int) < pow2(j as nat),
+            decreases 5 - j
         ))]
-        while bits >= 5 {
-            bits -= 5;
-            let d = (acc >> bits) & 31;
+        while j < 5 {
+            let k = 5 * i + j;
+            let b: u8 = if k < total {
+                proof! {
+                    assert(k / 8 < bytes@.len());
+                }
+                let sh = (7 - k % 8) as u8;
+                let b = (bytes[k / 8] >> sh) & 1;
+                proof! {
+                    let x = bytes@[(k / 8) as int];
+                    assert(b < 2) by (bit_vector) requires b == (x >> sh) & 1u8;
+                }
+                b
+            } else {
+                0
+            };
             proof! {
-                assert(d < 32) by (bit_vector) requires d == (acc >> bits) & 31;
+                assert(b as int == bit(bytes@, k as int));
+                assert(b < 2);
+                lemma_pow2_step(j as nat);
+                reveal_with_fuel(pow2, 6);
+                assert(pow2(j as nat) <= 16);
             }
-            out.push(digit_char(d as u8));
+            d = 2 * d + b;
+            j += 1;
         }
-    }
-    if bits > 0 {
-        let pad = 5 - bits;
-        let d = (acc << pad) & 31;
         proof! {
-            assert(d < 32) by (bit_vector) requires d == (acc << pad) & 31;
+            lemma_pow2_step(4);
+            reveal_with_fuel(pow2, 6);
+            reveal_with_fuel(partial, 6);
+            assert(d as int == group(bytes@, i as int));
         }
-        out.push(digit_char(d as u8));
+        out.push(digit_char(d));
+        i += 1;
     }
     out
 }
@@ -200,6 +336,65 @@ pub proof fn lemma_order(a: u128, b: u128)
         assert(digit(a, j) == digit(b, j));
     }
     assert(encoded(a)[k] < encoded(b)[k]);
+}
+
+/// `2^n`.
+pub open spec fn pow2(n: nat) -> int
+    decreases n,
+{
+    if n == 0 { 1 } else { 2 * pow2((n - 1) as nat) }
+}
+
+proof fn lemma_pow2_step(n: nat)
+    ensures pow2(n + 1) == 2 * pow2(n), pow2(5) == 32,
+{
+    reveal_with_fuel(pow2, 6);
+}
+
+/// Bit `k` of `be_bytes(v)` is bit `127 - k` of `v`.
+proof fn lemma_be_bit(v: u128, k: int)
+    requires 0 <= k < 128,
+    ensures bit(be_bytes(v), k) == ((v >> ((127 - k) as u128)) & 1) as int,
+{
+    let q = k / 8;
+    let r = k % 8;
+    let s1 = (120 - 8 * q) as u128;
+    let s2 = (7 - r) as u128;
+    let byte = ((v >> s1) & 0xff) as u8;
+    assert(be_bytes(v)[q] == byte);
+    assert(s1 + s2 == (127 - k) as u128);
+    let x = (v >> s1) & 0xff;
+    assert(x < 256) by (bit_vector) requires x == (v >> s1) & 0xff;
+    assert(((x >> s2) & 1) == ((v >> (s1 + s2)) & 1)) by (bit_vector)
+        requires x == (v >> s1) & 0xff, s2 < 8, s1 <= 120;
+    let s2b = s2 as u8;
+    assert(((byte >> s2b) & 1u8) as u128 == (x >> s2) & 1) by (bit_vector)
+        requires byte == x as u8, x < 256, s2b as u128 == s2, s2 < 8;
+}
+
+/// Digit `i` of [`encoded`] is group `i` of the value's 16 big-endian
+/// bytes, so `encode_u128(v)` and `encode(&v.to_be_bytes())` agree.
+pub proof fn lemma_u128_is_bytes(v: u128, i: int)
+    requires 0 <= i < 26,
+    ensures digit(v, i) as int == group(be_bytes(v), i),
+{
+    assert(be_bytes(v).len() == 16);
+    if i < 25 {
+        let s = (123 - 5 * i) as u128;
+        assert(((v >> s) & 31) == 16 * ((v >> (s + 4)) & 1) + 8 * ((v >> (s + 3)) & 1) + 4 * ((v >> (s + 2)) & 1)
+            + 2 * ((v >> (s + 1)) & 1) + ((v >> s) & 1)) by (bit_vector)
+            requires s <= 123;
+        lemma_be_bit(v, 5 * i);
+        lemma_be_bit(v, 5 * i + 1);
+        lemma_be_bit(v, 5 * i + 2);
+        lemma_be_bit(v, 5 * i + 3);
+        lemma_be_bit(v, 5 * i + 4);
+    } else {
+        assert(((v & 7) << 2) == 16 * ((v >> 2u128) & 1) + 8 * ((v >> 1u128) & 1) + 4 * ((v >> 0u128) & 1)) by (bit_vector);
+        lemma_be_bit(v, 125);
+        lemma_be_bit(v, 126);
+        lemma_be_bit(v, 127);
+    }
 }
 
 /// Different values have different encodings.
@@ -272,9 +467,8 @@ mod tests {
 
     #[test]
     fn digit_char_is_the_alphabet() {
-        for d in 0..32u8 {
-            assert_eq!(digit_char(d), ALPHABET[d as usize]);
-        }
+        let table: Vec<u8> = (0..32).map(digit_char).collect();
+        assert_eq!(table, b"0123456789abcdefghjkmnpqrstvwxyz");
     }
 
     #[test]

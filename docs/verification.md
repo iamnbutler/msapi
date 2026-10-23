@@ -123,8 +123,9 @@ goes through a proven function.
 | --- | --- |
 | `base64url::encode` | equals `encode_spec`, RFC 4648 §5 written group by group |
 | `base64url::decode` | whatever it returns encodes back to its input (padding aside), and it returns `None` only when no byte string encodes to the input. So it is canonical: one encoding per byte string |
-| `base32::encode_u128` (IDs) | each character is the Crockford digit of its five bits; `a < b` implies the encoding of `a` sorts first (`lemma_order`), so string order is ID order; distinct values encode differently |
-| `base32::encode` (token secrets) | output length is `(8n + 4) / 5` and every character is Crockford |
+| `base32::encode_u128` (IDs) | each character is `crockford()[digit]`, the literal 32-character table, of its five bits; `a < b` implies the encoding of `a` sorts first (`lemma_order`), so string order is ID order; distinct values encode differently. `lemma_u128_is_bytes`: each digit equals group `i` of the value's 16 big-endian bytes, so it agrees with `encode` |
+| `base32::encode` (token secrets) | exactly `(8n + 4) / 5` characters, character `i` being `crockford()[group(bytes, i)]`: bits `5i..5i+4` of the input, most significant first, zero past the end |
+| `base32::digit_char` | equals the table `crockford()` for every digit below 32 |
 | `decimal::parse_decimal` (`Fixed` from text) | `Ok(v)` exactly when the text is `-?D+(.D+)?` with at most `dp` fraction digits and fits `i64`, and then `v` is its exact value scaled by `10^dp`; each error (`Invalid`, `TooPrecise`, `OutOfRange`) is returned exactly in its case; a string splits into whole and fraction one way only |
 | `query::percent_decode` | equals `decoded`: `+` is a space, `%XX` is that byte, anything else is itself |
 | `batch::encode_statement` | appends exactly the spec encoding when every length fits a `u32`, and refuses (appending nothing) otherwise |
