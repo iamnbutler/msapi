@@ -80,7 +80,7 @@ impl FromStr for Region {
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         Self::ALL
             .into_iter()
-            .find(|r| r.as_str().eq_ignore_ascii_case(s))
+            .find(|r| crate::ascii::eq_ignore_case(r.as_str().as_bytes(), s.as_bytes()))
             .ok_or_else(|| format!("unknown region `{s}`; expected one of gms, kms, msea, tms, jms"))
     }
 }

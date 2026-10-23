@@ -233,12 +233,12 @@ pub static CLASSES: &[Class] = &[
 
 /// Lowercases and keeps only ASCII letters and digits, so `"Night Walker"`,
 /// `"night-walker"` and `"nightwalker"` compare equal.
-fn fold(s: &str) -> String {
-    s.chars().filter(char::is_ascii_alphanumeric).map(|ch| ch.to_ascii_lowercase()).collect()
+fn fold(s: &str) -> Vec<u8> {
+    crate::ascii::fold(s.as_bytes())
 }
 
 /// Folded ID and folded name → class. Built once; 106 keys.
-static INDEX: LazyLock<foldhash::HashMap<String, &'static Class>> =
+static INDEX: LazyLock<foldhash::HashMap<Vec<u8>, &'static Class>> =
     LazyLock::new(|| CLASSES.iter().flat_map(|c| [(fold(c.id), c), (fold(c.name), c)]).collect());
 
 /// Finds a class by ID or display name, ignoring case, spaces and punctuation.

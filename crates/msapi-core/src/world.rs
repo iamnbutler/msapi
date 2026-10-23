@@ -2,6 +2,7 @@
 
 use serde::{Deserialize, Serialize};
 
+use crate::ascii::eq_ignore_case;
 use crate::region::Region;
 
 /// Which GMS data center hosts a world.
@@ -121,9 +122,10 @@ pub static WORLDS: &[World] = &[
 #[must_use]
 pub fn find(region: Region, name: &str) -> Option<&'static World> {
     let name = name.trim();
-    WORLDS
-        .iter()
-        .find(|w| w.region == region && (w.key.eq_ignore_ascii_case(name) || w.name.eq_ignore_ascii_case(name)))
+    WORLDS.iter().find(|w| {
+        w.region == region
+            && (eq_ignore_case(w.key.as_bytes(), name.as_bytes()) || eq_ignore_case(w.name.as_bytes(), name.as_bytes()))
+    })
 }
 
 /// Finds a world by its stable key.
