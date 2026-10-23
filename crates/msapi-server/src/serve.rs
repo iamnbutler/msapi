@@ -10,12 +10,13 @@ use std::thread;
 
 use tiny_http::{Header, Server};
 
+use msapi_core::api;
+
 use crate::error::ApiError;
 use crate::http::{Method, Request, Response};
 use crate::{db, durable, routes};
 
-/// The largest request body accepted.
-pub const MAX_BODY: usize = 256 * 1024;
+pub use msapi_core::api::MAX_BODY;
 
 /// How to run the server.
 #[derive(Clone, Debug)]
@@ -76,20 +77,27 @@ fn worker(server: &Server, config: &Config) -> Result<(), Box<dyn std::error::Er
 }
 
 fn read_request(incoming: &mut tiny_http::Request, trust_proxy: bool) -> Result<Request, ApiError> {
-    let mut req = Request::new(Method::parse(incoming.method().as_str()), incoming.url());
+    let mut req = Request::new(Method::parse(incoming.method().as_str().as_bytes()), incoming.url());
     req.headers = incoming
         .headers()
         .iter()
         .map(|h| (h.field.as_str().as_str().to_ascii_lowercase(), h.value.as_str().to_owned()))
         .collect();
     req.client = if trust_proxy {
-        req.header("x-forwarded-for").and_then(|v| v.split(',').next()).map(|v| v.trim().to_owned())
+        // `forwarded` cuts at an ASCII comma and trims whole characters, so
+        // the range always falls on character boundaries.
+        req.header("x-forwarded-for")
+            .and_then(|v| {
+                let (a, b) = api::forwarded(v.as_bytes());
+                v.get(a..b)
+            })
+            .map(str::to_owned)
     } else {
         None
     }
     .or_else(|| incoming.remote_addr().map(|a| a.ip().to_string()));
 
-    if incoming.body_length().is_some_and(|n| n > MAX_BODY) {
+    if incoming.body_length().is_some_and(|n| !api::body_fits(n)) {
         return Err(ApiError::too_large(MAX_BODY));
     }
     let mut body = Vec::new();
@@ -98,7 +106,7 @@ fn read_request(incoming: &mut tiny_http::Request, trust_proxy: bool) -> Result<
         .take(MAX_BODY as u64 + 1)
         .read_to_end(&mut body)
         .map_err(|e| ApiError::bad_request(format!("could not read body: {e}")))?;
-    if body.len() > MAX_BODY {
+    if !api::body_fits(body.len()) {
         return Err(ApiError::too_large(MAX_BODY));
     }
     req.body = body;

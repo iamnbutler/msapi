@@ -6,10 +6,12 @@ use serde::Serialize;
 use serde_json::{Value, json};
 
 use msapi_core::Timestamp;
+use msapi_core::api;
+use msapi_core::policy;
 
 use super::{in_list, page, token_subtree};
 use crate::audit::Ctx;
-use crate::auth::Scope;
+use crate::auth::{Scope, as_bytes};
 use crate::error::ApiError;
 use crate::http::Request;
 use crate::http::Response;
@@ -85,16 +87,16 @@ pub fn list(conn: &Connection, ctx: &Ctx, req: &Request) -> Result<Response, Api
         restrict(&mut sql, &mut args, visible);
     }
     if let Some(token_id) = req.query("token_id") {
-        if visible.as_ref().is_some_and(|v| !v.iter().any(|t| t == token_id)) {
+        if visible.as_ref().is_some_and(|v| !policy::is_member(token_id.as_bytes(), &as_bytes(v))) {
             return Err(ApiError::not_found(format!("token `{token_id}`")));
         }
-        let ids = match req.query("include_descendants") {
-            Some("true") => {
+        let ids = match api::flag(req.query("include_descendants").map(str::as_bytes)) {
+            Some(true) => {
                 let principal = crate::auth::Principal { token_id: token_id.to_owned(), ..ctx.principal.clone() };
                 token_subtree(conn, &principal)?
             }
-            None | Some("false") => vec![token_id.to_owned()],
-            Some(_) => return Err(ApiError::bad_request("include_descendants must be true or false")),
+            Some(false) => vec![token_id.to_owned()],
+            None => return Err(ApiError::bad_request("include_descendants must be true or false")),
         };
         restrict(&mut sql, &mut args, &ids);
     }
@@ -115,6 +117,6 @@ pub fn list(conn: &Connection, ctx: &Ctx, req: &Request) -> Result<Response, Api
 
     let mut stmt = conn.prepare(&sql)?;
     let events = stmt.query_map(rusqlite::params_from_iter(args), from_row)?.collect::<rusqlite::Result<Vec<_>>>()?;
-    let next = (events.len() == limit as usize).then(|| events.last().map(|e| e.id.clone())).flatten();
+    let next = api::more_pages(events.len(), limit).then(|| events.last().map(|e| e.id.clone())).flatten();
     Ok(Response::json(200, &json!({ "events": events, "next_before": next })))
 }

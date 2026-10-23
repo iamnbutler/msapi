@@ -5,55 +5,20 @@ use serde::de::DeserializeOwned;
 
 use crate::error::ApiError;
 
-/// HTTP methods the API distinguishes.
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub enum Method {
-    /// GET.
-    Get,
-    /// POST.
-    Post,
-    /// PUT.
-    Put,
-    /// PATCH.
-    Patch,
-    /// DELETE.
-    Delete,
-    /// Anything else.
-    Other,
+pub use msapi_core::api::Method;
+use msapi_core::api::{self, Word};
+
+/// A word of the API's vocabulary (a method, an action name) as text.
+#[must_use]
+pub fn word(w: Word) -> &'static str {
+    // Every word is ASCII, which the core tests check.
+    std::str::from_utf8(api::word_bytes(w)).unwrap_or("")
 }
 
-impl Method {
-    /// Parses a method name.
-    #[must_use]
-    pub fn parse(s: &str) -> Self {
-        match s {
-            "GET" | "HEAD" => Self::Get,
-            "POST" => Self::Post,
-            "PUT" => Self::Put,
-            "PATCH" => Self::Patch,
-            "DELETE" => Self::Delete,
-            _ => Self::Other,
-        }
-    }
-
-    /// The method name.
-    #[must_use]
-    pub const fn as_str(self) -> &'static str {
-        match self {
-            Self::Get => "GET",
-            Self::Post => "POST",
-            Self::Put => "PUT",
-            Self::Patch => "PATCH",
-            Self::Delete => "DELETE",
-            Self::Other => "OTHER",
-        }
-    }
-
-    /// Whether the method can change data.
-    #[must_use]
-    pub const fn is_write(self) -> bool {
-        matches!(self, Self::Post | Self::Put | Self::Patch | Self::Delete)
-    }
+/// The method name.
+#[must_use]
+pub fn method_name(m: Method) -> &'static str {
+    word(m.word())
 }
 
 /// An incoming request, already read off the socket.
@@ -106,8 +71,7 @@ impl Request {
             return Err(ApiError::bad_request("expected a JSON body"));
         }
         if let Some(ct) = self.header("content-type")
-            && !ct.starts_with("application/json")
-            && !ct.starts_with("application/merge-patch+json")
+            && !api::json_type(ct.as_bytes())
         {
             return Err(ApiError::unsupported_media_type(ct));
         }

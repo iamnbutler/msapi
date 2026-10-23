@@ -16,6 +16,7 @@ use rusqlite::{Connection, OptionalExtension, params};
 use serde::{Deserialize, Serialize};
 
 use msapi_core::Timestamp;
+use msapi_core::api;
 use msapi_core::policy::{self, AccountCheck, Link, MintRefusal, Parent};
 use msapi_core::scope;
 
@@ -62,10 +63,6 @@ impl Scope {
     pub fn as_str(self) -> &'static str {
         std::str::from_utf8(scope::scope_name(self as u16)).unwrap_or_default()
     }
-
-    const fn bit(self) -> u16 {
-        1 << self as u16
-    }
 }
 
 impl FromStr for Scope {
@@ -91,7 +88,7 @@ impl Scopes {
         Self::ALL_SET
     }
 
-    const ALL_SET: Self = Self((1 << Scope::ALL.len()) - 1);
+    const ALL_SET: Self = Self(policy::first(scope::COUNT));
 
     /// Whether `scope` is in the set.
     #[must_use]
@@ -119,7 +116,7 @@ impl Scopes {
 
 impl FromIterator<Scope> for Scopes {
     fn from_iter<I: IntoIterator<Item = Scope>>(iter: I) -> Self {
-        Self(iter.into_iter().fold(0, |acc, s| acc | s.bit()))
+        Self(iter.into_iter().fold(0, |acc, s| policy::with(acc, s as u16)))
     }
 }
 
@@ -204,16 +201,17 @@ impl Principal {
     }
 }
 
-/// Views account IDs as the byte strings `msapi_core::policy` compares.
-fn as_bytes(ids: &[String]) -> Vec<&[u8]> {
+/// Views IDs as the byte strings `msapi_core::policy` compares.
+pub(crate) fn as_bytes(ids: &[String]) -> Vec<&[u8]> {
     ids.iter().map(String::as_bytes).collect()
 }
 
 /// Resolves an `Authorization` header to a principal.
 pub fn authenticate(conn: &Connection, authorization: Option<&str>) -> Result<Principal, ApiError> {
+    // `bearer` cuts after an ASCII prefix and trims whole characters, so the
+    // range always falls on character boundaries.
     let token = authorization
-        .and_then(|h| h.strip_prefix("Bearer ").or_else(|| h.strip_prefix("bearer ")))
-        .map(str::trim)
+        .and_then(|h| api::bearer(h.as_bytes()).and_then(|(a, b)| h.get(a..b)))
         .ok_or_else(|| ApiError::unauthorized("send `Authorization: Bearer msk_…`"))?;
     let now = Timestamp::now().millis();
 
@@ -341,10 +339,10 @@ impl MintRequest {
     /// `depth` is how many delegations already sit above `parent`
     /// (0 for a root token). `owned_accounts` are the user's account IDs.
     pub fn validate(self, parent: &Principal, depth: u64, owned_accounts: &[String]) -> Result<Mint, ApiError> {
-        let label = self.label.trim().to_owned();
-        if !msapi_core::rules::length_ok(label.chars().count(), 1, 100) {
-            return Err(ApiError::invalid("label must be 1-100 characters"));
-        }
+        let label = api::name_in(self.label.as_bytes(), 1, 100)
+            .and_then(|(a, b)| self.label.get(a..b))
+            .ok_or_else(|| ApiError::invalid("label must be 1-100 characters"))?
+            .to_owned();
         // The rules themselves are in `msapi_core::policy`, checked by Verus; this
         // gathers their inputs and words their refusals.
         let owned = as_bytes(owned_accounts);

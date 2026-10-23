@@ -4,9 +4,11 @@ use rusqlite::{Connection, OptionalExtension, params};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 
-use msapi_core::{DataCenter, Region, Timestamp, WorldType, rules, world};
+use msapi_core::api::{self, AccountRefusal};
+use msapi_core::{DataCenter, Region, Timestamp, WorldType, world};
 
 use super::enum_from_sql;
+use super::opt_bytes;
 use crate::audit::{Ctx, Target, Write};
 use crate::auth::Scope;
 use crate::error::ApiError;
@@ -33,13 +35,12 @@ impl AccountInput {
                 self.region
             )));
         }
-        if self.label.as_ref().is_some_and(|l| !rules::length_ok(l.chars().count(), 0, 100)) {
-            return Err(ApiError::invalid("label must be at most 100 characters"));
-        }
-        if self.notes.as_ref().is_some_and(|n| !rules::length_ok(n.chars().count(), 0, 4000)) {
-            return Err(ApiError::invalid("notes must be at most 4000 characters"));
-        }
-        Ok(())
+        api::account_fields(opt_bytes(self.label.as_ref()), opt_bytes(self.notes.as_ref())).map_err(|refusal| {
+            match refusal {
+                AccountRefusal::LabelTooLong => ApiError::invalid("label must be at most 100 characters"),
+                AccountRefusal::NotesTooLong => ApiError::invalid("notes must be at most 4000 characters"),
+            }
+        })
     }
 }
 

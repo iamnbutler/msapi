@@ -1281,6 +1281,137 @@ mod tests {
         route(m, &segs)
     }
 
+    /// Every word, kept complete by the exhaustive match below.
+    const ALL_WORDS: [Word; 59] = [
+        Word::V1,
+        Word::Me,
+        Word::Tokens,
+        Word::Audit,
+        Word::Accounts,
+        Word::Characters,
+        Word::Stat,
+        Word::History,
+        Word::Health,
+        Word::Docs,
+        Word::Ref,
+        Word::Regions,
+        Word::Worlds,
+        Word::Classes,
+        Word::Auth,
+        Word::Passkey,
+        Word::Register,
+        Word::Login,
+        Word::Start,
+        Word::Finish,
+        Word::ItemEquipment,
+        Word::SymbolEquipment,
+        Word::HyperStat,
+        Word::Ability,
+        Word::LinkSkill,
+        Word::Vmatrix,
+        Word::Hexamatrix,
+        Word::Get,
+        Word::Head,
+        Word::Post,
+        Word::Put,
+        Word::Patch,
+        Word::Delete,
+        Word::Other,
+        Word::MeRead,
+        Word::TokenRead,
+        Word::TokenMint,
+        Word::TokenRevoke,
+        Word::AuditRead,
+        Word::AccountRead,
+        Word::AccountCreate,
+        Word::AccountUpdate,
+        Word::AccountDelete,
+        Word::CharacterRead,
+        Word::CharacterCreate,
+        Word::CharacterUpdate,
+        Word::CharacterDelete,
+        Word::StatRead,
+        Word::StatReplace,
+        Word::StatUpdate,
+        Word::UserCreate,
+        Word::SessionCreate,
+        Word::Json,
+        Word::MergePatch,
+        Word::BearerUpper,
+        Word::BearerLower,
+        Word::Https,
+        Word::True,
+        Word::False,
+    ];
+
+    #[test]
+    fn every_word_is_ascii() {
+        for w in ALL_WORDS {
+            match w {
+                Word::V1
+                | Word::Me
+                | Word::Tokens
+                | Word::Audit
+                | Word::Accounts
+                | Word::Characters
+                | Word::Stat
+                | Word::History
+                | Word::Health
+                | Word::Docs
+                | Word::Ref
+                | Word::Regions
+                | Word::Worlds
+                | Word::Classes
+                | Word::Auth
+                | Word::Passkey
+                | Word::Register
+                | Word::Login
+                | Word::Start
+                | Word::Finish
+                | Word::ItemEquipment
+                | Word::SymbolEquipment
+                | Word::HyperStat
+                | Word::Ability
+                | Word::LinkSkill
+                | Word::Vmatrix
+                | Word::Hexamatrix
+                | Word::Get
+                | Word::Head
+                | Word::Post
+                | Word::Put
+                | Word::Patch
+                | Word::Delete
+                | Word::Other
+                | Word::MeRead
+                | Word::TokenRead
+                | Word::TokenMint
+                | Word::TokenRevoke
+                | Word::AuditRead
+                | Word::AccountRead
+                | Word::AccountCreate
+                | Word::AccountUpdate
+                | Word::AccountDelete
+                | Word::CharacterRead
+                | Word::CharacterCreate
+                | Word::CharacterUpdate
+                | Word::CharacterDelete
+                | Word::StatRead
+                | Word::StatReplace
+                | Word::StatUpdate
+                | Word::UserCreate
+                | Word::SessionCreate
+                | Word::Json
+                | Word::MergePatch
+                | Word::BearerUpper
+                | Word::BearerLower
+                | Word::Https
+                | Word::True
+                | Word::False => {}
+            }
+            assert!(word_bytes(w).is_ascii(), "{w:?}");
+        }
+    }
+
     #[test]
     fn words_are_their_names() {
         for (w, s) in [

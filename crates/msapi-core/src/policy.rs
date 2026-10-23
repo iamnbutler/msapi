@@ -9,6 +9,7 @@
 #![allow(
     clippy::cast_possible_truncation,
     clippy::cast_possible_wrap,
+    clippy::cast_sign_loss,
     clippy::manual_range_contains,
     reason = "plain comparisons and casts are what Verus checks; each cast here is proven in range"
 )]
@@ -50,6 +51,43 @@ pub open spec fn subset(a: u16, b: u16) -> bool {
 #[must_use]
 pub const fn contains(set: u16, i: u16) -> bool {
     (set >> i) & 1 == 1
+}
+
+/// `set` with scope `i` added.
+#[cfg_attr(feature = "verus", verus_verify)]
+#[cfg_attr(feature = "verus", verus_spec(r =>
+    requires i < 16,
+    ensures forall|j: u16| j < 16 ==> (bit_set(r, j) <==> bit_set(set, j) || j == i),
+))]
+#[must_use]
+pub const fn with(set: u16, i: u16) -> u16 {
+    let r = set | (1u16 << i);
+    proof! {
+        assert forall|j: u16| j < 16 implies (bit_set(r, j) <==> bit_set(set, j) || j == i) by {
+            assert(((set | (1u16 << i)) >> j) & 1u16 == 1u16 <==> (set >> j) & 1u16 == 1u16 || j == i)
+                by (bit_vector) requires i < 16, j < 16;
+        }
+    }
+    r
+}
+
+/// The set of the first `n` scopes: every scope, when `n` is how many there
+/// are.
+#[cfg_attr(feature = "verus", verus_verify)]
+#[cfg_attr(feature = "verus", verus_spec(r =>
+    requires n < 16,
+    ensures forall|j: u16| j < 16 ==> (bit_set(r, j) <==> j < n),
+))]
+#[must_use]
+pub const fn first(n: u16) -> u16 {
+    proof! { assert(1u16 << n >= 1u16) by (bit_vector) requires n < 16; }
+    let r = (1u16 << n) - 1;
+    proof! {
+        assert forall|j: u16| j < 16 implies (bit_set(r, j) <==> j < n) by {
+            assert(((((1u16 << n) - 1u16) as u16) >> j) & 1u16 == 1u16 <==> j < n) by (bit_vector) requires n < 16, j < 16;
+        }
+    }
+    r
 }
 
 /// The scopes in `a` that are not in `b`. Empty exactly when `a ⊆ b`.
@@ -415,6 +453,51 @@ pub fn chain_expiry(chain: &[Link], now: i64) -> Option<Option<i64>> {
 #[must_use]
 pub const fn next_id(last: u128, candidate: u128) -> u128 {
     if candidate > last { candidate } else { last.saturating_add(1) }
+}
+
+/// An ID candidate: the clock's low 48 bits of milliseconds (0 before the
+/// epoch) above 80 random bits.
+#[cfg_attr(feature = "verus", verus_verify)]
+#[cfg_attr(feature = "verus", verus_spec(r =>
+    requires rand < 0x1_0000_0000_0000_0000_0000u128,
+    ensures r == (if ms < 0 { 0 } else { ms as int % 0x1_0000_0000_0000 }) * 0x1_0000_0000_0000_0000_0000 + rand,
+))]
+#[must_use]
+pub const fn id_candidate(ms: i64, rand: u128) -> u128 {
+    let m: u64 = if ms < 0 { 0 } else { (ms as u64) & 0xffff_ffff_ffff };
+    proof! {
+        assert(m as int == if ms < 0 { 0 } else { ms as int % 0x1_0000_0000_0000 }) by {
+            if ms >= 0 {
+                let u = ms as u64;
+                assert(u & 0xffff_ffff_ffffu64 == u % 0x1_0000_0000_0000u64) by (bit_vector);
+            }
+        }
+    }
+    let wide = m as u128;
+    let r = (wide << 80) | rand;
+    proof! {
+        assert(wide < 0x1_0000_0000_0000u128);
+        assert((wide << 80) | rand == wide * 0x1_0000_0000_0000_0000_0000u128 + rand)
+            by (bit_vector) requires wide < 0x1_0000_0000_0000u128, rand < 0x1_0000_0000_0000_0000_0000u128;
+    }
+    r
+}
+
+/// The changeset log's next sequence number after `seq`.
+#[cfg_attr(feature = "verus", verus_verify)]
+#[cfg_attr(feature = "verus", verus_spec(r => ensures r == (if seq < u64::MAX { seq + 1 } else { seq as int }) as u64))]
+#[must_use]
+pub const fn next_seq(seq: u64) -> u64 {
+    if seq < u64::MAX { seq + 1 } else { seq }
+}
+
+/// Whether the log at `seq`, last snapshotted at `snapshot`, is due another
+/// snapshot: `every` batches or more since.
+#[cfg_attr(feature = "verus", verus_verify)]
+#[cfg_attr(feature = "verus", verus_spec(r => ensures r == (seq >= snapshot + every)))]
+#[must_use]
+pub const fn snapshot_due(seq: u64, snapshot: u64, every: u64) -> bool {
+    seq >= snapshot && seq - snapshot >= every
 }
 
 /// A page size from the `limit` query parameter: 50 when absent, else 1-200.
