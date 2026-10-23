@@ -100,12 +100,12 @@ fn record(conn: &mut Connection, ctx: &Ctx, id: &str, mut window: StatWindow) ->
     let write = Write::begin(conn, ctx)?;
     let snapshot_id = crate::ids::new_id("sts");
     let event_id = Write::reserve_event_id();
-    write.tx().execute(
+    write.execute(
         "INSERT INTO stat_snapshots (id, character_id, captured_at, recorded_at, event_id, data)
          VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
         params![snapshot_id, id, captured_at.millis(), now.millis(), event_id, data],
     )?;
-    write.tx().execute("UPDATE characters SET updated_at = ?2 WHERE id = ?1", params![id, now.millis()])?;
+    write.execute("UPDATE characters SET updated_at = ?2 WHERE id = ?1", params![id, now.millis()])?;
     write.commit(Some(event_id.clone()), Target { kind: "character", id }, before.as_ref(), Some(&window))?;
 
     let snapshot = Snapshot { id: snapshot_id, character_id: id.to_owned(), recorded_at: now, event_id, stat: window };

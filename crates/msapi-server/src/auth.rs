@@ -280,15 +280,14 @@ pub fn authenticate(conn: &Connection, authorization: Option<&str>) -> Result<Pr
 /// will mint root tokens the same way.
 pub fn create_user(conn: &mut Connection, display_name: &str) -> rusqlite::Result<(String, String)> {
     let tx = crate::durable::Logged::begin(conn)?;
-    let tx_conn = tx.conn();
     let now = Timestamp::now().millis();
     let user_id = ids::new_id("usr");
-    tx_conn.execute(
+    tx.execute(
         "INSERT INTO users (id, display_name, created_at) VALUES (?1, ?2, ?3)",
         params![user_id, display_name, now],
     )?;
     let token = ids::new_token_secret();
-    tx_conn.execute(
+    tx.execute(
         "INSERT INTO tokens (id, user_id, parent_id, label, scopes, account_ids, secret_hash, created_at, expires_at)
          VALUES (?1, ?2, NULL, 'root', ?3, NULL, ?4, ?5, NULL)",
         params![ids::new_id("tok"), user_id, Scopes::all().to_string(), ids::hash_token(&token), now],

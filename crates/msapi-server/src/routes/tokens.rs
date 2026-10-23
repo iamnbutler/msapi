@@ -133,7 +133,7 @@ pub fn mint(conn: &mut Connection, ctx: &Ctx, req: &Request) -> Result<Response,
     let secret = ids::new_token_secret();
     let id = ids::new_id("tok");
     let write = Write::begin(conn, ctx)?;
-    write.tx().execute(
+    write.execute(
         "INSERT INTO tokens (id, user_id, parent_id, label, scopes, account_ids, secret_hash, created_at, expires_at)
          VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
         params![
@@ -176,19 +176,18 @@ pub fn revoke(conn: &mut Connection, ctx: &Ctx, id: &str) -> Result<Response, Ap
     let now = Timestamp::now().millis();
 
     let write = Write::begin(conn, ctx)?;
-    let revoked: Vec<String> = {
-        let mut stmt = write.tx().prepare(
-            "WITH RECURSIVE sub(id) AS (
-                 SELECT id FROM tokens WHERE id = ?1
-                 UNION ALL
-                 SELECT t.id FROM tokens t JOIN sub ON t.parent_id = sub.id
-             )
-             UPDATE tokens SET revoked_at = ?2
-             WHERE id IN (SELECT id FROM sub) AND revoked_at IS NULL
-             RETURNING id",
-        )?;
-        stmt.query_map(params![id, now], |r| r.get(0))?.collect::<rusqlite::Result<_>>()?
-    };
+    let revoked: Vec<String> = write.query_map(
+        "WITH RECURSIVE sub(id) AS (
+             SELECT id FROM tokens WHERE id = ?1
+             UNION ALL
+             SELECT t.id FROM tokens t JOIN sub ON t.parent_id = sub.id
+         )
+         UPDATE tokens SET revoked_at = ?2
+         WHERE id IN (SELECT id FROM sub) AND revoked_at IS NULL
+         RETURNING id",
+        params![id, now],
+        |r| r.get(0),
+    )?;
     let after = json!({ "revoked": revoked });
     write.commit(None, Target { kind: "token", id }, Some(&before), Some(&after))?;
     Ok(Response::json(200, &after))

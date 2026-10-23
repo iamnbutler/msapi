@@ -270,7 +270,7 @@ pub fn create(conn: &mut Connection, ctx: &Ctx, req: &Request, account_id: &str)
     let now = Timestamp::now().millis();
 
     let write = Write::begin(conn, ctx)?;
-    let inserted = write.tx().execute(
+    let inserted = write.execute(
         "INSERT INTO characters (id, user_id, account_id, character_name, name_key, world_key, class_id, class_level,
              level, exp, exp_rate, gender, guild_name, popularity, liberation, image_url, notes, created_at, updated_at)
          VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?18)",
@@ -316,7 +316,7 @@ pub fn update(conn: &mut Connection, ctx: &Ctx, req: &Request, id: &str) -> Resu
         .validate(before.region)?;
 
     let write = Write::begin(conn, ctx)?;
-    let updated = write.tx().execute(
+    let updated = write.execute(
         "UPDATE characters SET character_name = ?2, name_key = ?3, world_key = ?4, class_id = ?5, class_level = ?6,
              level = ?7, exp = ?8, exp_rate = ?9, gender = ?10, guild_name = ?11, popularity = ?12, liberation = ?13,
              image_url = ?14, notes = ?15, updated_at = ?16
@@ -354,7 +354,7 @@ pub fn delete(conn: &mut Connection, ctx: &Ctx, id: &str) -> Result<Response, Ap
     ctx.principal.require(Scope::Delete)?;
     let before = find(conn, &ctx.principal, id)?;
     let write = Write::begin(conn, ctx)?;
-    write.tx().execute("DELETE FROM characters WHERE id = ?1", [id])?;
+    write.execute("DELETE FROM characters WHERE id = ?1", params![id])?;
     write.commit(None, Target { kind: "character", id }, Some(&before), None::<&()>)?;
     Ok(Response::no_content())
 }

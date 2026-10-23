@@ -173,7 +173,7 @@ pub fn create(conn: &mut Connection, ctx: &Ctx, req: &Request) -> Result<Respons
     let id = ids::new_id("acc");
     let now = Timestamp::now().millis();
     let write = Write::begin(conn, ctx)?;
-    write.tx().execute(
+    write.execute(
         "INSERT INTO accounts (id, user_id, region, label, notes, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?6)",
         params![id, ctx.principal.user_id, input.region.as_str(), input.label, input.notes, now],
     )?;
@@ -196,7 +196,7 @@ pub fn update(conn: &mut Connection, ctx: &Ctx, req: &Request, id: &str) -> Resu
     input.validate()?;
 
     let write = Write::begin(conn, ctx)?;
-    write.tx().execute(
+    write.execute(
         "UPDATE accounts SET label = ?2, notes = ?3, updated_at = ?4 WHERE id = ?1",
         params![id, input.label, input.notes, Timestamp::now().millis()],
     )?;
@@ -210,7 +210,7 @@ pub fn delete(conn: &mut Connection, ctx: &Ctx, id: &str) -> Result<Response, Ap
     ctx.principal.require(Scope::Delete)?;
     let before = load(conn, ctx, id)?;
     let write = Write::begin(conn, ctx)?;
-    write.tx().execute("DELETE FROM accounts WHERE id = ?1", [id])?;
+    write.execute("DELETE FROM accounts WHERE id = ?1", params![id])?;
     write.commit(None, Target { kind: "account", id }, Some(&before), None::<&()>)?;
     Ok(Response::no_content())
 }
