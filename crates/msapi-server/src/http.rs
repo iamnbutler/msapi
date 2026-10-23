@@ -7,22 +7,448 @@ use crate::error::ApiError;
 
 pub use msapi_core::api::Method;
 use msapi_core::api::{self, Word};
+use msapi_core::msg;
+#[cfg(feature = "verus")]
+use msapi_core::msg::lemma_boundary_after_ascii;
 use msapi_core::webauthn::bytes_eq;
 #[cfg(feature = "verus")]
 use vstd::prelude::*;
 #[cfg(feature = "verus")]
 use vstd::string::StringSliceAdditionalSpecFns;
 #[cfg(feature = "verus")]
-use vstd::utf8::encode_utf8;
+use vstd::utf8::{
+    encode_utf8, encode_utf8_valid_utf8, is_char_boundary_iff_not_is_continuation_byte,
+    is_char_boundary_start_end_of_seq,
+};
 
-/// A word of the API's vocabulary (a method, an action name) as text.
+/// A word of the API's vocabulary (a method, an action name) as text: the
+/// characters of the proven [`api::word_bytes`].
+#[cfg_attr(feature = "verus", verus_verify)]
+#[cfg_attr(feature = "verus", verus_spec(r => ensures r@ == msapi_core::msg::chars(api::word(w))))]
+#[cfg_attr(feature = "verus", verifier::rlimit(400))]
+#[allow(clippy::too_many_lines, reason = "one arm per word, each with its proof")]
 #[must_use]
 pub fn word(w: Word) -> &'static str {
-    // Every word is ASCII, which the core tests check.
-    std::str::from_utf8(api::word_bytes(w)).unwrap_or("")
+    match w {
+        Word::V1 => {
+            proof! {
+                reveal_strlit("v1");
+                assert("v1"@ =~= msapi_core::msg::chars(api::word(w)));
+            }
+            "v1"
+        }
+        Word::Me => {
+            proof! {
+                reveal_strlit("me");
+                assert("me"@ =~= msapi_core::msg::chars(api::word(w)));
+            }
+            "me"
+        }
+        Word::Tokens => {
+            proof! {
+                reveal_strlit("tokens");
+                assert("tokens"@ =~= msapi_core::msg::chars(api::word(w)));
+            }
+            "tokens"
+        }
+        Word::Audit => {
+            proof! {
+                reveal_strlit("audit");
+                assert("audit"@ =~= msapi_core::msg::chars(api::word(w)));
+            }
+            "audit"
+        }
+        Word::Accounts => {
+            proof! {
+                reveal_strlit("accounts");
+                assert("accounts"@ =~= msapi_core::msg::chars(api::word(w)));
+            }
+            "accounts"
+        }
+        Word::Characters => {
+            proof! {
+                reveal_strlit("characters");
+                assert("characters"@ =~= msapi_core::msg::chars(api::word(w)));
+            }
+            "characters"
+        }
+        Word::Stat => {
+            proof! {
+                reveal_strlit("stat");
+                assert("stat"@ =~= msapi_core::msg::chars(api::word(w)));
+            }
+            "stat"
+        }
+        Word::History => {
+            proof! {
+                reveal_strlit("history");
+                assert("history"@ =~= msapi_core::msg::chars(api::word(w)));
+            }
+            "history"
+        }
+        Word::Health => {
+            proof! {
+                reveal_strlit("health");
+                assert("health"@ =~= msapi_core::msg::chars(api::word(w)));
+            }
+            "health"
+        }
+        Word::Docs => {
+            proof! {
+                reveal_strlit("docs");
+                assert("docs"@ =~= msapi_core::msg::chars(api::word(w)));
+            }
+            "docs"
+        }
+        Word::Ref => {
+            proof! {
+                reveal_strlit("ref");
+                assert("ref"@ =~= msapi_core::msg::chars(api::word(w)));
+            }
+            "ref"
+        }
+        Word::Regions => {
+            proof! {
+                reveal_strlit("regions");
+                assert("regions"@ =~= msapi_core::msg::chars(api::word(w)));
+            }
+            "regions"
+        }
+        Word::Worlds => {
+            proof! {
+                reveal_strlit("worlds");
+                assert("worlds"@ =~= msapi_core::msg::chars(api::word(w)));
+            }
+            "worlds"
+        }
+        Word::Classes => {
+            proof! {
+                reveal_strlit("classes");
+                assert("classes"@ =~= msapi_core::msg::chars(api::word(w)));
+            }
+            "classes"
+        }
+        Word::Auth => {
+            proof! {
+                reveal_strlit("auth");
+                assert("auth"@ =~= msapi_core::msg::chars(api::word(w)));
+            }
+            "auth"
+        }
+        Word::Passkey => {
+            proof! {
+                reveal_strlit("passkey");
+                assert("passkey"@ =~= msapi_core::msg::chars(api::word(w)));
+            }
+            "passkey"
+        }
+        Word::Register => {
+            proof! {
+                reveal_strlit("register");
+                assert("register"@ =~= msapi_core::msg::chars(api::word(w)));
+            }
+            "register"
+        }
+        Word::Login => {
+            proof! {
+                reveal_strlit("login");
+                assert("login"@ =~= msapi_core::msg::chars(api::word(w)));
+            }
+            "login"
+        }
+        Word::Start => {
+            proof! {
+                reveal_strlit("start");
+                assert("start"@ =~= msapi_core::msg::chars(api::word(w)));
+            }
+            "start"
+        }
+        Word::Finish => {
+            proof! {
+                reveal_strlit("finish");
+                assert("finish"@ =~= msapi_core::msg::chars(api::word(w)));
+            }
+            "finish"
+        }
+        Word::ItemEquipment => {
+            proof! {
+                reveal_strlit("item-equipment");
+                assert("item-equipment"@ =~= msapi_core::msg::chars(api::word(w)));
+            }
+            "item-equipment"
+        }
+        Word::SymbolEquipment => {
+            proof! {
+                reveal_strlit("symbol-equipment");
+                assert("symbol-equipment"@ =~= msapi_core::msg::chars(api::word(w)));
+            }
+            "symbol-equipment"
+        }
+        Word::HyperStat => {
+            proof! {
+                reveal_strlit("hyper-stat");
+                assert("hyper-stat"@ =~= msapi_core::msg::chars(api::word(w)));
+            }
+            "hyper-stat"
+        }
+        Word::Ability => {
+            proof! {
+                reveal_strlit("ability");
+                assert("ability"@ =~= msapi_core::msg::chars(api::word(w)));
+            }
+            "ability"
+        }
+        Word::LinkSkill => {
+            proof! {
+                reveal_strlit("link-skill");
+                assert("link-skill"@ =~= msapi_core::msg::chars(api::word(w)));
+            }
+            "link-skill"
+        }
+        Word::Vmatrix => {
+            proof! {
+                reveal_strlit("vmatrix");
+                assert("vmatrix"@ =~= msapi_core::msg::chars(api::word(w)));
+            }
+            "vmatrix"
+        }
+        Word::Hexamatrix => {
+            proof! {
+                reveal_strlit("hexamatrix");
+                assert("hexamatrix"@ =~= msapi_core::msg::chars(api::word(w)));
+            }
+            "hexamatrix"
+        }
+        Word::Get => {
+            proof! {
+                reveal_strlit("GET");
+                assert("GET"@ =~= msapi_core::msg::chars(api::word(w)));
+            }
+            "GET"
+        }
+        Word::Head => {
+            proof! {
+                reveal_strlit("HEAD");
+                assert("HEAD"@ =~= msapi_core::msg::chars(api::word(w)));
+            }
+            "HEAD"
+        }
+        Word::Post => {
+            proof! {
+                reveal_strlit("POST");
+                assert("POST"@ =~= msapi_core::msg::chars(api::word(w)));
+            }
+            "POST"
+        }
+        Word::Put => {
+            proof! {
+                reveal_strlit("PUT");
+                assert("PUT"@ =~= msapi_core::msg::chars(api::word(w)));
+            }
+            "PUT"
+        }
+        Word::Patch => {
+            proof! {
+                reveal_strlit("PATCH");
+                assert("PATCH"@ =~= msapi_core::msg::chars(api::word(w)));
+            }
+            "PATCH"
+        }
+        Word::Delete => {
+            proof! {
+                reveal_strlit("DELETE");
+                assert("DELETE"@ =~= msapi_core::msg::chars(api::word(w)));
+            }
+            "DELETE"
+        }
+        Word::Other => {
+            proof! {
+                reveal_strlit("OTHER");
+                assert("OTHER"@ =~= msapi_core::msg::chars(api::word(w)));
+            }
+            "OTHER"
+        }
+        Word::MeRead => {
+            proof! {
+                reveal_strlit("me.read");
+                assert("me.read"@ =~= msapi_core::msg::chars(api::word(w)));
+            }
+            "me.read"
+        }
+        Word::TokenRead => {
+            proof! {
+                reveal_strlit("token.read");
+                assert("token.read"@ =~= msapi_core::msg::chars(api::word(w)));
+            }
+            "token.read"
+        }
+        Word::TokenMint => {
+            proof! {
+                reveal_strlit("token.mint");
+                assert("token.mint"@ =~= msapi_core::msg::chars(api::word(w)));
+            }
+            "token.mint"
+        }
+        Word::TokenRevoke => {
+            proof! {
+                reveal_strlit("token.revoke");
+                assert("token.revoke"@ =~= msapi_core::msg::chars(api::word(w)));
+            }
+            "token.revoke"
+        }
+        Word::AuditRead => {
+            proof! {
+                reveal_strlit("audit.read");
+                assert("audit.read"@ =~= msapi_core::msg::chars(api::word(w)));
+            }
+            "audit.read"
+        }
+        Word::AccountRead => {
+            proof! {
+                reveal_strlit("account.read");
+                assert("account.read"@ =~= msapi_core::msg::chars(api::word(w)));
+            }
+            "account.read"
+        }
+        Word::AccountCreate => {
+            proof! {
+                reveal_strlit("account.create");
+                assert("account.create"@ =~= msapi_core::msg::chars(api::word(w)));
+            }
+            "account.create"
+        }
+        Word::AccountUpdate => {
+            proof! {
+                reveal_strlit("account.update");
+                assert("account.update"@ =~= msapi_core::msg::chars(api::word(w)));
+            }
+            "account.update"
+        }
+        Word::AccountDelete => {
+            proof! {
+                reveal_strlit("account.delete");
+                assert("account.delete"@ =~= msapi_core::msg::chars(api::word(w)));
+            }
+            "account.delete"
+        }
+        Word::CharacterRead => {
+            proof! {
+                reveal_strlit("character.read");
+                assert("character.read"@ =~= msapi_core::msg::chars(api::word(w)));
+            }
+            "character.read"
+        }
+        Word::CharacterCreate => {
+            proof! {
+                reveal_strlit("character.create");
+                assert("character.create"@ =~= msapi_core::msg::chars(api::word(w)));
+            }
+            "character.create"
+        }
+        Word::CharacterUpdate => {
+            proof! {
+                reveal_strlit("character.update");
+                assert("character.update"@ =~= msapi_core::msg::chars(api::word(w)));
+            }
+            "character.update"
+        }
+        Word::CharacterDelete => {
+            proof! {
+                reveal_strlit("character.delete");
+                assert("character.delete"@ =~= msapi_core::msg::chars(api::word(w)));
+            }
+            "character.delete"
+        }
+        Word::StatRead => {
+            proof! {
+                reveal_strlit("stat.read");
+                assert("stat.read"@ =~= msapi_core::msg::chars(api::word(w)));
+            }
+            "stat.read"
+        }
+        Word::StatReplace => {
+            proof! {
+                reveal_strlit("stat.replace");
+                assert("stat.replace"@ =~= msapi_core::msg::chars(api::word(w)));
+            }
+            "stat.replace"
+        }
+        Word::StatUpdate => {
+            proof! {
+                reveal_strlit("stat.update");
+                assert("stat.update"@ =~= msapi_core::msg::chars(api::word(w)));
+            }
+            "stat.update"
+        }
+        Word::UserCreate => {
+            proof! {
+                reveal_strlit("user.create");
+                assert("user.create"@ =~= msapi_core::msg::chars(api::word(w)));
+            }
+            "user.create"
+        }
+        Word::SessionCreate => {
+            proof! {
+                reveal_strlit("session.create");
+                assert("session.create"@ =~= msapi_core::msg::chars(api::word(w)));
+            }
+            "session.create"
+        }
+        Word::Json => {
+            proof! {
+                reveal_strlit("application/json");
+                assert("application/json"@ =~= msapi_core::msg::chars(api::word(w)));
+            }
+            "application/json"
+        }
+        Word::MergePatch => {
+            proof! {
+                reveal_strlit("application/merge-patch+json");
+                assert("application/merge-patch+json"@ =~= msapi_core::msg::chars(api::word(w)));
+            }
+            "application/merge-patch+json"
+        }
+        Word::BearerUpper => {
+            proof! {
+                reveal_strlit("Bearer ");
+                assert("Bearer "@ =~= msapi_core::msg::chars(api::word(w)));
+            }
+            "Bearer "
+        }
+        Word::BearerLower => {
+            proof! {
+                reveal_strlit("bearer ");
+                assert("bearer "@ =~= msapi_core::msg::chars(api::word(w)));
+            }
+            "bearer "
+        }
+        Word::Https => {
+            proof! {
+                reveal_strlit("https://");
+                assert("https://"@ =~= msapi_core::msg::chars(api::word(w)));
+            }
+            "https://"
+        }
+        Word::True => {
+            proof! {
+                reveal_strlit("true");
+                assert("true"@ =~= msapi_core::msg::chars(api::word(w)));
+            }
+            "true"
+        }
+        Word::False => {
+            proof! {
+                reveal_strlit("false");
+                assert("false"@ =~= msapi_core::msg::chars(api::word(w)));
+            }
+            "false"
+        }
+    }
 }
 
 /// The method name.
+#[cfg_attr(feature = "verus", verus_verify)]
+#[cfg_attr(feature = "verus", verus_spec(r => ensures r@ == msapi_core::msg::chars(api::word(api::method_word(m)))))]
 #[must_use]
 pub fn method_name(m: Method) -> &'static str {
     word(m.word())
@@ -50,7 +476,7 @@ impl Request {
     /// A request with no headers, query or body.
     #[must_use]
     pub fn new(method: Method, target: &str) -> Self {
-        let (path, query) = target.split_once('?').unwrap_or((target, ""));
+        let (path, query) = split_target(target);
         Self {
             method,
             path: path.to_owned(),
@@ -210,6 +636,82 @@ pub fn latin1(bytes: &[u8]) -> String {
     out
 }
 
+/// `target` split at its first `?` into path and query, as
+/// `split_once('?')` gives (the query is empty when there is no `?`).
+#[cfg_attr(feature = "verus", verus_verify)]
+#[cfg_attr(feature = "verus", verus_spec(r =>
+    ensures
+        match first_question(target.spec_bytes()) {
+            Some(i) => r.0.spec_bytes() == target.spec_bytes().subrange(0, i)
+                && r.1.spec_bytes() == target.spec_bytes().subrange(i + 1, target.spec_bytes().len() as int),
+            None => r.0 == target && r.1@.len() == 0,
+        },
+))]
+#[must_use]
+pub fn split_target(target: &str) -> (&str, &str) {
+    let b = target.as_bytes();
+    let mut i: usize = 0;
+    #[cfg_attr(feature = "verus", verus_spec(
+        invariant
+            i <= b@.len(),
+            b@ == target.spec_bytes(),
+            forall|j: int| 0 <= j < i ==> b@[j] != 63u8,
+        decreases b@.len() - i
+    ))]
+    while i < b.len() {
+        if b[i] == b'?' {
+            proof! {
+                let t = target.spec_bytes();
+                encode_utf8_valid_utf8(target@);
+                is_char_boundary_start_end_of_seq(t);
+                is_char_boundary_iff_not_is_continuation_byte(t, i as int);
+                lemma_boundary_after_ascii(t, i as int);
+                lemma_first_question(t, i as int);
+            }
+            return (msg::cut(target, 0, i), msg::cut(target, i + 1, b.len()));
+        }
+        i += 1;
+    }
+    proof! {
+        lemma_no_question(target.spec_bytes());
+        reveal_strlit("");
+    }
+    (target, "")
+}
+
+#[cfg(feature = "verus")]
+verus! {
+
+/// The index of the first `?` in `t`, if any.
+pub open spec fn first_question(t: Seq<u8>) -> Option<int> {
+    if exists|i: int| 0 <= i < t.len() && t[i] == 63u8 {
+        Some(choose|i: int| 0 <= i < t.len() && t[i] == 63u8 && forall|j: int| 0 <= j < i ==> t[j] != 63u8)
+    } else {
+        None
+    }
+}
+
+proof fn lemma_first_question(t: Seq<u8>, i: int)
+    requires 0 <= i < t.len(), t[i] == 63u8, forall|j: int| 0 <= j < i ==> t[j] != 63u8,
+    ensures first_question(t) == Some(i),
+{
+    assert(exists|k: int| 0 <= k < t.len() && t[k] == 63u8 && forall|j: int| 0 <= j < k ==> t[j] != 63u8);
+    let k = choose|k: int| 0 <= k < t.len() && t[k] == 63u8 && forall|j: int| 0 <= j < k ==> t[j] != 63u8;
+    if k < i {
+        assert(t[k] != 63u8);
+    } else if k > i {
+        assert(t[i] != 63u8);
+    }
+}
+
+proof fn lemma_no_question(t: Seq<u8>)
+    requires forall|j: int| 0 <= j < t.len() ==> t[j] != 63u8,
+    ensures first_question(t) is None,
+{
+}
+
+} // verus!
+
 /// Splits and percent-decodes a query string.
 #[must_use]
 pub fn parse_query(query: &str) -> Vec<(String, String)> {
@@ -286,6 +788,77 @@ impl Response {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn words_and_targets_match_std() {
+        use msapi_core::api::{Word, word_bytes};
+        for w in [
+            Word::V1,
+            Word::Me,
+            Word::Tokens,
+            Word::Audit,
+            Word::Accounts,
+            Word::Characters,
+            Word::Stat,
+            Word::History,
+            Word::Health,
+            Word::Docs,
+            Word::Ref,
+            Word::Regions,
+            Word::Worlds,
+            Word::Classes,
+            Word::Auth,
+            Word::Passkey,
+            Word::Register,
+            Word::Login,
+            Word::Start,
+            Word::Finish,
+            Word::ItemEquipment,
+            Word::SymbolEquipment,
+            Word::HyperStat,
+            Word::Ability,
+            Word::LinkSkill,
+            Word::Vmatrix,
+            Word::Hexamatrix,
+            Word::Get,
+            Word::Head,
+            Word::Post,
+            Word::Put,
+            Word::Patch,
+            Word::Delete,
+            Word::Other,
+            Word::MeRead,
+            Word::TokenRead,
+            Word::TokenMint,
+            Word::TokenRevoke,
+            Word::AuditRead,
+            Word::AccountRead,
+            Word::AccountCreate,
+            Word::AccountUpdate,
+            Word::AccountDelete,
+            Word::CharacterRead,
+            Word::CharacterCreate,
+            Word::CharacterUpdate,
+            Word::CharacterDelete,
+            Word::StatRead,
+            Word::StatReplace,
+            Word::StatUpdate,
+            Word::UserCreate,
+            Word::SessionCreate,
+            Word::Json,
+            Word::MergePatch,
+            Word::BearerUpper,
+            Word::BearerLower,
+            Word::Https,
+            Word::True,
+            Word::False,
+        ] {
+            assert_eq!(super::word(w).as_bytes(), word_bytes(w));
+        }
+        for t in ["/v1/a?b=c?d", "/v1/é", "/x?", "?q", ""] {
+            assert_eq!(super::split_target(t), t.split_once('?').unwrap_or((t, "")));
+        }
+    }
+
     use super::*;
 
     #[test]

@@ -33,6 +33,8 @@ use msapi_core::batch::{self, Param, Statement};
 use msapi_core::{http1, policy};
 use rusqlite::types::{ToSqlOutput, Value, ValueRef};
 use rusqlite::{Connection, Row, ToSql, params_from_iter};
+#[cfg(feature = "verus")]
+use vstd::prelude::*;
 
 /// Snapshot after this many changesets, so restores stay short.
 const SNAPSHOT_EVERY: u64 = 256;
@@ -293,8 +295,70 @@ fn fetch_state(host: &str) -> io::Result<Vec<u8>> {
 /// The frames of a `GET /state` body, as sequence numbers and bodies. A body
 /// with anything but whole frames is refused rather than replayed in part.
 fn frames(state: &[u8]) -> io::Result<Vec<(u64, &[u8])>> {
-    let frames = batch::frames(state).ok_or_else(|| bad("log state has a truncated frame"))?;
-    Ok(frames.into_iter().map(|(seq, start, end)| (seq, &state[start..end])).collect())
+    framed(state).ok_or_else(|| bad("log state has a truncated frame"))
+}
+
+#[cfg(feature = "verus")]
+verus! {
+
+/// Frames as sequence numbers and body bytes.
+pub open spec fn bodies(out: Seq<(u64, &[u8])>) -> Seq<(u64, Seq<u8>)> {
+    out.map_values(|f: (u64, &[u8])| (f.0, f.1@))
+}
+
+} // verus!
+
+/// The frames of `state`: the proven [`batch::frames`], with each body cut
+/// out of `state`.
+#[cfg_attr(feature = "verus", verus_verify)]
+#[cfg_attr(feature = "verus", verus_spec(r =>
+    ensures
+        r matches Some(out) ==> batch::enc_frames(bodies(out@)) == state@,
+        forall|fs: Seq<(u64, Seq<u8>)>| #[trigger] batch::enc_frames(fs) == state@
+            ==> (r matches Some(out) && bodies(out@) == fs),
+))]
+fn framed(state: &[u8]) -> Option<Vec<(u64, &[u8])>> {
+    let found = batch::frames(state)?;
+    let mut out: Vec<(u64, &[u8])> = Vec::new();
+    let mut i: usize = 0;
+    #[cfg_attr(feature = "verus", verus_spec(
+        invariant
+            i <= found@.len(),
+            out@.len() == i,
+            forall|j: int| 0 <= j < found@.len() ==> {
+                let f = #[trigger] found@[j];
+                f.1 <= f.2 <= state@.len()
+            },
+            bodies(out@) =~= batch::frames_view(state@, found@).subrange(0, i as int),
+        decreases found@.len() - i
+    ))]
+    while i < found.len() {
+        let (seq, start, end) = found[i];
+        proof_decl! {
+            let ghost before = out@;
+        }
+        let body = &state[start..end];
+        out.push((seq, body));
+        proof! {
+            assert(body@ == state@.subrange(start as int, end as int));
+            assert(batch::frames_view(state@, found@)[i as int] == (seq, state@.subrange(start as int, end as int)));
+            assert(out@ == before.push((seq, body)));
+            assert(bodies(before) =~= batch::frames_view(state@, found@).subrange(0, i as int));
+            let fv = batch::frames_view(state@, found@);
+            assert forall|j: int| 0 <= j < i + 1 implies #[trigger] bodies(out@)[j] == fv.subrange(0, i + 1)[j] by {
+                if j < i {
+                    assert(out@[j] == before[j]);
+                    assert(bodies(before)[j] == fv.subrange(0, i as int)[j]);
+                }
+            }
+            assert(bodies(out@) =~= fv.subrange(0, i + 1));
+        }
+        i += 1;
+    }
+    proof! {
+        assert(batch::frames_view(state@, found@).subrange(0, found@.len() as int) =~= batch::frames_view(state@, found@));
+    }
+    Some(out)
 }
 
 /// A minimal HTTP/1.1 exchange: one request, `Connection: close`, and the body
