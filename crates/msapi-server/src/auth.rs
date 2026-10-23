@@ -279,7 +279,7 @@ pub fn authenticate(conn: &Connection, authorization: Option<&str>) -> Result<Pr
 /// This is the bootstrap path (`msapi user create`); passkey and GitHub sign-in
 /// will mint root tokens the same way.
 pub fn create_user(conn: &mut Connection, display_name: &str) -> rusqlite::Result<(String, String)> {
-    let tx = conn.transaction()?;
+    let tx = crate::durable::Logged::begin(conn)?;
     let now = Timestamp::now().millis();
     let user_id = ids::new_id("usr");
     tx.execute(

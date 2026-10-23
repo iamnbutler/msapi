@@ -10,7 +10,22 @@ Base URL: wherever this was served from. Every path below starts with `/v1`.
 ## Authentication
 
 Send `Authorization: Bearer msk_…` on every request except `/health`, `/v1`,
-`/v1/docs` and `/v1/ref/*`.
+`/v1/docs`, `/v1/ref/*` and `/v1/auth/*`.
+
+People get a root token by signing in with a passkey; the web app at `/` does
+this. The four calls, all `POST`, use the browser's WebAuthn JSON forms
+(`PublicKeyCredential.parseCreationOptionsFromJSON` and `credential.toJSON()`):
+
+| Path | Body | Returns |
+|---|---|---|
+| `/v1/auth/passkey/register/start` | `{"display_name": "Nate"}` | `{"publicKey": creation options}` |
+| `/v1/auth/passkey/register/finish` | `{"credential": …}` | a session (201) |
+| `/v1/auth/passkey/login/start` | `{}` | `{"publicKey": request options}` |
+| `/v1/auth/passkey/login/finish` | `{"credential": …}` | a session |
+
+A session is `{"user_id", "display_name", "token", "token_id", "expires_at"}`:
+a root token that lasts 30 days. Sign out by revoking it
+(`DELETE /v1/tokens/{token_id}`).
 
 `GET /v1/me` tells you whose token you hold, its scopes, the accounts it is
 limited to (`account_ids`, `null` meaning all) and when it expires. Call it

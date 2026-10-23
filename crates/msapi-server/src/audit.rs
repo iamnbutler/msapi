@@ -6,12 +6,13 @@
 //! records who did it, with which token, and what the data looked like before
 //! and after.
 
-use rusqlite::{Connection, Transaction, TransactionBehavior, params};
+use rusqlite::{Connection, ToSql, params};
 use serde::Serialize;
 
 use msapi_core::Timestamp;
 
 use crate::auth::Principal;
+use crate::durable::Logged;
 use crate::http::Method;
 use crate::ids;
 
@@ -45,7 +46,7 @@ pub struct Target<'a> {
 
 /// A write in progress. Commit with [`Write::commit`]; drop to roll back.
 pub struct Write<'c> {
-    tx: Transaction<'c>,
+    tx: Logged<'c>,
     ctx: &'c Ctx,
 }
 
@@ -53,13 +54,29 @@ impl<'c> Write<'c> {
     /// Starts a write. `IMMEDIATE` takes the write lock up front, so two
     /// writers queue on `busy_timeout` instead of deadlocking on upgrade.
     pub fn begin(conn: &'c mut Connection, ctx: &'c Ctx) -> rusqlite::Result<Self> {
-        Ok(Self { tx: conn.transaction_with_behavior(TransactionBehavior::Immediate)?, ctx })
+        Ok(Self { tx: Logged::begin(conn)?, ctx })
     }
 
-    /// The transaction, for the write's own statements.
+    /// The transaction, for the write's reads. Changes go through
+    /// [`Write::execute`] so they are logged.
     #[must_use]
-    pub fn tx(&self) -> &Transaction<'c> {
-        &self.tx
+    pub fn tx(&self) -> &'c Connection {
+        self.tx.conn()
+    }
+
+    /// Runs one of the write's changing statements.
+    pub fn execute(&self, sql: &str, params: &[&dyn ToSql]) -> rusqlite::Result<usize> {
+        self.tx.execute(sql, params)
+    }
+
+    /// Runs a changing statement that returns rows (`RETURNING`).
+    pub fn query_map<T>(
+        &self,
+        sql: &str,
+        params: &[&dyn ToSql],
+        f: impl FnMut(&rusqlite::Row<'_>) -> rusqlite::Result<T>,
+    ) -> rusqlite::Result<Vec<T>> {
+        self.tx.query_map(sql, params, f)
     }
 
     /// Reserves the ID the audit event will have, so rows written in this
@@ -97,7 +114,7 @@ fn to_json(value: &impl Serialize) -> Option<String> {
 }
 
 fn insert(
-    conn: &Connection,
+    tx: &Logged<'_>,
     id: &str,
     ctx: &Ctx,
     target: Option<Target<'_>>,
@@ -105,7 +122,7 @@ fn insert(
     before: Option<&str>,
     after: Option<&str>,
 ) -> rusqlite::Result<()> {
-    conn.execute(
+    tx.execute(
         "INSERT INTO audit_events
            (id, at, user_id, token_id, token_label, request_id, method, path, action,
             target_type, target_id, status, client, user_agent, before_json, after_json)
@@ -136,7 +153,11 @@ fn insert(
 /// answer too. Failures to record are logged, not returned: the caller is
 /// already returning an error.
 pub fn record_refused(conn: &Connection, ctx: &Ctx, status: u16) {
-    if let Err(err) = insert(conn, &ids::new_id("evt"), ctx, None, status, None, None) {
+    let result = Logged::begin(conn).and_then(|tx| {
+        insert(&tx, &ids::new_id("evt"), ctx, None, status, None, None)?;
+        tx.commit()
+    });
+    if let Err(err) = result {
         eprintln!("{} could not record refused write: {err}", ctx.request_id);
     }
 }

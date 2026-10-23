@@ -1,6 +1,6 @@
 # Verification
 
-`msapi-core`'s formulas and the token rules are checked by
+`msapi-core`'s formulas, the token rules and the passkey byte rules are checked by
 [Verus](https://github.com/verus-lang/verus): each function carries a
 specification, and the proof that the code meets it is machine-checked on every
 pull request (the `verify` job in `.github/workflows/ci.yml`).
@@ -68,13 +68,29 @@ the game displayed (for example a real character's 236,118 CP).
 | `next_id` | strictly greater than the last ID, and at least the time-based candidate |
 | `page_size` | 50 by default, else exactly 1-200 |
 
+### `webauthn.rs`: passkey bytes and rules
+
+| Function | Proven |
+| --- | --- |
+| `auth_data_layout` | the flags byte and the big-endian signature counter are read from offsets 32 and 33-36; the credential ID range is in bounds, starts at 55 and has the declared length when the attested flag is set, and is empty otherwise; `None` exactly when the data is shorter than its flags announce |
+| `cbor_head` | the major type, and the argument read big-endian from the 0, 1, 2, 4 or 8 bytes the initial byte declares; the content offset is in bounds; indefinite and reserved lengths are refused |
+| `counter_ok` | a sign-in counter is accepted only if it grew, or if the authenticator keeps none (both 0) |
+| `presence_ok` | sign-in requires the user-present flag |
+
 ## What is trusted
 
 These parts are not proven. They are covered by tests instead.
 
 - **I/O and parsing:** SQL queries, HTTP handling, serde, JSON merge patch,
-  `Fixed` decimal parsing, base32 encoding (its order-preservation is tested,
-  not proven).
+  `Fixed` decimal parsing, base32 and base64url encoding (tested, not proven).
+- **Passkey glue:** the recursive CBOR decoder built on `cbor_head`, COSE key
+  selection, the client-data checks (type, challenge, origin) and the
+  signature checks, which are `ring`'s. `tests/passkey.rs` drives both
+  ceremonies with a software authenticator, including replayed counters,
+  wrong origins, wrong sites and tampered signatures.
+- **Durability:** the write log (`durable.rs`) and the Worker that stores it
+  (`deploy/src/index.ts`); `tests/durable.rs` rebuilds a database from its
+  log and compares it with the original.
 - **Glue that feeds the proofs:** the one-line wrappers in `units`, `calc` and
   `stat` that unwrap unit types, and in `auth.rs` the mapping from account IDs
   to `AccountCheck { owned, reachable }`.

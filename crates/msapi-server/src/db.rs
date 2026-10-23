@@ -6,7 +6,8 @@ use std::time::Duration;
 use rusqlite::Connection;
 
 /// Migrations in order. `PRAGMA user_version` records how many have run.
-const MIGRATIONS: &[&str] = &[include_str!("../migrations/0001_init.sql")];
+const MIGRATIONS: &[&str] =
+    &[include_str!("../migrations/0001_init.sql"), include_str!("../migrations/0002_passkeys.sql")];
 
 /// Opens (creating if needed) the database at `path` and brings it up to date.
 ///

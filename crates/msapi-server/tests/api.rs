@@ -283,7 +283,7 @@ fn serves_over_a_real_socket() {
         auth::create_user(&mut conn, "socket").unwrap().1
     };
     let addr = TcpListener::bind("127.0.0.1:0").unwrap().local_addr().unwrap().to_string();
-    let config = Config { addr: addr.clone(), db: path.clone(), workers: 2, trust_proxy: false };
+    let config = Config { addr: addr.clone(), db: path.clone(), workers: 2, trust_proxy: false, log: None };
     std::thread::spawn(move || serve::run(&config));
 
     let send = |request: &str| -> String {

@@ -38,6 +38,7 @@ pub mod region;
 pub mod stat;
 pub mod time;
 pub mod units;
+pub mod webauthn;
 pub mod world;
 
 pub use character::{CharacterName, ClassLevel, Gender, Level, Liberation};

@@ -12,7 +12,7 @@ use tiny_http::{Header, Server};
 
 use crate::error::ApiError;
 use crate::http::{Method, Request, Response};
-use crate::{db, routes};
+use crate::{db, durable, routes};
 
 /// The largest request body accepted.
 pub const MAX_BODY: usize = 256 * 1024;
@@ -29,6 +29,8 @@ pub struct Config {
     /// Take the client address from `X-Forwarded-For`. Only set this behind a
     /// proxy that overwrites the header, or clients can forge it.
     pub trust_proxy: bool,
+    /// The changeset log's host, e.g. `msapi.log`; see [`durable`].
+    pub log: Option<String>,
 }
 
 /// Binds and serves until the process exits.
@@ -37,8 +39,10 @@ pub struct Config {
 ///
 /// When the address cannot be bound or the database cannot be opened.
 pub fn run(config: &Config) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    // Open once up front so migrations run before any worker starts.
-    drop(db::open(&config.db)?);
+    // Rebuild from the log if one is configured, then open once up front so
+    // migrations run (and are snapshotted) before any worker starts.
+    durable::restore(&config.db, config.log.as_deref())?;
+    durable::checkpoint(&db::open(&config.db)?)?;
     let server = Arc::new(Server::http(&config.addr)?);
     eprintln!("msapi listening on http://{} (db {})", config.addr, config.db.display());
 
