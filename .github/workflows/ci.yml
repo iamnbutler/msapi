@@ -25,3 +25,22 @@ jobs:
           count=$(cargo tree -e normal,build --prefix none --format '{p}' | sed 's/ (.*//' | sort -u | grep -v '^msapi' | wc -l)
           echo "third-party crates: $count (budget $DEPENDENCY_BUDGET)"
           test "$count" -le "$DEPENDENCY_BUDGET"
+
+  verify:
+    # Machine-checked proofs of the formulas and token rules; see docs/verification.md.
+    runs-on: ubuntu-latest
+    env:
+      VERUS_VERSION: 0.2026.10.18.7d82994
+      VERUS_TOOLCHAIN: 1.99.1
+    steps:
+      - uses: actions/checkout@v7
+      - name: install verus
+        run: |
+          curl -fsSL -o "$RUNNER_TEMP/verus.zip" \
+            "https://github.com/verus-lang/verus/releases/download/release/$VERUS_VERSION/verus-$VERUS_VERSION-x86-linux.zip"
+          unzip -q "$RUNNER_TEMP/verus.zip" -d "$RUNNER_TEMP/verus"
+          dirname "$(find "$RUNNER_TEMP/verus" -name cargo-verus -type f | head -1)" >> "$GITHUB_PATH"
+          rustup toolchain install "$VERUS_TOOLCHAIN" --profile minimal
+      - name: cargo verus verify
+        working-directory: crates/msapi-core
+        run: cargo verus verify --features verus

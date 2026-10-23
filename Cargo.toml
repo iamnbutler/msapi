@@ -18,11 +18,14 @@ rusqlite = { version = "0.40", features = ["bundled"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tiny_http = "0.12"
+# Verification only: pinned to the Verus release in CI, never in a normal build.
+vstd = "=0.0.0-2026-10-18-0147"
 
 [workspace.lints.rust]
 unsafe_code = "forbid"
 missing_docs = "deny"
 unused_must_use = "deny"
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(verus_only)', 'cfg(verus_keep_ghost)'] }
 
 [workspace.lints.clippy]
 pedantic = { level = "warn", priority = -1 }

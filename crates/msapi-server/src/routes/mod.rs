@@ -214,14 +214,9 @@ fn dispatch(conn: &mut Connection, req: &Request, request_id: &str) -> Result<Ou
 
 /// `limit` (1-200, default 50) and `before` (an ID cursor) query parameters.
 fn page(req: &Request) -> Result<(u32, Option<String>), ApiError> {
-    let limit = match req.query("limit") {
-        None => 50,
-        Some(s) => s
-            .parse::<u32>()
-            .ok()
-            .filter(|n| (1..=200).contains(n))
-            .ok_or_else(|| ApiError::bad_request("limit must be 1-200"))?,
-    };
+    // Unparseable limits become 0, which `page_size` refuses.
+    let requested = req.query("limit").map(|s| s.parse::<u64>().unwrap_or(0));
+    let limit = msapi_core::policy::page_size(requested).ok_or_else(|| ApiError::bad_request("limit must be 1-200"))?;
     Ok((limit, req.query("before").map(str::to_owned)))
 }
 

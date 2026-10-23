@@ -52,7 +52,7 @@ pub fn new_id(prefix: &str) -> String {
     let candidate = (ms << 80) | u128::from_be_bytes(rand);
     let value = {
         let mut last = LAST.lock().unwrap_or_else(PoisonError::into_inner);
-        *last = if candidate > *last { candidate } else { last.wrapping_add(1) };
+        *last = msapi_core::policy::next_id(*last, candidate);
         *last
     };
     format!("{prefix}_{}", base32(&value.to_be_bytes()))

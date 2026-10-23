@@ -52,6 +52,9 @@ agent did. Sign-in with passkeys or GitHub to obtain a root token is next.
 - **Every write is audited.** The only way to commit a transaction is through
   the audit writer.
 - **Few dependencies.** See [`docs/dependencies.md`](docs/dependencies.md).
+- **Proven formulas.** The formulas, exact-fraction arithmetic and token rules
+  are machine-checked with Verus; [`docs/verification.md`](docs/verification.md)
+  lists what is proven and what is trusted.
 
 ## Development
 
@@ -63,6 +66,7 @@ Builds go through [mbx](https://mr-boxington.jdx.dev) for a shared build cache
 cargo fmt --all --check
 cargo clippy --workspace --all-targets -- -D warnings
 cargo test --workspace
+(cd crates/msapi-core && cargo verus verify --features verus)
 ```
 
 ## License

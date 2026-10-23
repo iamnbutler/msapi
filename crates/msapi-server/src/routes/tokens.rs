@@ -128,7 +128,7 @@ pub fn mint(conn: &mut Connection, ctx: &Ctx, req: &Request) -> Result<Response,
         let mut stmt = conn.prepare("SELECT id FROM accounts WHERE user_id = ?1")?;
         stmt.query_map([&ctx.principal.user_id], |r| r.get(0))?.collect::<rusqlite::Result<_>>()?
     };
-    let mint = request.validate(&ctx.principal, depth as usize, &owned)?;
+    let mint = request.validate(&ctx.principal, u64::from(depth), &owned)?;
 
     let secret = ids::new_token_secret();
     let id = ids::new_id("tok");
