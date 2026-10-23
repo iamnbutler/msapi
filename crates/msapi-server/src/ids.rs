@@ -8,7 +8,13 @@ use msapi_core::Timestamp;
 
 const CROCKFORD: &[u8; 32] = b"0123456789abcdefghjkmnpqrstvwxyz";
 
-fn random<const N: usize>() -> [u8; N] {
+/// `N` bytes from the OS random number generator.
+///
+/// # Panics
+///
+/// If the OS has no randomness to give.
+#[must_use]
+pub fn random<const N: usize>() -> [u8; N] {
     let mut buf = [0u8; N];
     // SystemRandom reads the OS CSPRNG; failure means the OS cannot provide
     // randomness at all, and there is no safe way to continue.

@@ -38,6 +38,11 @@ impl ApiError {
         Self { status, name, message: message.into(), details: None }
     }
 
+    /// 503: try again shortly.
+    pub fn unavailable(message: impl Into<String>) -> Self {
+        Self::new(503, "unavailable", message)
+    }
+
     /// Attaches structured detail.
     #[must_use]
     pub fn with_details(mut self, details: Value) -> Self {

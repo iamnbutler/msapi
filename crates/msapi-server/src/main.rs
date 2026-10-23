@@ -8,20 +8,21 @@
 //!
 //! `MSAPI_ADDR` and `MSAPI_DB` set the defaults; `MSAPI_TRUST_PROXY=1` takes
 //! client addresses from `X-Forwarded-For`; `MSAPI_LOG=host` makes every write
-//! durable in a write log (see `msapi_server::durable`).
+//! durable in a write log (see `msapi_server::durable`); `MSAPI_RP_ID` and
+//! `MSAPI_ORIGIN` bind passkeys to the site (default `localhost`).
 
 use std::path::PathBuf;
 use std::process::ExitCode;
 
 use msapi_server::serve::{self, Config};
-use msapi_server::{auth, db};
+use msapi_server::{auth, db, passkey};
 
 const USAGE: &str = "usage:
   msapi serve [--addr ADDR] [--db PATH] [--workers N]
   msapi user create <display name> [--db PATH]
   msapi migrate [--db PATH]
 
-env: MSAPI_ADDR (default 127.0.0.1:8080), MSAPI_DB (default msapi.db), MSAPI_TRUST_PROXY=1, MSAPI_LOG=host";
+env: MSAPI_ADDR (default 127.0.0.1:8080), MSAPI_DB (default msapi.db), MSAPI_TRUST_PROXY=1, MSAPI_LOG=host,\n     MSAPI_RP_ID and MSAPI_ORIGIN (passkeys; default localhost)";
 
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
@@ -35,6 +36,9 @@ fn main() -> ExitCode {
 }
 
 fn run(args: &[String]) -> Result<(), String> {
+    if let (Ok(id), Ok(origin)) = (std::env::var("MSAPI_RP_ID"), std::env::var("MSAPI_ORIGIN")) {
+        passkey::configure(passkey::RelyingParty { id, origin });
+    }
     let mut config = Config {
         addr: std::env::var("MSAPI_ADDR").unwrap_or_else(|_| "127.0.0.1:8080".to_owned()),
         db: std::env::var_os("MSAPI_DB").map_or_else(|| PathBuf::from("msapi.db"), PathBuf::from),

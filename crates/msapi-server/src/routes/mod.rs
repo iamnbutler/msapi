@@ -187,6 +187,9 @@ fn dispatch(conn: &mut Connection, req: &Request, request_id: &str) -> Result<Ou
     if let Some(response) = meta::public(req.method, &segments).map_err(|e| (e, None))? {
         return Ok((response, None));
     }
+    if let Some(result) = crate::passkey::handle(conn, req, request_id, &segments) {
+        return result.map(|response| (response, None)).map_err(|e| (e, None));
+    }
     let route = Route::parse(req.method, &segments)
         .map_err(|e| (e, None))?
         .ok_or_else(|| (ApiError::not_found(format!("route {}", req.path)), None))?;

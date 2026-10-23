@@ -17,5 +17,6 @@ pub mod error;
 pub mod http;
 pub mod ids;
 pub mod json;
+pub mod passkey;
 pub mod routes;
 pub mod serve;
