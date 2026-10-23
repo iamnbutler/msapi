@@ -3,7 +3,13 @@
 use serde::{Deserialize, Serialize};
 
 use crate::lookup::tagged_key;
+use crate::names::same;
+use crate::names::world::{GROUP, LEN, tag, text};
+#[cfg(feature = "verus")]
+use crate::names::world::{raw, tag_of};
 use crate::region::Region;
+#[cfg(feature = "verus")]
+use vstd::prelude::*;
 
 /// Which GMS data center hosts a world.
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug, Serialize, Deserialize)]
@@ -115,10 +121,6 @@ pub static WORLDS: &[World] = &[
 // Normal builds run it; under `verus` the ghost code is not const-evaluable.
 #[cfg(not(feature = "verus"))]
 const _: () = {
-    use crate::names::{
-        same,
-        world::{GROUP, LEN, tag, text},
-    };
     assert!(GROUP == 2 && LEN == 2 * WORLDS.len(), "run scripts/name_keys.py");
     let mut r = 0;
     while r < WORLDS.len() {
@@ -147,12 +149,102 @@ pub fn find(region: Region, name: &str) -> Option<&'static World> {
 /// Finds a world by its stable key.
 #[must_use]
 pub fn by_key(key: &str) -> Option<&'static World> {
-    WORLDS.iter().find(|w| w.key == key)
+    key_index(key.as_bytes()).and_then(|o| WORLDS.get(o))
 }
 
 /// The worlds in one region.
 pub fn in_region(region: Region) -> impl Iterator<Item = &'static World> {
-    WORLDS.iter().filter(move |w| w.region == region)
+    with_tag(region as u8).into_iter().filter_map(|o| WORLDS.get(o))
+}
+
+#[cfg(feature = "verus")]
+verus! {
+
+/// The worlds below `n` whose region has tag `t`, in table order.
+pub open spec fn tagged_below(t: u8, n: int) -> Seq<usize>
+    decreases n,
+{
+    if n <= 0 {
+        seq![]
+    } else if tag_of((n - 1) as usize) == t {
+        tagged_below(t, n - 1).push((n - 1) as usize)
+    } else {
+        tagged_below(t, n - 1)
+    }
+}
+
+} // verus!
+
+/// The position in [`WORLDS`] of the first world whose key is exactly `key`
+/// (the compile-time check above ties `WORLDS` to these texts).
+#[cfg_attr(feature = "verus", verus_verify)]
+#[cfg_attr(feature = "verus", verus_spec(r =>
+    ensures
+        match r {
+            Some(o) => o < LEN / GROUP && raw((GROUP * o) as usize) == key@
+                && forall|p: usize| p < o ==> #[trigger] raw((GROUP * p) as usize) != key@,
+            None => forall|p: usize| p < LEN / GROUP ==> #[trigger] raw((GROUP * p) as usize) != key@,
+        },
+))]
+#[must_use]
+pub fn key_index(key: &[u8]) -> Option<usize> {
+    let mut o: usize = 0;
+    #[cfg_attr(feature = "verus", verus_spec(
+        invariant
+            o <= LEN / GROUP,
+            forall|p: usize| p < o ==> #[trigger] raw((GROUP * p) as usize) != key@,
+        decreases LEN / GROUP - o
+    ))]
+    while o < LEN / GROUP {
+        if same(text(GROUP * o), key) {
+            return Some(o);
+        }
+        o += 1;
+    }
+    None
+}
+
+/// The positions in [`WORLDS`] of the worlds whose region has tag `t`, in order.
+#[cfg_attr(feature = "verus", verus_verify)]
+#[cfg_attr(feature = "verus", verus_spec(r => ensures r@ == tagged_below(t, (LEN / GROUP) as int)))]
+#[must_use]
+pub fn with_tag(t: u8) -> Vec<usize> {
+    let mut out = Vec::new();
+    let mut o: usize = 0;
+    #[cfg_attr(feature = "verus", verus_spec(
+        invariant
+            o <= LEN / GROUP,
+            out@ == tagged_below(t, o as int),
+        decreases LEN / GROUP - o
+    ))]
+    while o < LEN / GROUP {
+        if tag(o) == t {
+            out.push(o);
+        }
+        o += 1;
+    }
+    out
+}
+
+/// Whether some world's region has tag `t`.
+#[cfg_attr(feature = "verus", verus_verify)]
+#[cfg_attr(feature = "verus", verus_spec(r => ensures r == exists|o: usize| o < LEN / GROUP && #[trigger] tag_of(o) == t))]
+#[must_use]
+pub fn has_tag(t: u8) -> bool {
+    let mut o: usize = 0;
+    #[cfg_attr(feature = "verus", verus_spec(
+        invariant
+            o <= LEN / GROUP,
+            forall|p: usize| p < o ==> #[trigger] tag_of(p) != t,
+        decreases LEN / GROUP - o
+    ))]
+    while o < LEN / GROUP {
+        if tag(o) == t {
+            return true;
+        }
+        o += 1;
+    }
+    false
 }
 
 #[cfg(test)]

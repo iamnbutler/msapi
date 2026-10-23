@@ -114,29 +114,98 @@ impl<const DP: u32> Fixed<DP> {
 
     /// Zero.
     pub const ZERO: Self = Self(0);
+}
 
-    /// Builds a value from a whole number.
-    ///
-    /// ```
-    /// assert_eq!(msapi_core::Pct::from_int(40).to_string(), "40.00");
-    /// ```
-    #[must_use]
-    pub const fn from_int(n: i64) -> Self {
-        Self(n * Self::SCALE)
+#[cfg(feature = "verus")]
+verus! {
+
+/// `t` limited to the range of `i64`, as saturating arithmetic leaves it.
+pub open spec fn saturate(t: int) -> int {
+    if t > i64::MAX { i64::MAX as int } else if t < i64::MIN { i64::MIN as int } else { t }
+}
+
+// `+` and `-` saturate, which is what vstd's operator specs say.
+impl<const DP: u32> vstd::std_specs::ops::AddSpecImpl for Fixed<DP> {
+    open spec fn obeys_add_spec() -> bool {
+        true
+    }
+
+    open spec fn add_req(self, rhs: Self) -> bool {
+        true
+    }
+
+    open spec fn add_spec(self, rhs: Self) -> Self {
+        Self::of_raw(saturate(self.value() + rhs.value()) as i64)
     }
 }
 
+impl<const DP: u32> vstd::std_specs::ops::SubSpecImpl for Fixed<DP> {
+    open spec fn obeys_sub_spec() -> bool {
+        true
+    }
+
+    open spec fn sub_req(self, rhs: Self) -> bool {
+        true
+    }
+
+    open spec fn sub_spec(self, rhs: Self) -> Self {
+        Self::of_raw(saturate(self.value() - rhs.value()) as i64)
+    }
+}
+
+} // verus!
+
+/// `a + b` saturating at the ends of `i64`, written out so Verus can check it.
+#[cfg_attr(feature = "verus", verus_verify)]
+#[cfg_attr(feature = "verus", verus_spec(r => ensures r as int == saturate(a as int + b as int)))]
+const fn saturating_add(a: i64, b: i64) -> i64 {
+    let sum = a as i128 + b as i128;
+    if sum > i64::MAX as i128 {
+        i64::MAX
+    } else if sum < i64::MIN as i128 {
+        i64::MIN
+    } else {
+        #[allow(clippy::cast_possible_truncation, reason = "in range: the branches above cut off the rest")]
+        let r = sum as i64;
+        r
+    }
+}
+
+/// `a - b` saturating at the ends of `i64`, written out so Verus can check it.
+#[cfg_attr(feature = "verus", verus_verify)]
+#[cfg_attr(feature = "verus", verus_spec(r => ensures r as int == saturate(a as int - b as int)))]
+const fn saturating_sub(a: i64, b: i64) -> i64 {
+    let diff = a as i128 - b as i128;
+    if diff > i64::MAX as i128 {
+        i64::MAX
+    } else if diff < i64::MIN as i128 {
+        i64::MIN
+    } else {
+        #[allow(clippy::cast_possible_truncation, reason = "in range: the branches above cut off the rest")]
+        let r = diff as i64;
+        r
+    }
+}
+
+#[cfg_attr(feature = "verus", verus_verify)]
 impl<const DP: u32> std::ops::Add for Fixed<DP> {
     type Output = Self;
+    #[cfg_attr(feature = "verus", verus_spec(r => ensures r.value() == saturate(self.value() + rhs.value())))]
     fn add(self, rhs: Self) -> Self {
-        Self(self.0.saturating_add(rhs.0))
+        let r = Self(saturating_add(self.0, rhs.0));
+        proof! { assert(r == Self::of_raw(r.0)); }
+        r
     }
 }
 
+#[cfg_attr(feature = "verus", verus_verify)]
 impl<const DP: u32> std::ops::Sub for Fixed<DP> {
     type Output = Self;
+    #[cfg_attr(feature = "verus", verus_spec(r => ensures r.value() == saturate(self.value() - rhs.value())))]
     fn sub(self, rhs: Self) -> Self {
-        Self(self.0.saturating_sub(rhs.0))
+        let r = Self(saturating_sub(self.0, rhs.0));
+        proof! { assert(r == Self::of_raw(r.0)); }
+        r
     }
 }
 
@@ -276,7 +345,7 @@ mod tests {
     #[test]
     fn json_numbers_are_exact() {
         assert_eq!(serde_json::to_string(&Pct::from_raw(9314)).unwrap(), "93.14");
-        assert_eq!(serde_json::to_string(&Pct::from_int(100)).unwrap(), "100.00");
+        assert_eq!(serde_json::to_string(&Pct::from_raw(10_000)).unwrap(), "100.00");
         assert_eq!(serde_json::to_string(&Pct::from_raw(-5)).unwrap(), "-0.05");
         assert_eq!(serde_json::from_str::<Pct>("-0").unwrap().raw(), 0);
         assert!(serde_json::from_str::<Pct>("1e2").is_err(), "exponents are refused");

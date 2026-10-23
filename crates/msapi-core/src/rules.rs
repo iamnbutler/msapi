@@ -101,6 +101,122 @@ pub const fn next_batch_ok(last: u64, n: u64) -> bool {
     }
 }
 
+/// Longest character name any region allows, in characters.
+#[cfg_attr(feature = "verus", verus_verify)]
+pub const NAME_MAX_CHARS: usize = 13;
+
+/// Longest GMS character name, in ASCII letters and digits.
+#[cfg_attr(feature = "verus", verus_verify)]
+pub const GMS_NAME_MAX: usize = 12;
+
+/// What is wrong with a character name, if anything.
+#[cfg_attr(feature = "verus", verus_verify)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum NameCheck {
+    /// A name.
+    Ok,
+    /// No characters.
+    Empty,
+    /// More than [`NAME_MAX_CHARS`] characters.
+    TooLong,
+    /// Surrounding whitespace or a control character.
+    Untidy,
+}
+
+/// The verdict on a name of `chars` characters, `tidy` when it has no
+/// surrounding whitespace and no control characters; the first rule broken
+/// wins.
+#[cfg_attr(feature = "verus", verus_verify)]
+#[cfg_attr(feature = "verus", verus_spec(r =>
+    ensures
+        r == if chars == 0 { NameCheck::Empty }
+            else if chars > NAME_MAX_CHARS { NameCheck::TooLong }
+            else if !tidy { NameCheck::Untidy }
+            else { NameCheck::Ok },
+))]
+#[must_use]
+pub const fn name_check(chars: usize, tidy: bool) -> NameCheck {
+    if chars == 0 {
+        NameCheck::Empty
+    } else if chars > NAME_MAX_CHARS {
+        NameCheck::TooLong
+    } else if !tidy {
+        NameCheck::Untidy
+    } else {
+        NameCheck::Ok
+    }
+}
+
+/// Whether `name` is a GMS name: at most [`GMS_NAME_MAX`] bytes, every one
+/// an ASCII letter or digit.
+#[cfg_attr(feature = "verus", verus_verify)]
+#[cfg_attr(feature = "verus", verus_spec(r =>
+    ensures r == (name@.len() <= GMS_NAME_MAX && forall|i: int| 0 <= i < name@.len() ==> crate::ascii::is_alnum(#[trigger] name@[i])),
+))]
+#[must_use]
+pub const fn gms_name_ok(name: &[u8]) -> bool {
+    if name.len() > GMS_NAME_MAX {
+        return false;
+    }
+    let mut i: usize = 0;
+    #[cfg_attr(feature = "verus", verus_spec(
+        invariant
+            i <= name@.len(),
+            forall|j: int| 0 <= j < i ==> crate::ascii::is_alnum(#[trigger] name@[j]),
+        decreases name@.len() - i
+    ))]
+    while i < name.len() {
+        let b = name[i];
+        if !((b'0' <= b && b <= b'9') || (b'A' <= b && b <= b'Z') || (b'a' <= b && b <= b'z')) {
+            return false;
+        }
+        i += 1;
+    }
+    true
+}
+
+/// `v` as a `u16` when it is in `min..=max`.
+#[cfg_attr(feature = "verus", verus_verify)]
+#[cfg_attr(feature = "verus", verus_spec(r =>
+    requires 0 <= min, max <= u16::MAX,
+    ensures r == if min <= v && v <= max { Some(v as u16) } else { None },
+))]
+#[must_use]
+pub const fn bounded_u16(v: i64, min: i64, max: i64) -> Option<u16> {
+    if in_range(v, min, max) {
+        #[allow(
+            clippy::cast_possible_truncation,
+            clippy::cast_sign_loss,
+            reason = "in range: 0 <= min <= v <= max <= u16::MAX"
+        )]
+        let r = v as u16;
+        Some(r)
+    } else {
+        None
+    }
+}
+
+/// `v` as a `u8` when it is in `min..=max`.
+#[cfg_attr(feature = "verus", verus_verify)]
+#[cfg_attr(feature = "verus", verus_spec(r =>
+    requires 0 <= min, max <= u8::MAX,
+    ensures r == if min <= v && v <= max { Some(v as u8) } else { None },
+))]
+#[must_use]
+pub const fn bounded_u8(v: i64, min: i64, max: i64) -> Option<u8> {
+    if in_range(v, min, max) {
+        #[allow(
+            clippy::cast_possible_truncation,
+            clippy::cast_sign_loss,
+            reason = "in range: 0 <= min <= v <= max <= u8::MAX"
+        )]
+        let r = v as u8;
+        Some(r)
+    } else {
+        None
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

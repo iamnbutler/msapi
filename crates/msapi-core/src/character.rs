@@ -5,6 +5,7 @@ use std::fmt;
 use serde::{Deserialize, Serialize};
 
 use crate::region::Region;
+use crate::rules::{self, NameCheck};
 
 /// An in-game character name.
 ///
@@ -28,22 +29,20 @@ pub struct CharacterName(String);
 
 impl CharacterName {
     /// Longest name any region allows, in characters.
-    pub const MAX_CHARS: usize = 13;
+    pub const MAX_CHARS: usize = rules::NAME_MAX_CHARS;
 
-    /// Validates a name.
+    /// Validates a name: the verdict is [`rules::name_check`]'s.
     pub fn new(name: impl Into<String>) -> Result<Self, String> {
         let name = name.into();
-        let chars = name.chars().count();
-        if chars == 0 {
-            return Err("character name is empty".into());
+        let tidy = name.trim() == name && !name.chars().any(char::is_control);
+        match rules::name_check(name.chars().count(), tidy) {
+            NameCheck::Ok => Ok(Self(name)),
+            NameCheck::Empty => Err("character name is empty".into()),
+            NameCheck::TooLong => Err(format!("character name `{name}` is longer than {} characters", Self::MAX_CHARS)),
+            NameCheck::Untidy => {
+                Err(format!("character name `{name}` has surrounding whitespace or control characters"))
+            }
         }
-        if chars > Self::MAX_CHARS {
-            return Err(format!("character name `{name}` is longer than {} characters", Self::MAX_CHARS));
-        }
-        if name.trim() != name || name.chars().any(char::is_control) {
-            return Err(format!("character name `{name}` has surrounding whitespace or control characters"));
-        }
-        Ok(Self(name))
     }
 
     /// Applies the region's naming rules.
@@ -52,7 +51,7 @@ impl CharacterName {
     /// is enforced, since older characters predate the current one.
     pub fn check_region(&self, region: Region) -> Result<(), String> {
         match region {
-            Region::Gms if self.0.len() > 12 || !self.0.bytes().all(|b| b.is_ascii_alphanumeric()) => {
+            Region::Gms if !rules::gms_name_ok(self.0.as_bytes()) => {
                 Err(format!("`{}` is not a GMS name: GMS names are 1-12 ASCII letters and digits", self.0))
             }
             _ => Ok(()),
@@ -86,7 +85,7 @@ impl fmt::Display for CharacterName {
 }
 
 macro_rules! bounded_int {
-    ($(#[$doc:meta])* $name:ident, $ty:ty, $min:expr, $max:expr, $what:literal) => {
+    ($(#[$doc:meta])* $name:ident, $ty:ty, $bounded:ident, $min:expr, $max:expr, $what:literal) => {
         $(#[$doc])*
         #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug, Serialize, Deserialize)]
         #[serde(try_from = "i64", into = "i64")]
@@ -100,9 +99,7 @@ macro_rules! bounded_int {
 
             /// Validates a value.
             pub fn new(v: i64) -> Result<Self, String> {
-                <$ty>::try_from(v)
-                    .ok()
-                    .filter(|_| crate::rules::in_range(v, i64::from(Self::MIN), i64::from(Self::MAX)))
+                rules::$bounded(v, i64::from(Self::MIN), i64::from(Self::MAX))
                     .map(Self)
                     .ok_or_else(|| format!(concat!($what, " must be between {} and {}, got {}"), Self::MIN, Self::MAX, v))
             }
@@ -138,14 +135,14 @@ bounded_int!(
     /// assert!(Level::new(0).is_err());
     /// assert!(Level::new(301).is_err());
     /// ```
-    Level, u16, 1, 300, "level"
+    Level, u16, bounded_u16, 1, 300, "level"
 );
 
 bounded_int!(
     /// Job advancement: 0 for a beginner, then 1st through 6th job.
     ///
     /// Nexon's API calls this `character_class_level`.
-    ClassLevel, u8, 0, 6, "class level (job advancement)"
+    ClassLevel, u8, bounded_u8, 0, 6, "class level (job advancement)"
 );
 
 /// Character gender as the game records it.

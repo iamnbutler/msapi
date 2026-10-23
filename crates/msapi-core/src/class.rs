@@ -98,7 +98,7 @@ const fn row(
         secondary,
         uses_magic_attack,
         weapon_constant: Fixed::from_raw(weapon_constant_ten_thousandths),
-        mastery: WeaponMastery::new(Pct::from_int(mastery_percent)),
+        mastery: WeaponMastery::new(Pct::from_raw(mastery_percent * 100)),
         mastery_verified,
     }
 }

@@ -30,15 +30,13 @@ impl Region {
     /// Every region, in display order.
     pub const ALL: [Self; 5] = [Self::Gms, Self::Kms, Self::Msea, Self::Tms, Self::Jms];
 
-    /// The wire name, e.g. `"gms"`.
+    /// The wire name, e.g. `"gms"`: the proven text `names::region::text`
+    /// at the region's position (ASCII, so the conversion cannot fail).
     #[must_use]
     pub const fn as_str(self) -> &'static str {
-        match self {
-            Self::Gms => "gms",
-            Self::Kms => "kms",
-            Self::Msea => "msea",
-            Self::Tms => "tms",
-            Self::Jms => "jms",
+        match std::str::from_utf8(crate::names::region::text(self as usize)) {
+            Ok(s) => s,
+            Err(_) => "",
         }
     }
 
@@ -66,7 +64,7 @@ impl Region {
     /// ```
     #[must_use]
     pub fn is_supported(self) -> bool {
-        crate::world::WORLDS.iter().any(|w| w.region == self)
+        crate::world::has_tag(self as u8)
     }
 }
 
