@@ -123,7 +123,8 @@ fn sign_up_then_sign_in() {
     let mut conn = db::open_in_memory().unwrap();
     let mut device = Authenticator::new();
 
-    let (status, options) = call(&mut conn, "/v1/auth/passkey/register/start", &json!({ "display_name": "Nate" }), None);
+    let (status, options) =
+        call(&mut conn, "/v1/auth/passkey/register/start", &json!({ "display_name": "Nate" }), None);
     assert_eq!(status, 200, "{options}");
     assert_eq!(options["publicKey"]["rp"]["id"], RP_ID);
     let user_handle = b64url_decode(options["publicKey"]["user"]["id"].as_str().unwrap()).unwrap();
@@ -179,6 +180,7 @@ fn sign_up_then_sign_in() {
     // Sign-up and sign-in are in the audit log.
     let (status, audit) = call(&mut conn, "/v1/audit", &Value::Null, Some(token));
     assert_eq!(status, 200, "{audit}");
-    let actions: Vec<&str> = audit["events"].as_array().unwrap().iter().map(|e| e["action"].as_str().unwrap()).collect();
+    let actions: Vec<&str> =
+        audit["events"].as_array().unwrap().iter().map(|e| e["action"].as_str().unwrap()).collect();
     assert!(actions.contains(&"user.create") && actions.contains(&"session.create"), "{actions:?}");
 }

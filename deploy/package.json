@@ -5,11 +5,13 @@
   "scripts": {
     "deploy": "wrangler deploy",
     "types": "wrangler types --include-runtime=false",
-    "check": "tsc --noEmit"
+    "check": "tsc --noEmit",
+    "e2e": "bun e2e.ts"
   },
   "devDependencies": {
     "typescript": "5.9.3",
     "wrangler": "4.149.0",
-    "@cloudflare/workers-types": "5.20261006.1"
+    "@cloudflare/workers-types": "5.20261006.1",
+    "playwright-core": "1.56.1"
   }
 }

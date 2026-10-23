@@ -15,6 +15,8 @@ interface Env {
   ASSETS: Fetcher;
   MSAPI_RP_ID: string;
   MSAPI_ORIGIN: string;
+  /** Secret for `/__ops/*`. Unset disables those routes. */
+  OPS_TOKEN?: string;
 }
 
 const LOG_HOST = "log.internal";
@@ -27,6 +29,14 @@ const CHUNK = 1024 * 1024;
 export default {
   async fetch(request, env): Promise<Response> {
     const url = new URL(request.url);
+    if (url.pathname === "/__ops/restart" && request.method === "POST") {
+      // Stops the container; the next request boots a fresh one from the log.
+      if (!env.OPS_TOKEN || request.headers.get("authorization") !== `Bearer ${env.OPS_TOKEN}`) {
+        return new Response("forbidden", { status: 403 });
+      }
+      await env.API.getByName("main").restart();
+      return new Response(null, { status: 204 });
+    }
     if (url.pathname === "/health" || url.pathname === "/v1" || url.pathname.startsWith("/v1/")) {
       return env.API.getByName("main").fetch(request);
     }
@@ -92,6 +102,12 @@ export class Api extends DurableObject<Env> {
       if (Date.now() > deadline) throw new Error("timed out waiting for /health");
       await scheduler.wait(250);
     }
+  }
+
+  /** Destroys the running container, losing its disk. */
+  async restart(): Promise<void> {
+    const container = this.ctx.container!;
+    if (container.running) await container.destroy();
   }
 
   private meta(key: string): number {
