@@ -29,6 +29,7 @@ use serde::Deserialize;
 use serde_json::json;
 
 use msapi_core::Timestamp;
+use msapi_core::base64url;
 use msapi_core::webauthn::{self, ALGORITHMS, Cbor, PublicKey};
 
 use crate::audit::{Ctx, Target, Write};
@@ -235,8 +236,8 @@ fn register_finish(conn: &mut Connection, req: &Request, request_id: &str) -> Re
     let (object, _) =
         Cbor::decode(&attestation).ok_or_else(|| ApiError::bad_request("attestationObject is not CBOR"))?;
     let auth_data = object
-        .get_text("authData")
-        .and_then(Cbor::as_bytes)
+        .get_text(&attestation, b"authData")
+        .and_then(|v| v.as_bytes(&attestation))
         .ok_or_else(|| ApiError::bad_request("attestationObject has no authData"))?;
     let layout = check_auth_data(auth_data)?;
     if layout.flags & webauthn::ATTESTED == 0 {
@@ -247,10 +248,11 @@ fn register_finish(conn: &mut Connection, req: &Request, request_id: &str) -> Re
         return Err(ApiError::bad_request("credential id does not match the authenticator data"));
     }
     let key_bytes = &auth_data[layout.id_end..];
-    let (key, rest) =
+    let (key, end) =
         Cbor::decode(key_bytes).ok_or_else(|| ApiError::bad_request("credential public key is not CBOR"))?;
-    PublicKey::from_cose(&key).ok_or_else(|| ApiError::invalid("unsupported key type; use ES256, Ed25519 or RS256"))?;
-    let cose = &key_bytes[..key_bytes.len() - rest.len()];
+    PublicKey::from_cose(&key, key_bytes)
+        .ok_or_else(|| ApiError::invalid("unsupported key type; use ES256, Ed25519 or RS256"))?;
+    let cose = &key_bytes[..end];
 
     let now = Timestamp::now().millis();
     let session = Session::new(user_id, now);
@@ -303,7 +305,7 @@ fn login_finish(conn: &mut Connection, req: &Request, request_id: &str) -> Resul
     let mut signed = auth_data.clone();
     signed.extend_from_slice(digest(&SHA256, &client_json).as_ref());
     let (key, _) = Cbor::decode(&cose).ok_or_else(ApiError::internal)?;
-    let key = PublicKey::from_cose(&key).ok_or_else(ApiError::internal)?;
+    let key = PublicKey::from_cose(&key, &cose).ok_or_else(ApiError::internal)?;
     if !verify(&key, &signed, &sig) {
         return Err(ApiError::unauthorized("the passkey's signature does not verify"));
     }
@@ -416,39 +418,15 @@ fn is_primary_key_violation(err: &rusqlite::Error) -> bool {
     matches!(err, rusqlite::Error::SqliteFailure(e, _) if e.extended_code == rusqlite::ffi::SQLITE_CONSTRAINT_PRIMARYKEY)
 }
 
-const B64URL: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
-
 /// Base64url without padding.
 #[must_use]
 pub fn b64url(bytes: &[u8]) -> String {
-    let mut out = String::with_capacity(bytes.len().div_ceil(3) * 4);
-    for chunk in bytes.chunks(3) {
-        let n = chunk.iter().enumerate().fold(0u32, |acc, (i, b)| acc | u32::from(*b) << (16 - 8 * i));
-        for i in 0..=chunk.len() {
-            out.push(char::from(B64URL[(n >> (18 - 6 * i)) as usize & 63]));
-        }
-    }
-    out
+    base64url::encode(bytes).into_iter().map(char::from).collect()
 }
 
 /// Decodes base64url, with or without padding.
 pub fn b64url_decode(text: &str) -> Result<Vec<u8>, ApiError> {
-    let bad = || ApiError::bad_request("expected base64url");
-    let text = text.trim_end_matches('=');
-    if text.len() % 4 == 1 {
-        return Err(bad());
-    }
-    let mut out = Vec::with_capacity(text.len() * 3 / 4);
-    for chunk in text.as_bytes().chunks(4) {
-        let mut n = 0u32;
-        for (i, c) in chunk.iter().enumerate() {
-            let v = B64URL.iter().position(|b| b == c).ok_or_else(bad)?;
-            n |= u32::try_from(v).map_err(|_| bad())? << (18 - 6 * i);
-        }
-        let bytes = n.to_be_bytes();
-        out.extend_from_slice(&bytes[1..chunk.len()]);
-    }
-    Ok(out)
+    base64url::decode(text.as_bytes()).ok_or_else(|| ApiError::bad_request("expected base64url"))
 }
 
 #[cfg(test)]

@@ -12,6 +12,11 @@
     clippy::cast_lossless,
     reason = "plain casts are what Verus checks; each one here is proven in range"
 )]
+#![allow(
+    clippy::cast_possible_wrap,
+    clippy::collapsible_if,
+    reason = "the u64 to i64 casts are guarded by `<= i64::MAX`; Verus does not take let chains"
+)]
 
 #[cfg(feature = "verus")]
 use vstd::prelude::*;
@@ -218,20 +223,27 @@ proof fn lemma_pow256_bound(n: nat)
 
 /// A decoded CBOR item: the subset `WebAuthn` uses (no floats, tags or
 /// indefinite lengths).
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub enum Cbor<'a> {
+///
+/// Strings are ranges into the decoded buffer rather than borrows of it, so
+/// the decoder's bounds can be stated and proven; read them with
+/// [`Cbor::as_bytes`]. Text is not checked for UTF-8: the server only ever
+/// compares text keys against ASCII names.
+#[cfg_attr(feature = "verus", verus_verify)]
+#[derive(Debug)]
+pub enum Cbor {
     /// A non-negative integer.
     Uint(u64),
     /// A negative integer, `-1 - n`.
     Neg(u64),
-    /// A byte string.
-    Bytes(&'a [u8]),
-    /// A text string.
-    Text(&'a str),
+    /// A byte string at `data[start..end]`.
+    Bytes(usize, usize),
+    /// A text string at `data[start..end]`.
+    Text(usize, usize),
     /// An array.
-    Array(Vec<Cbor<'a>>),
-    /// A map, in encoded order.
-    Map(Vec<(Cbor<'a>, Cbor<'a>)>),
+    Array(Vec<Cbor>),
+    /// A map in encoded order: keys at even positions, each followed by its
+    /// value.
+    Map(Vec<Cbor>),
     /// `true` or `false`.
     Bool(bool),
     /// `null` or `undefined`.
@@ -239,106 +251,355 @@ pub enum Cbor<'a> {
 }
 
 /// Deepest nesting accepted; COSE keys and attestation objects need three.
-const MAX_DEPTH: u32 = 8;
+#[cfg_attr(feature = "verus", verus_verify)]
+pub const MAX_DEPTH: u32 = 8;
 
-impl<'a> Cbor<'a> {
-    /// Decodes one item at the start of `data`. Returns it and the bytes after it.
+#[cfg(feature = "verus")]
+verus! {
+
+/// Every string range in `c` lies within `lo..hi`.
+pub open spec fn within(c: Cbor, lo: int, hi: int) -> bool
+    decreases c,
+{
+    match c {
+        Cbor::Bytes(s, e) => lo <= s <= e <= hi,
+        Cbor::Text(s, e) => lo <= s <= e <= hi,
+        Cbor::Array(v) => forall|i: int| 0 <= i < v.len() ==> within(#[trigger] v@[i], lo, hi),
+        Cbor::Map(v) => forall|i: int| 0 <= i < v.len() ==> within(#[trigger] v@[i], lo, hi),
+        _ => true,
+    }
+}
+
+/// `v` is the value of one of the entries of map `c`.
+pub open spec fn entry_value(c: Cbor, v: Cbor) -> bool {
+    match c {
+        Cbor::Map(m) => exists|i: int| 0 <= i < m.len() && #[trigger] m@[i] == v,
+        _ => false,
+    }
+}
+
+/// A map's entries lie where the map does.
+proof fn lemma_map_entry(m: Vec<Cbor>, i: int, lo: int, hi: int)
+    requires within(Cbor::Map(m), lo, hi), 0 <= i < m.len(),
+    ensures within(m@[i], lo, hi),
+{
+    // Verus unfolds `within` on a constructed map only once it is matched apart.
+    if let Cbor::Map(v) = Cbor::Map(m) {
+        assert(v == m);
+        assert(within(v@[i], lo, hi));
+    }
+}
+
+/// Each entry of a map is one of its entries.
+proof fn lemma_map_value(m: Vec<Cbor>, i: int)
+    requires 0 <= i < m.len(),
+    ensures entry_value(Cbor::Map(m), m@[i]),
+{
+    if let Cbor::Map(v) = Cbor::Map(m) {
+        assert(v == m);
+        assert(v@[i] == m@[i]);
+    }
+}
+
+/// A value found in a map lies where the map does.
+proof fn lemma_within_value(c: Cbor, v: Cbor, lo: int, hi: int)
+    requires within(c, lo, hi), entry_value(c, v),
+    ensures within(v, lo, hi),
+{
+    if let Cbor::Map(m) = c {
+        let i = choose|i: int| 0 <= i < m.len() && #[trigger] m@[i] == v;
+        assert(within(m@[i], lo, hi));
+    }
+}
+
+proof fn lemma_within_widen(c: Cbor, lo: int, hi: int, lo2: int, hi2: int)
+    requires within(c, lo, hi), lo2 <= lo, hi <= hi2,
+    ensures within(c, lo2, hi2),
+    decreases c,
+{
+    match c {
+        Cbor::Array(v) => {
+            assert forall|i: int| 0 <= i < v.len() implies within(#[trigger] v@[i], lo2, hi2) by {
+                lemma_within_widen(v@[i], lo, hi, lo2, hi2);
+            }
+        },
+        Cbor::Map(v) => {
+            assert forall|i: int| 0 <= i < v.len() implies within(#[trigger] v@[i], lo2, hi2) by {
+                lemma_within_widen(v@[i], lo, hi, lo2, hi2);
+            }
+        },
+        _ => {},
+    }
+}
+
+} // verus!
+
+/// `data[start..end]`.
+#[cfg_attr(feature = "verus", verus_verify(external_body))]
+#[cfg_attr(feature = "verus", verus_spec(r =>
+    requires start <= end <= data@.len(),
+    ensures r@ == data@.subrange(start as int, end as int)
+))]
+fn slice(data: &[u8], start: usize, end: usize) -> &[u8] {
+    &data[start..end]
+}
+
+#[cfg_attr(feature = "verus", verus_verify)]
+impl Cbor {
+    /// Decodes one item at the start of `data`. Returns it and where it ends.
+    #[cfg_attr(feature = "verus", verus_verify)]
+    #[cfg_attr(feature = "verus", verus_spec(r =>
+        ensures
+            r matches Some((item, end)) ==> 0 < end <= data@.len() && within(item, 0, end as int)
+    ))]
     #[must_use]
-    pub fn decode(data: &'a [u8]) -> Option<(Self, &'a [u8])> {
-        let (item, end) = decode_at(data, 0, 0)?;
-        Some((item, &data[end..]))
+    pub fn decode(data: &[u8]) -> Option<(Self, usize)> {
+        decode_at(data, 0, 0)
     }
 
     /// The value under integer key `key` of a map.
+    #[cfg_attr(feature = "verus", verus_verify)]
+    #[cfg_attr(feature = "verus", verus_spec(r =>
+        ensures
+            r matches Some(v) ==> entry_value(*self, *v)
+    ))]
     #[must_use]
     pub fn get_int(&self, key: i64) -> Option<&Self> {
         let Self::Map(entries) = self else { return None };
-        entries.iter().find(|(k, _)| k.as_int() == Some(key)).map(|(_, v)| v)
+        let mut i: usize = 0;
+        #[cfg_attr(feature = "verus", verus_spec(
+            invariant i <= entries.len(), *self == Cbor::Map(*entries), entries@ == (*entries)@,
+            decreases entries.len() - i
+        ))]
+        while i < entries.len() && entries.len() - i >= 2 {
+            if let Some(k) = entries[i].as_int() {
+                if k == key {
+                    proof! {
+                        lemma_map_value(*entries, i + 1);
+                    }
+                    return Some(&entries[i + 1]);
+                }
+            }
+            i += 2;
+        }
+        None
     }
 
     /// The value under text key `key` of a map.
+    #[cfg_attr(feature = "verus", verus_verify)]
+    #[cfg_attr(feature = "verus", verus_spec(r =>
+        requires within(*self, 0, data@.len() as int),
+        ensures
+            r matches Some(v) ==> entry_value(*self, *v)
+    ))]
     #[must_use]
-    pub fn get_text(&self, key: &str) -> Option<&Self> {
+    pub fn get_text(&self, data: &[u8], key: &[u8]) -> Option<&Self> {
         let Self::Map(entries) = self else { return None };
-        entries.iter().find(|(k, _)| matches!(k, Self::Text(t) if *t == key)).map(|(_, v)| v)
+        let mut i: usize = 0;
+        #[cfg_attr(feature = "verus", verus_spec(
+            invariant
+                i <= entries.len(),
+                *self == Cbor::Map(*entries),
+                within(*self, 0, data@.len() as int),
+                entries@ == (*entries)@,
+            decreases entries.len() - i
+        ))]
+        while i < entries.len() && entries.len() - i >= 2 {
+            proof! {
+                lemma_map_entry(*entries, i as int, 0, data@.len() as int);
+            }
+            if let Self::Text(start, end) = entries[i] {
+                if bytes_eq(slice(data, start, end), key) {
+                    proof! {
+                        lemma_map_value(*entries, i + 1);
+                    }
+                    return Some(&entries[i + 1]);
+                }
+            }
+            i += 2;
+        }
+        None
     }
 
     /// An integer that fits an `i64`.
+    #[cfg_attr(feature = "verus", verus_verify)]
+    #[cfg_attr(feature = "verus", verus_spec(r =>
+        ensures
+            r matches Some(n) ==> match *self {
+                Cbor::Uint(u) => n as int == u as int,
+                Cbor::Neg(u) => n as int == -1 - u as int,
+                _ => false,
+            }
+    ))]
     #[must_use]
-    pub fn as_int(&self) -> Option<i64> {
+    pub const fn as_int(&self) -> Option<i64> {
         match *self {
-            Self::Uint(n) => i64::try_from(n).ok(),
-            Self::Neg(n) => i64::try_from(n).ok().map(|n| -1 - n),
+            Self::Uint(n) if n <= i64::MAX as u64 => Some(n as i64),
+            Self::Neg(n) if n <= i64::MAX as u64 => Some(-1 - n as i64),
             _ => None,
         }
     }
 
-    /// A byte string's bytes.
+    /// A byte string's bytes, from the buffer it was decoded from.
+    #[cfg_attr(feature = "verus", verus_verify)]
+    #[cfg_attr(feature = "verus", verus_spec(r =>
+        requires within(*self, 0, data@.len() as int),
+        ensures
+            r matches Some(b) ==> match *self { Cbor::Bytes(s, e) => b@ == data@.subrange(s as int, e as int), _ => false }
+    ))]
     #[must_use]
-    pub const fn as_bytes(&self) -> Option<&'a [u8]> {
+    pub fn as_bytes<'d>(&self, data: &'d [u8]) -> Option<&'d [u8]> {
         match *self {
-            Self::Bytes(b) => Some(b),
+            Self::Bytes(start, end) => Some(slice(data, start, end)),
             _ => None,
         }
     }
 }
 
-fn decode_at(data: &[u8], at: usize, depth: u32) -> Option<(Cbor<'_>, usize)> {
+/// Whether two byte strings are equal.
+#[cfg_attr(feature = "verus", verus_verify)]
+#[cfg_attr(feature = "verus", verus_spec(r => ensures r == (a@ == b@)))]
+fn bytes_eq(a: &[u8], b: &[u8]) -> bool {
+    if a.len() != b.len() {
+        return false;
+    }
+    let mut i: usize = 0;
+    #[cfg_attr(feature = "verus", verus_spec(
+        invariant
+            i <= a.len(),
+            a.len() == b.len(),
+            forall|j: int| 0 <= j < i ==> a@[j] == b@[j],
+        decreases a.len() - i
+    ))]
+    while i < a.len() {
+        if a[i] != b[i] {
+            return false;
+        }
+        i += 1;
+    }
+    proof! {
+        assert(a@ =~= b@);
+    }
+    true
+}
+
+/// Decodes the item at `data[at..]`, `depth` levels down.
+///
+/// A count can claim more items than there are bytes; each item takes at
+/// least one byte, so anything larger is malformed and refused up front.
+#[cfg_attr(feature = "verus", verus_verify)]
+#[cfg_attr(feature = "verus", verus_spec(r =>
+    requires depth <= MAX_DEPTH + 1,
+    ensures
+        r matches Some((item, end)) ==> at < end <= data@.len() && within(item, at as int, end as int),
+    decreases MAX_DEPTH + 1 - depth
+))]
+fn decode_at(data: &[u8], at: usize, depth: u32) -> Option<(Cbor, usize)> {
     if depth > MAX_DEPTH {
         return None;
     }
     let (major, arg, next) = cbor_head(data, at)?;
-    let take = |len: u64| -> Option<(&[u8], usize)> {
-        let len = usize::try_from(len).ok()?;
-        let end = next.checked_add(len)?;
-        Some((data.get(next..end)?, end))
-    };
-    // A count can claim more items than there are bytes; each item needs at
-    // least one byte, so anything larger is malformed and refused up front.
-    let count = |n: u64, per: usize| -> Option<usize> {
-        let n = usize::try_from(n).ok()?;
-        (n.checked_mul(per)? <= data.len() - next).then_some(n)
-    };
-    match major {
-        0 => Some((Cbor::Uint(arg), next)),
-        1 => Some((Cbor::Neg(arg), next)),
-        2 => take(arg).map(|(b, end)| (Cbor::Bytes(b), end)),
-        3 => take(arg).and_then(|(b, end)| Some((Cbor::Text(std::str::from_utf8(b).ok()?), end))),
-        4 => {
-            let n = count(arg, 1)?;
-            let mut items = Vec::with_capacity(n);
-            let mut at = next;
-            for _ in 0..n {
-                let (item, end) = decode_at(data, at, depth + 1)?;
-                items.push(item);
-                at = end;
-            }
-            Some((Cbor::Array(items), at))
+    let room = (data.len() - next) as u64;
+    if major == 0 {
+        Some((Cbor::Uint(arg), next))
+    } else if major == 1 {
+        Some((Cbor::Neg(arg), next))
+    } else if major == 2 || major == 3 {
+        if arg > room {
+            return None;
         }
-        5 => {
-            let n = count(arg, 2)?;
-            let mut entries = Vec::with_capacity(n);
-            let mut at = next;
-            for _ in 0..n {
-                let (key, end) = decode_at(data, at, depth + 1)?;
-                let (value, end) = decode_at(data, end, depth + 1)?;
-                entries.push((key, value));
-                at = end;
-            }
-            Some((Cbor::Map(entries), at))
+        let end = next + arg as usize;
+        let item = if major == 2 { Cbor::Bytes(next, end) } else { Cbor::Text(next, end) };
+        Some((item, end))
+    } else if major == 4 {
+        if arg > room {
+            return None;
         }
-        7 => match arg {
-            20 => Some((Cbor::Bool(false), next)),
-            21 => Some((Cbor::Bool(true), next)),
-            22 | 23 => Some((Cbor::Null, next)),
-            _ => None,
-        },
-        _ => None,
+        let n = arg as usize;
+        let mut items: Vec<Cbor> = Vec::new();
+        let mut pos = next;
+        let mut i: usize = 0;
+        #[cfg_attr(feature = "verus", verus_spec(
+            invariant
+                depth <= MAX_DEPTH,
+                at < next <= pos <= data@.len(),
+                i <= n,
+                items@.len() == i,
+                forall|j: int| 0 <= j < i ==> within(#[trigger] items@[j], at as int, pos as int),
+            decreases n - i
+        ))]
+        while i < n {
+            let (item, end) = decode_at(data, pos, depth + 1)?;
+            proof! {
+                lemma_within_widen(item, pos as int, end as int, at as int, end as int);
+                assert forall|j: int| 0 <= j < i implies within(#[trigger] items@[j], at as int, end as int) by {
+                    lemma_within_widen(items@[j], at as int, pos as int, at as int, end as int);
+                }
+            }
+            items.push(item);
+            pos = end;
+            i += 1;
+        }
+        let r = Cbor::Array(items);
+        proof! {
+            assert(within(r, at as int, pos as int));
+        }
+        Some((r, pos))
+    } else if major == 5 {
+        if arg > room / 2 {
+            return None;
+        }
+        let n = arg as usize;
+        let mut entries: Vec<Cbor> = Vec::new();
+        let mut pos = next;
+        let mut i: usize = 0;
+        #[cfg_attr(feature = "verus", verus_spec(
+            invariant
+                depth <= MAX_DEPTH,
+                at < next <= pos <= data@.len(),
+                i <= n,
+                entries@.len() == 2 * i,
+                forall|j: int| 0 <= j < 2 * i ==> within(#[trigger] entries@[j], at as int, pos as int),
+            decreases n - i
+        ))]
+        while i < n {
+            let (key, mid) = decode_at(data, pos, depth + 1)?;
+            let (value, end) = decode_at(data, mid, depth + 1)?;
+            proof! {
+                lemma_within_widen(key, pos as int, mid as int, at as int, end as int);
+                lemma_within_widen(value, mid as int, end as int, at as int, end as int);
+                assert forall|j: int| 0 <= j < 2 * i implies within(#[trigger] entries@[j], at as int, end as int) by {
+                    lemma_within_widen(entries@[j], at as int, pos as int, at as int, end as int);
+                }
+            }
+            entries.push(key);
+            entries.push(value);
+            pos = end;
+            i += 1;
+        }
+        let r = Cbor::Map(entries);
+        proof! {
+            assert(within(r, at as int, pos as int));
+        }
+        Some((r, pos))
+    } else if major == 7 {
+        if arg == 20 {
+            Some((Cbor::Bool(false), next))
+        } else if arg == 21 {
+            Some((Cbor::Bool(true), next))
+        } else if arg == 22 || arg == 23 {
+            Some((Cbor::Null, next))
+        } else {
+            None
+        }
+    } else {
+        None
     }
 }
 
 /// A credential public key, from its COSE encoding.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[cfg_attr(feature = "verus", verus_verify)]
+#[derive(Debug, PartialEq, Eq)]
 pub enum PublicKey<'a> {
     /// ES256: ECDSA on P-256 with SHA-256. The uncompressed point is `04 ‖ x ‖ y`.
     Es256 {
@@ -364,29 +625,65 @@ pub enum PublicKey<'a> {
 /// COSE algorithm numbers this server accepts, in order of preference.
 pub const ALGORITHMS: [i64; 3] = [-8, -7, -257];
 
+#[cfg_attr(feature = "verus", verus_verify)]
 impl<'a> PublicKey<'a> {
-    /// Reads a COSE key. `None` for any key type or algorithm not in
-    /// [`ALGORITHMS`], or a malformed one.
+    /// Reads a COSE key decoded from `data`. `None` for any key type or
+    /// algorithm not in [`ALGORITHMS`], or a malformed one.
+    #[cfg_attr(feature = "verus", verus_verify)]
+    #[cfg_attr(feature = "verus", verus_spec(r =>
+        requires within(*key, 0, data@.len() as int),
+        ensures
+            r matches Some(PublicKey::Es256 { x, y }) ==> x@.len() == 32 && y@.len() == 32,
+            r matches Some(PublicKey::Ed25519 { x }) ==> x@.len() == 32,
+    ))]
     #[must_use]
-    pub fn from_cose(key: &Cbor<'a>) -> Option<Self> {
-        let kty = key.get_int(1)?.as_int()?;
-        let alg = key.get_int(3)?.as_int()?;
-        let bytes = |label| key.get_int(label).and_then(Cbor::as_bytes);
-        match (kty, alg) {
+    pub fn from_cose(key: &Cbor, data: &'a [u8]) -> Option<Self> {
+        let (Some(kty), Some(alg)) = (int_at(key, 1), int_at(key, 3)) else { return None };
+        if kty == 2 && alg == -7 {
             // EC2, ES256, curve P-256.
-            (2, -7) if key.get_int(-1)?.as_int()? == 1 => {
-                let (x, y) = (bytes(-2)?, bytes(-3)?);
-                (x.len() == 32 && y.len() == 32).then_some(Self::Es256 { x, y })
+            if int_at(key, -1) != Some(1) {
+                return None;
             }
+            let (Some(x), Some(y)) = (bytes_at(key, data, -2), bytes_at(key, data, -3)) else { return None };
+            if x.len() == 32 && y.len() == 32 { Some(Self::Es256 { x, y }) } else { None }
+        } else if kty == 1 && alg == -8 {
             // OKP, EdDSA, curve Ed25519.
-            (1, -8) if key.get_int(-1)?.as_int()? == 6 => {
-                let x = bytes(-2)?;
-                (x.len() == 32).then_some(Self::Ed25519 { x })
+            if int_at(key, -1) != Some(6) {
+                return None;
             }
+            let x = bytes_at(key, data, -2)?;
+            if x.len() == 32 { Some(Self::Ed25519 { x }) } else { None }
+        } else if kty == 3 && alg == -257 {
             // RSA, RS256.
-            (3, -257) => Some(Self::Rs256 { n: bytes(-1)?, e: bytes(-2)? }),
-            _ => None,
+            let (Some(n), Some(e)) = (bytes_at(key, data, -1), bytes_at(key, data, -2)) else { return None };
+            Some(Self::Rs256 { n, e })
+        } else {
+            None
         }
+    }
+}
+
+/// The integer under `label` in a COSE map.
+#[cfg_attr(feature = "verus", verus_verify)]
+fn int_at(key: &Cbor, label: i64) -> Option<i64> {
+    match key.get_int(label) {
+        Some(v) => v.as_int(),
+        None => None,
+    }
+}
+
+/// The byte string under `label` in a COSE map decoded from `data`.
+#[cfg_attr(feature = "verus", verus_verify)]
+#[cfg_attr(feature = "verus", verus_spec(requires within(*key, 0, data@.len() as int)))]
+fn bytes_at<'d>(key: &Cbor, data: &'d [u8], label: i64) -> Option<&'d [u8]> {
+    match key.get_int(label) {
+        Some(v) => {
+            proof! {
+                lemma_within_value(*key, *v, 0, data@.len() as int);
+            }
+            v.as_bytes(data)
+        }
+        None => None,
     }
 }
 
@@ -414,17 +711,18 @@ mod tests {
         key.extend([0x22, 0x58, 0x20]);
         key.extend([0x11u8; 32]);
         key.push(0xf6); // trailing item
-        let (cbor, rest) = Cbor::decode(&key).unwrap();
-        assert_eq!(rest, &[0xf6]);
-        assert_eq!(PublicKey::from_cose(&cbor), Some(PublicKey::Es256 { x: &[0; 32], y: &[0x11; 32] }));
+        let (cbor, end) = Cbor::decode(&key).unwrap();
+        assert_eq!(&key[end..], &[0xf6]);
+        assert_eq!(PublicKey::from_cose(&cbor, &key), Some(PublicKey::Es256 { x: &[0; 32], y: &[0x11; 32] }));
     }
 
     #[test]
     fn refuses_malformed_cbor() {
-        assert_eq!(Cbor::decode(&[0x9b, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff]), None, "huge array");
-        assert_eq!(Cbor::decode(&[0x62, 0xff, 0xfe]), None, "invalid UTF-8");
-        assert_eq!(Cbor::decode(&[0x81; 20]), None, "too deep");
-        assert_eq!(Cbor::decode(&[0xf9, 0, 0]), None, "float");
+        assert!(Cbor::decode(&[0x9b, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff]).is_none(), "huge array");
+        assert!(Cbor::decode(&[0x43, 0, 0]).is_none(), "string past the end");
+        assert!(Cbor::decode(&[0xa2, 0x01, 0x02]).is_none(), "map claims more entries than bytes");
+        assert!(Cbor::decode(&[0x81; 20]).is_none(), "too deep");
+        assert!(Cbor::decode(&[0xf9, 0, 0]).is_none(), "float");
     }
 
     #[test]
