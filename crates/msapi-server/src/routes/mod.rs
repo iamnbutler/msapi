@@ -20,6 +20,12 @@ use crate::error::ApiError;
 use crate::http::{self, Request, Response};
 use crate::ids;
 use msapi_core::api::{self, Route, Routed};
+#[cfg(feature = "verus")]
+use vstd::prelude::*;
+#[cfg(feature = "verus")]
+use vstd::string::StringSliceAdditionalSpecFns;
+#[cfg(feature = "verus")]
+use vstd::utf8::encode_utf8;
 
 /// What each of [`api::PLANNED`] is, in the same order.
 const PLANNED_WHAT: [&str; 7] = [
@@ -143,15 +149,48 @@ fn dispatch(conn: &mut Connection, req: &Request, request_id: &str) -> Result<Ou
 }
 
 /// `limit` (1-200, default 50) and `before` (an ID cursor) query parameters.
+#[cfg_attr(feature = "verus", verus_verify)]
+#[cfg_attr(feature = "verus", verus_spec(r =>
+    ensures
+        match r {
+            Ok((limit, before)) =>
+                api::page_limit_spec(http::utf8(http::first(req.query@, "limit".spec_bytes()))) == Some(limit)
+                && match before {
+                    Some(b) => http::first(req.query@, "before".spec_bytes()) == Some(b@),
+                    None => http::first(req.query@, "before".spec_bytes()) is None,
+                },
+            Err(e) => e.status == 400 && api::page_limit_spec(http::utf8(http::first(req.query@, "limit".spec_bytes()))) is None,
+        }
+))]
 fn page(req: &Request) -> Result<(u32, Option<String>), ApiError> {
-    let limit = api::page_limit(req.query("limit").map(str::as_bytes))
-        .ok_or_else(|| ApiError::bad_request("limit must be 1-200"))?;
-    Ok((limit, req.query("before").map(str::to_owned)))
+    let Some(limit) = api::page_limit(req.query("limit").map(str::as_bytes)) else {
+        return Err(ApiError::bad_request("limit must be 1-200"));
+    };
+    // Verus has a spec for `str::to_owned` called directly, not as a function value.
+    #[allow(clippy::manual_map, reason = "Verus cannot take `str::to_owned` as a value")]
+    let before = match req.query("before") {
+        Some(b) => Some(b.to_owned()),
+        None => None,
+    };
+    Ok((limit, before))
 }
 
 /// An optional text field as the bytes `msapi_core` checks.
+#[cfg_attr(feature = "verus", verus_verify)]
+#[cfg_attr(feature = "verus", verus_spec(r =>
+    ensures
+        match v {
+            Some(s) => r matches Some(b) && b@ == encode_utf8(s@),
+            None => r is None,
+        }
+))]
 fn opt_bytes(v: Option<&String>) -> Option<&[u8]> {
-    v.map(String::as_bytes)
+    match v {
+        // vstd specifies `str::as_bytes`, not `String::as_bytes`.
+        #[allow(clippy::redundant_as_str, reason = "Verus needs the `&str` step")]
+        Some(s) => Some(s.as_str().as_bytes()),
+        None => None,
+    }
 }
 
 /// A unit-like enum's wire string, for storing in a TEXT column.

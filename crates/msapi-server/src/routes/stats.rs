@@ -89,7 +89,7 @@ fn record(conn: &mut Connection, ctx: &Ctx, id: &str, mut window: StatWindow) ->
     let (errors, warnings): (Vec<Issue>, Vec<Issue>) =
         window.check().into_iter().partition(|i| i.severity == Severity::Error);
     if !errors.is_empty() {
-        return Err(ApiError::invalid("the stat window is inconsistent").with_details(json!({ "issues": errors })));
+        return Err(ApiError::invalid("the stat window is inconsistent").with_details(errors));
     }
     let data = serde_json::to_string(&window).map_err(|_| ApiError::internal())?;
     let before = latest(conn, id)?.map(|s| s.stat);

@@ -43,6 +43,9 @@ jobs:
           unzip -q "$RUNNER_TEMP/verus.zip" -d "$RUNNER_TEMP/verus"
           dirname "$(find "$RUNNER_TEMP/verus" -name cargo-verus -type f | head -1)" >> "$GITHUB_PATH"
           rustup toolchain install "$VERUS_TOOLCHAIN" --profile minimal
-      - name: cargo verus verify
+      - name: cargo verus verify (msapi-core)
         working-directory: crates/msapi-core
+        run: cargo verus verify --features verus
+      - name: cargo verus verify (msapi-server)
+        working-directory: crates/msapi-server
         run: cargo verus verify --features verus

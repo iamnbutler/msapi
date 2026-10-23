@@ -4,7 +4,11 @@ use std::sync::{Mutex, PoisonError};
 
 use ring::rand::{SecureRandom, SystemRandom};
 
-use msapi_core::Timestamp;
+use msapi_core::{Timestamp, base32};
+#[cfg(feature = "verus")]
+use vstd::prelude::*;
+
+use crate::http::latin1;
 
 /// `N` bytes from the OS random number generator.
 ///
@@ -22,8 +26,15 @@ pub fn random<const N: usize>() -> [u8; N] {
 }
 
 /// Lowercase Crockford base32 of `bytes`, most significant bits first.
+#[cfg_attr(feature = "verus", verus_verify)]
+#[cfg_attr(feature = "verus", verus_spec(r =>
+    requires bytes@.len() * 8 + 4 <= usize::MAX,
+    ensures
+        r@.len() == (bytes@.len() * 8 + 4) / 5,
+        forall|i: int| 0 <= i < r@.len() ==> #[trigger] r@[i] == (base32::crockford()[base32::group(bytes@, i)] as char),
+))]
 fn base32(bytes: &[u8]) -> String {
-    msapi_core::base32::encode(bytes).into_iter().map(char::from).collect()
+    latin1(&base32::encode(bytes))
 }
 
 /// The last ID value handed out, so IDs from this process strictly increase.

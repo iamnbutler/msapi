@@ -10,6 +10,9 @@ pull request (the `verify` job in `.github/workflows/ci.yml`).
 # Verus release 0.2026.10.18.7d82994, which uses Rust 1.99.1
 cd crates/msapi-core
 cargo verus verify --features verus
+# The server's checks; this also verifies msapi-core, which it depends on.
+cd ../msapi-server
+cargo verus verify --features verus
 ```
 
 The specs and proofs are ghost code behind the optional `verus` feature, so a
@@ -270,6 +273,26 @@ name in their table is byte for byte `names::<table>::text` at its position
 a build whose tables disagree with the proven texts fails; regenerate
 `names.rs` with `scripts/name_keys.py` after editing a table.
 
+### `msapi-server`: the decisions around the I/O
+
+The server is verified with the same feature. Its handlers mostly run SQL and
+serde, which Verus cannot see, so the decisions they make are pulled out into
+proven functions and the handlers call them:
+
+| Function | Proven |
+| --- | --- |
+| `Scopes::all`, `contains`, `is_subset_of`, `minus` | bit for bit `policy::first`, `bit_set`, `subset` and set difference over the scope bits |
+| `Scope::from_index`, `Scope::parse` | the scope at `k` has discriminant `k`; `parse` returns the scope `scope::index_of` names, and `None` exactly when it names none (`FromStr` adds only the error message) |
+| `Principal::reaches_account` | true exactly when the token is unrestricted or one of its account IDs has `account_id`'s UTF-8 bytes; `require_account` decides with it |
+| `as_bytes` | each output is the UTF-8 of the matching ID |
+| `Request::header`, `Request::query` (via `lookup`) | the value of the first pair whose name has the given bytes, `None` when there is none |
+| `Response::text`, `no_content`, `with_header` | status, content type and body as given; `with_header` keeps the earlier headers and appends one |
+| `latin1`, `ids::base32`, `passkey::b64url` | each character is the code point of the encoder's byte at that position (the proven `base32::encode` and `base64url::encode`) |
+| `passkey::b64url_decode` | `Ok` bytes encode back to the unpadded text; `Err` (a 400) exactly when no byte string does |
+| `routes::page` | the limit is `api::page_limit_spec` of the first `limit` parameter (a 400 when that is `None`), and `before` is the first `before` parameter |
+| `routes::opt_bytes` | the UTF-8 of the field, or `None` |
+| `ApiError::new` and the fixed-message constructors (`bad_request`, `unauthorized`, `forbidden`, `method_not_allowed`, `conflict`, `invalid`, `not_implemented`, `internal`, `unavailable`), `with_details` | the status code and error name each response carries, and that only `with_details` attaches issues |
+
 ## What is trusted
 
 These parts are not proven. They are covered by tests instead.
@@ -288,12 +311,11 @@ These parts are not proven. They are covered by tests instead.
   function returned (`bearer`, `forwarded`, `name_in`: each cuts after ASCII
   or trims whole characters, so the range is on character boundaries, and the
   server uses `str::get`, which cannot panic), splitting the path on `/`
-  before `route`, the `limit` and `before` cursor values going into SQL, the
+  before `route`, the proven `limit` and `before` cursor values going into SQL, the
   passkey ceremony table (its size cap and the five-minute expiry measured with
-  `Instant`), and the log client's socket I/O. In `auth.rs` and the token and
-  audit routes, viewing
+  `Instant`), and the log client's socket I/O. In the token and audit routes, viewing
   ID `String`s as their bytes (`String::as_bytes`) for
-  `account_checks`, `reaches` and `is_member`, `CharacterName::new` counting characters
+  `account_checks` and `is_member`, `CharacterName::new` counting characters
   and checking for surrounding whitespace and control characters (std's
   Unicode tables) before the proven `name_check`, and `Timestamp`'s `Display`, `FromStr`
   and serde impls passing bytes to and from the proven `format_rfc3339` and
@@ -313,6 +335,9 @@ These parts are not proven. They are covered by tests instead.
   its exact decimal text (`serde_json`'s `arbitrary_precision`), never as an
   `f64`. PATCH documents are read back from their JSON text after the merge,
   so they take the same exact path as request bodies.
+- **Error wording:** messages built with `format!` (`not_found`,
+  `too_large`, `unsupported_media_type`, the scope and account refusals), and
+  the error envelope's JSON. The status and name are proven; the text is not.
 - **Spec against reality:** that the specs are the game's formulas and the
   RFCs' formats is checked by golden tests and known vectors, not proofs.
 - **The verifier itself:** Verus, Z3, and `vstd`'s specs of the standard

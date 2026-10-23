@@ -9,6 +9,15 @@
 //! recording an audit event, so there is no code path that changes data
 //! without leaving a trail.
 
+#![cfg_attr(feature = "verus", feature(proc_macro_hygiene))]
+
+/// Without Verus, `proof! { .. }` blocks are ghost code and compile to nothing.
+#[cfg(not(feature = "verus"))]
+#[allow(unused_macros, reason = "used as modules gain proofs")]
+macro_rules! proof {
+    ($($t:tt)*) => {};
+}
+
 pub mod audit;
 pub mod auth;
 pub mod db;
