@@ -19,6 +19,14 @@ rusqlite.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 tiny_http.workspace = true
+vstd = { workspace = true, optional = true }
+
+[features]
+# Ghost code for `cargo verus verify --features verus`; see docs/verification.md.
+verus = ["dep:vstd", "msapi-core/verus"]
+
+[package.metadata.verus]
+verify = true
 
 [lints]
 workspace = true
