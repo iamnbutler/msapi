@@ -237,6 +237,33 @@ pub fn encode_u128(v: u128) -> [u8; 26] {
     out
 }
 
+/// The 16 big-endian bytes of `v`: `u128::to_be_bytes`, by shifts and masks
+/// so that it has a spec.
+#[cfg_attr(feature = "verus", verus_verify)]
+#[cfg_attr(feature = "verus", verus_spec(r =>
+    ensures r@ == be_bytes(v),
+))]
+#[must_use]
+pub fn be_bytes_u128(v: u128) -> [u8; 16] {
+    let mut out = [0u8; 16];
+    let mut q: usize = 0;
+    #[cfg_attr(feature = "verus", verus_spec(
+        invariant
+            q <= 16,
+            out@.len() == 16,
+            forall|j: int| 0 <= j < q ==> out@[j] == be_bytes(v)[j],
+        decreases 16 - q
+    ))]
+    while q < 16 {
+        out[q] = ((v >> (120 - 8 * q) as u128) & 0xff) as u8;
+        q += 1;
+    }
+    proof! {
+        assert(out@ =~= be_bytes(v));
+    }
+    out
+}
+
 /// The base32 of `bytes`, most significant bits first, with the last
 /// character padded with zero bits: `ceil(8n / 5)` characters.
 #[cfg_attr(feature = "verus", verus_verify)]
@@ -373,7 +400,8 @@ proof fn lemma_be_bit(v: u128, k: int)
 }
 
 /// Digit `i` of [`encoded`] is group `i` of the value's 16 big-endian
-/// bytes, so `encode_u128(v)` and `encode(&v.to_be_bytes())` agree.
+/// bytes, so `encode_u128(v)` and `encode(&be_bytes_u128(v))` agree
+/// (see `encode_bytes_agree`).
 pub proof fn lemma_u128_is_bytes(v: u128, i: int)
     requires 0 <= i < 26,
     ensures digit(v, i) as int == group(be_bytes(v), i),
@@ -459,6 +487,26 @@ proof fn lemma_digits(a: u128, b: u128, k: int)
     }
 }
 
+
+/// `encode(&be_bytes_u128(v))` is `encode_u128(v)`: the byte path and the
+/// direct path give the same 26 characters.
+pub fn encode_bytes_agree(v: u128) -> (r: Vec<u8>)
+    ensures r@ == encoded(v),
+{
+    let b = be_bytes_u128(v);
+    let r = encode(&b);
+    proof {
+        assert(r@.len() == 26);
+        assert forall|i: int| 0 <= i < 26 implies r@[i] == encoded(v)[i] by {
+            lemma_u128_is_bytes(v, i);
+            lemma_digit_range(v, i);
+            lemma_alpha_table(digit(v, i) as int);
+        }
+        assert(r@ =~= encoded(v));
+    }
+    r
+}
+
 } // verus!
 
 #[cfg(test)]
@@ -483,7 +531,7 @@ mod tests {
     #[test]
     fn u128_matches_bytes() {
         for v in [0, 1, 31, 32, 1 << 80, u128::MAX - 1, 0x0123_4567_89ab_cdef_fedc_ba98_7654_3210] {
-            assert_eq!(encode_u128(v).as_slice(), encode(&v.to_be_bytes()).as_slice());
+            assert_eq!(encode_u128(v).as_slice(), encode(&be_bytes_u128(v)).as_slice());
         }
     }
 

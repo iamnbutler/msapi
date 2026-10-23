@@ -1,7 +1,9 @@
 //! Exact dimensionless ratios for damage formulas.
 
 use std::cmp::Ordering;
-use std::fmt;
+use std::fmt::{self, Write as _};
+
+use crate::decimal::format_uint;
 
 #[cfg(feature = "verus")]
 use vstd::arithmetic::div_mod::lemma_fundamental_div_mod;
@@ -435,7 +437,12 @@ impl Ord for Ratio {
 
 impl fmt::Display for Ratio {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        if self.den == 1 { write!(f, "{}", self.num) } else { write!(f, "{}/{}", self.num, self.den) }
+        let mut text = format_uint(self.num);
+        if self.den != 1 {
+            text.push(b'/');
+            text.extend(format_uint(self.den));
+        }
+        text.into_iter().try_for_each(|b| f.write_char(char::from(b)))
     }
 }
 

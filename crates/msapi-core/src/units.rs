@@ -38,7 +38,7 @@
 //! # Ok::<(), msapi_core::FixedError>(())
 //! ```
 
-use std::fmt;
+use std::fmt::{self, Write as _};
 use std::iter::Sum;
 use std::ops::{Add, AddAssign};
 use std::str::FromStr;
@@ -218,7 +218,7 @@ macro_rules! flat {
 
         impl fmt::Display for $name {
             fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-                fmt::Display::fmt(&self.0, f)
+                crate::decimal::format_uint(u128::from(self.0)).into_iter().try_for_each(|b| f.write_char(char::from(b)))
             }
         }
 

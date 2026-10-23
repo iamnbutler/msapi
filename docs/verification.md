@@ -149,10 +149,16 @@ goes through a proven function.
 | --- | --- |
 | `base64url::encode` | equals `encode_spec`, RFC 4648 §5 written group by group |
 | `base64url::decode` | whatever it returns encodes back to its input (padding aside), and it returns `None` only when no byte string encodes to the input. So it is canonical: one encoding per byte string |
-| `base32::encode_u128` (IDs) | each character is `crockford()[digit]`, the literal 32-character table, of its five bits; `a < b` implies the encoding of `a` sorts first (`lemma_order`), so string order is ID order; distinct values encode differently. `lemma_u128_is_bytes`: each digit equals group `i` of the value's 16 big-endian bytes, so it agrees with `encode` |
+| `base32::encode_u128` (IDs) | each character is `crockford()[digit]`, the literal 32-character table, of its five bits; `a < b` implies the encoding of `a` sorts first (`lemma_order`), so string order is ID order; distinct values encode differently. `lemma_u128_is_bytes`: each digit equals group `i` of the value's 16 big-endian bytes, and `encode_bytes_agree` checks that `encode(&be_bytes_u128(v))` is exactly `encode_u128(v)` |
 | `base32::encode` (token secrets) | exactly `(8n + 4) / 5` characters, character `i` being `crockford()[group(bytes, i)]`: bits `5i..5i+4` of the input, most significant first, zero past the end |
 | `base32::digit_char` | equals the table `crockford()` for every digit below 32 |
+| `base32::be_bytes_u128` | equals `be_bytes`: byte `q` is bits `120 - 8q` to `127 - 8q` of the value (what `u128::to_be_bytes` returns) |
 | `decimal::parse_decimal` (`Fixed` from text) | `Ok(v)` exactly when the text is `-?D+(.D+)?` with at most `dp` fraction digits and fits `i64`, and then `v` is its exact value scaled by `10^dp`; each error (`Invalid`, `TooPrecise`, `OutOfRange`) is returned exactly in its case; a string splits into whole and fraction one way only |
+| `decimal::format_decimal` (`Fixed` and its units as text) | equals `decimal_text`: `-` if negative, the whole part's digits with no leading zeros, then `.` and exactly `dp` fraction digits when `dp > 0`; byte-identical to the old `format!` output |
+| `decimal::format_then_parse` | `parse_decimal(format_decimal(v, dp), dp) == Ok(v)` for every `i64` and `dp <= 18` (`lemma_text_round_trip`) |
+| `decimal::format_uint` (flat units, `Ratio` as text) | equals `digits_of`: the decimal digits of `n`, no leading zeros, whose value is `n` |
+| `ascii::eq_ignore_case` (region and world names) | equal lengths and equal bytes after lowercasing ASCII capitals, as `str::eq_ignore_ascii_case` |
+| `ascii::fold` (class names) | equals `folded`: the ASCII letters and digits in order, lowercased |
 | `query::percent_decode` | equals `decoded`: `+` is a space, `%XX` is that byte, anything else is itself |
 | `json::merge` (every `PATCH`) | the result is `merged(result, target, patch)`, RFC 7396 §2 key by key: a `null` member's key is absent, any other member's key holds the merge of the target's value (or `null`) with it, every other key keeps the target's value, keys are unique, and a non-object patch is the result; `None` exactly when an input repeats an object key (`serde_json` values never do) |
 | `query::parse_query` | equals `pairs`: the `&`-separated segments in order, empty ones skipped, each split at its first `=` (none means an empty value) and both halves `decoded` |
@@ -180,7 +186,9 @@ These parts are not proven. They are covered by tests instead.
   passing its three fields to the proven `breakdown_total` (the struct derives
   serde, so Verus does not see it), the `Sum` impls (std's `Iterator::fold`
   over the proven `+`, since Verus cannot specify a generic iterator), and the
-  `From`, `FromStr`, `Display`, `Debug` and serde impls of the unit types.
+  `From`, `Debug` and serde impls of the unit types (`Fixed` crosses JSON as
+  an `f64`). Their `Display` and `FromStr` only write or read the bytes of the
+  proven `format_decimal`, `format_uint` and `parse_decimal`.
 - **Spec against reality:** that the specs are the game's formulas and the
   RFCs' formats is checked by golden tests and known vectors, not proofs.
 - **The verifier itself:** Verus, Z3, and `vstd`'s specs of the standard

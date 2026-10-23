@@ -1,11 +1,11 @@
 //! Exact decimals with a fixed number of fractional digits.
 
-use std::fmt;
+use std::fmt::{self, Write as _};
 use std::str::FromStr;
 
 use serde::de::{self, Visitor};
 
-use crate::decimal::{DecimalError, parse_decimal};
+use crate::decimal::{DecimalError, format_decimal, parse_decimal};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 #[cfg(feature = "verus")]
 use vstd::prelude::*;
@@ -197,14 +197,10 @@ impl<const DP: u32> FromStr for Fixed<DP> {
 
 impl<const DP: u32> fmt::Display for Fixed<DP> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let sign = if self.0 < 0 { "-" } else { "" };
-        let abs = self.0.unsigned_abs();
-        let scale = Self::SCALE.unsigned_abs();
-        if DP == 0 {
-            write!(f, "{sign}{abs}")
-        } else {
-            write!(f, "{sign}{}.{:0width$}", abs / scale, abs % scale, width = DP as usize)
-        }
+        // `SCALE` is `10^DP` in an `i64`, which only compiles for `DP <= 18`,
+        // the precondition of the proven `format_decimal`.
+        let _ = Self::SCALE;
+        format_decimal(self.0, DP).into_iter().try_for_each(|b| f.write_char(char::from(b)))
     }
 }
 

@@ -10,7 +10,9 @@
     clippy::cast_possible_truncation,
     clippy::cast_possible_wrap,
     clippy::cast_lossless,
-    reason = "plain casts are what Verus checks; each one here is proven in range"
+    clippy::cast_sign_loss,
+    clippy::vec_init_then_push,
+    reason = "plain casts and pushes are what Verus checks; each cast here is proven in range"
 )]
 
 #[cfg(feature = "verus")]
@@ -539,6 +541,361 @@ pub fn parse_decimal(text: &[u8], dp: u32) -> Result<i64, DecimalError> {
     }
 }
 
+#[cfg(feature = "verus")]
+verus! {
+
+/// The decimal digits of `n`, most significant first, with no leading zeros
+/// (`"0"` for zero).
+pub open spec fn digits_of(n: nat) -> Seq<u8>
+    decreases n,
+{
+    if n < 10 { seq![(48 + n) as u8] } else { digits_of(n / 10).push((48 + n % 10) as u8) }
+}
+
+/// The low `w` decimal digits of `n`, zero-padded to exactly `w` characters.
+pub open spec fn padded(n: nat, w: nat) -> Seq<u8>
+    decreases w,
+{
+    if w == 0 { Seq::empty() } else { padded(n / 10, (w - 1) as nat).push((48 + n % 10) as u8) }
+}
+
+/// `|v|`.
+pub open spec fn abs(v: int) -> nat {
+    if v < 0 { (-v) as nat } else { v as nat }
+}
+
+/// The text of `v` units of `10^-dp`: `-` for negatives, the whole part with
+/// no leading zeros, then (when `dp > 0`) `.` and exactly `dp` fraction digits.
+pub open spec fn decimal_text(v: int, dp: nat) -> Seq<u8> {
+    (if v < 0 { seq![45u8] } else { Seq::empty() })
+        + digits_of(abs(v) / pow10(dp))
+        + (if dp == 0 { Seq::empty() } else { seq![46u8] + padded(abs(v) % pow10(dp), dp) })
+}
+
+proof fn lemma_push_value(s: Seq<u8>, c: u8)
+    requires is_digit(c),
+    ensures digits_value(s.push(c)) == digits_value(s) * 10 + (c - 48),
+{
+    assert(s.push(c).drop_last() =~= s);
+}
+
+/// `digits_of(n)` is non-empty, all digits, spells `n`, and has no leading zero.
+pub proof fn lemma_digits_of(n: nat)
+    ensures
+        digits_of(n).len() >= 1,
+        all_digits(digits_of(n)),
+        digits_value(digits_of(n)) == n,
+        n >= 1 ==> digits_of(n)[0] != 48,
+    decreases n,
+{
+    if n < 10 {
+        let c = (48 + n) as u8;
+        assert(seq![c].drop_last() =~= Seq::<u8>::empty());
+        assert(seq![c].last() == c);
+        assert(digits_value(Seq::<u8>::empty()) == 0);
+        assert(digits_value(seq![c]) == digits_value(seq![c].drop_last()) * 10 + (c as int - 48) as nat);
+    } else {
+        let q = n / 10;
+        let c = (48 + n % 10) as u8;
+        lemma_digits_of(q);
+        lemma_push_value(digits_of(q), c);
+        assert(n == q * 10 + n % 10);
+        let d = digits_of(q).push(c);
+        assert forall|i: int| 0 <= i < d.len() implies is_digit(#[trigger] d[i]) by {
+            if i < d.len() - 1 {
+                assert(d[i] == digits_of(q)[i]);
+            }
+        }
+        assert(d[0] == digits_of(q)[0]);
+    }
+}
+
+/// `padded(n, w)` is `w` digits spelling `n mod 10^w`.
+pub proof fn lemma_padded(n: nat, w: nat)
+    ensures
+        padded(n, w).len() == w,
+        all_digits(padded(n, w)),
+        digits_value(padded(n, w)) == n % pow10(w),
+    decreases w,
+{
+    if w > 0 {
+        let q = n / 10;
+        let c = (48 + n % 10) as u8;
+        let w1 = (w - 1) as nat;
+        lemma_padded(q, w1);
+        lemma_push_value(padded(q, w1), c);
+        let d = padded(q, w1).push(c);
+        assert forall|i: int| 0 <= i < d.len() implies is_digit(#[trigger] d[i]) by {
+            if i < d.len() - 1 {
+                assert(d[i] == padded(q, w1)[i]);
+            }
+        }
+        lemma_pow10_pos(w1);
+        vstd::arithmetic::div_mod::lemma_mod_breakdown(n as int, 10, pow10(w1) as int);
+        assert(pow10(w) == 10 * pow10(w1)) by (nonlinear_arith)
+            requires pow10(w) == pow10(w1) * 10;
+    }
+}
+
+/// [`decimal_text`] splits as a decimal with exactly `dp` fraction digits and
+/// value `v`, so [`parse_decimal`] reads it back as `v` (see
+/// `format_then_parse`).
+pub proof fn lemma_text_round_trip(v: int, dp: nat)
+    ensures
+        splits_at(decimal_text(v, dp), text_split(v, dp)),
+        frac_len(decimal_text(v, dp), text_split(v, dp)) == dp,
+        decimal_value(decimal_text(v, dp), text_split(v, dp), dp) == v,
+{
+    let s = decimal_text(v, dp);
+    let a = abs(v);
+    let p = pow10(dp);
+    lemma_pow10_pos(dp);
+    let sg: Seq<u8> = if v < 0 { seq![45u8] } else { Seq::empty() };
+    let w = digits_of(a / p);
+    let t: Seq<u8> = if dp == 0 { Seq::empty() } else { seq![46u8] + padded(a % p, dp) };
+    lemma_digits_of(a / p);
+    lemma_padded(a % p, dp);
+    assert(s == sg + w + t);
+    let k = text_split(v, dp);
+    assert(k == sg.len() + w.len());
+    // The sign.
+    if v < 0 {
+        assert(s[0] == 45u8);
+    } else {
+        assert(s[0] == w[0]);
+        assert(is_digit(w[0]));
+    }
+    assert(sign_len(s) == sg.len());
+    assert(s.subrange(sign_len(s), k) =~= w);
+    // The fraction.
+    if dp == 0 {
+        assert(k == s.len());
+        assert(frac_digits(s, k) =~= Seq::<u8>::empty());
+    } else {
+        assert(s[k] == 46u8);
+        assert(s.subrange(k + 1, s.len() as int) =~= padded(a % p, dp));
+    }
+    // The value.
+    vstd::arithmetic::div_mod::lemma_fundamental_div_mod(a as int, p as int);
+    vstd::arithmetic::div_mod::lemma_mod_pos_bound(a as int, p as int);
+    vstd::arithmetic::div_mod::lemma_small_mod((a % p) as nat, p);
+    assert(pow10((dp - dp) as nat) == 1);
+    assert(whole_digits(s, k) == w);
+    if dp == 0 {
+        assert(digits_value(frac_digits(s, k)) == 0);
+        assert(p == 1);
+        assert(a % p == 0);
+    } else {
+        assert(frac_digits(s, k) == padded(a % p, dp));
+    }
+    assert(digits_value(frac_digits(s, k)) == a % p);
+    assert(frac_len(s, k) == dp);
+    assert(magnitude(s, k, dp) == digits_value(w) * p + digits_value(frac_digits(s, k)) * pow10(0));
+    assert(magnitude(s, k, dp) == (a / p) * p + a % p) by (nonlinear_arith)
+        requires
+            magnitude(s, k, dp) == digits_value(w) * p + digits_value(frac_digits(s, k)) * pow10(0),
+            pow10(0) == 1,
+            digits_value(w) == a / p,
+            digits_value(frac_digits(s, k)) == a % p;
+    assert(magnitude(s, k, dp) == a);
+    if v < 0 {
+        assert(decimal_value(s, k, dp) == -(a as int));
+    } else {
+        assert(decimal_value(s, k, dp) == a as int);
+    }
+}
+
+/// Where [`decimal_text`] splits: after the sign and the whole digits.
+pub open spec fn text_split(v: int, dp: nat) -> int {
+    (if v < 0 { 1int } else { 0int }) + digits_of(abs(v) / pow10(dp)).len()
+}
+
+/// Formatting then parsing gives back the value, for every `i64` and every
+/// precision `Fixed` allows.
+fn format_then_parse(v: i64, dp: u32) -> (r: Result<i64, DecimalError>)
+    requires dp <= 18,
+    ensures r == Ok::<i64, DecimalError>(v),
+{
+    let s = format_decimal(v, dp);
+    let r = parse_decimal(s.as_slice(), dp);
+    proof {
+        let t = decimal_text(v as int, dp as nat);
+        let k0 = text_split(v as int, dp as nat);
+        lemma_text_round_trip(v as int, dp as nat);
+        assert(s@ == t);
+        match r {
+            Ok(x) => {
+                let k = choose|k: int| #[trigger] splits_at(t, k) && frac_len(t, k) <= dp
+                    && x as int == decimal_value(t, k, dp as nat);
+                lemma_split_unique(t, k, k0);
+            },
+            Err(DecimalError::Invalid) => {
+                assert(!splits_at(t, k0));
+            },
+            Err(DecimalError::TooPrecise) => {
+                let k = choose|k: int| #[trigger] splits_at(t, k) && frac_len(t, k) > dp;
+                lemma_split_unique(t, k, k0);
+            },
+            Err(DecimalError::OutOfRange) => {
+                let k = choose|k: int| #[trigger] splits_at(t, k) && frac_len(t, k) <= dp
+                    && !(i64::MIN <= decimal_value(t, k, dp as nat) && decimal_value(t, k, dp as nat) <= i64::MAX);
+                lemma_split_unique(t, k, k0);
+            },
+        }
+    }
+    r
+}
+
+} // verus!
+
+/// `10^dp` for the precisions `Fixed` allows.
+#[cfg_attr(feature = "verus", verus_verify)]
+#[cfg_attr(feature = "verus", verus_spec(r =>
+    requires dp <= 18,
+    ensures r as nat == pow10(dp as nat)
+))]
+const fn pow10_u64(dp: u32) -> u64 {
+    let mut p: u64 = 1;
+    let mut i: u32 = 0;
+    proof! {
+        reveal_with_fuel(pow10, 19);
+    }
+    #[cfg_attr(feature = "verus", verus_spec(
+        invariant
+            i <= dp <= 18,
+            p as nat == pow10(i as nat),
+            pow10(18) == 1_000_000_000_000_000_000,
+        decreases dp - i
+    ))]
+    while i < dp {
+        proof! {
+            lemma_pow10_add((i + 1) as nat, (18 - i - 1) as nat);
+            lemma_pow10_pos((18 - i - 1) as nat);
+            assert(pow10((i + 1) as nat) <= pow10(18)) by (nonlinear_arith)
+                requires pow10(18) == pow10((i + 1) as nat) * pow10((18 - i - 1) as nat),
+                    pow10((18 - i - 1) as nat) >= 1;
+        }
+        p *= 10;
+        i += 1;
+    }
+    p
+}
+
+/// The decimal digits of `n`.
+#[cfg_attr(feature = "verus", verus_verify)]
+#[cfg_attr(feature = "verus", verus_spec(r =>
+    ensures r@ == digits_of(n as nat),
+    decreases n
+))]
+fn digits(n: u128) -> Vec<u8> {
+    if n < 10 {
+        let mut v = Vec::new();
+        v.push(b'0' + n as u8);
+        proof! {
+            assert(v@ =~= seq![(48 + n) as u8]);
+        }
+        v
+    } else {
+        let mut v = digits(n / 10);
+        v.push(b'0' + (n % 10) as u8);
+        v
+    }
+}
+
+/// The decimal text of `n`: its digits, with no leading zeros.
+#[cfg_attr(feature = "verus", verus_verify)]
+#[cfg_attr(feature = "verus", verus_spec(r => ensures r@ == digits_of(n as nat)))]
+#[must_use]
+pub fn format_uint(n: u128) -> Vec<u8> {
+    digits(n)
+}
+
+/// The low `w` decimal digits of `n`, zero-padded.
+#[cfg_attr(feature = "verus", verus_verify)]
+#[cfg_attr(feature = "verus", verus_spec(r =>
+    ensures r@ == padded(n as nat, w as nat),
+    decreases w
+))]
+fn padded_digits(n: u64, w: u32) -> Vec<u8> {
+    if w == 0 {
+        let v = Vec::new();
+        proof! {
+            assert(v@ =~= Seq::<u8>::empty());
+        }
+        v
+    } else {
+        let mut v = padded_digits(n / 10, w - 1);
+        v.push(b'0' + (n % 10) as u8);
+        v
+    }
+}
+
+/// Appends `s` to `out`.
+#[cfg_attr(feature = "verus", verus_verify)]
+#[cfg_attr(feature = "verus", verus_spec(
+    ensures final(out)@ == old(out)@ + s@
+))]
+fn push_all(out: &mut Vec<u8>, s: &[u8]) {
+    let mut i: usize = 0;
+    #[cfg_attr(feature = "verus", verus_spec(
+        invariant
+            i <= s@.len(),
+            out@ == old(out)@ + s@.take(i as int),
+        decreases s@.len() - i
+    ))]
+    while i < s.len() {
+        proof! {
+            assert(s@.take(i + 1) =~= s@.take(i as int).push(s@[i as int]));
+        }
+        out.push(s[i]);
+        i += 1;
+    }
+    proof! {
+        assert(s@.take(s@.len() as int) =~= s@);
+    }
+}
+
+/// The text of `raw` units of `10^-dp`, e.g. `9314` at two places is `"93.14"`
+/// and `-5` is `"-0.05"`.
+///
+/// Verus proves the output is exactly [`decimal_text`] and that
+/// [`parse_decimal`] reads it back as `raw` (`lemma_text_round_trip`,
+/// `format_then_parse`).
+///
+/// # Panics
+///
+/// Never: `dp <= 18` is required, and is what `Fixed`'s `10^DP` in an `i64`
+/// already forces.
+#[cfg_attr(feature = "verus", verus_verify)]
+#[cfg_attr(feature = "verus", verus_spec(r =>
+    requires dp <= 18,
+    ensures r@ == decimal_text(raw as int, dp as nat)
+))]
+#[must_use]
+pub fn format_decimal(raw: i64, dp: u32) -> Vec<u8> {
+    let a: u64 = if raw < 0 { (-(raw as i128)) as u64 } else { raw as u64 };
+    let p = pow10_u64(dp);
+    proof! {
+        lemma_pow10_pos(dp as nat);
+    }
+    let mut out: Vec<u8> = Vec::new();
+    if raw < 0 {
+        out.push(b'-');
+    }
+    let whole = digits((a / p) as u128);
+    push_all(&mut out, whole.as_slice());
+    if dp > 0 {
+        out.push(b'.');
+        let frac = padded_digits(a % p, dp);
+        push_all(&mut out, frac.as_slice());
+    }
+    proof! {
+        assert(a as nat == abs(raw as int));
+        assert(out@ =~= decimal_text(raw as int, dp as nat));
+    }
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -575,5 +932,35 @@ mod tests {
         }
         assert_eq!(parse_decimal(b"93.145", 2), Err(DecimalError::TooPrecise));
         assert_eq!(parse_decimal(b"99999999999999999999.145", 2), Err(DecimalError::TooPrecise));
+    }
+
+    /// The formatting `Fixed` used before it moved here, kept to show the
+    /// proven version prints exactly the same.
+    fn old_format(raw: i64, dp: u32) -> String {
+        let sign = if raw < 0 { "-" } else { "" };
+        let abs = raw.unsigned_abs();
+        let scale = 10_u64.pow(dp);
+        if dp == 0 {
+            format!("{sign}{abs}")
+        } else {
+            format!("{sign}{}.{:0width$}", abs / scale, abs % scale, width = dp as usize)
+        }
+    }
+
+    #[test]
+    fn formatting_matches_the_old_output_and_round_trips() {
+        let mut values = vec![0, 1, -1, 9, 10, 99, 100, -5, 9314, -9314, 123_456_789, i64::MAX, i64::MIN, i64::MIN + 1];
+        let mut x: i64 = 1;
+        for _ in 0..18 {
+            x *= 10;
+            values.extend([x - 1, x, x + 1, -x, -(x - 1)]);
+        }
+        for dp in 0..=18 {
+            for &v in &values {
+                let text = format_decimal(v, dp);
+                assert_eq!(String::from_utf8(text.clone()).unwrap(), old_format(v, dp), "{v} at {dp}");
+                assert_eq!(parse_decimal(&text, dp), Ok(v), "{v} at {dp}");
+            }
+        }
     }
 }
