@@ -1,14 +1,11 @@
 //! The class (job) roster.
 
-use std::sync::LazyLock;
-
 #[cfg(not(feature = "verus"))]
 use serde::Serialize;
 #[cfg(feature = "verus")]
 use vstd::prelude::*;
 
 use crate::fixed::{Fixed, Pct};
-use crate::lookup::Index;
 use crate::units::WeaponMastery;
 
 /// The five class archetypes, plus Xenon's hybrid.
@@ -238,18 +235,6 @@ fn fold(s: &str) -> Vec<u8> {
     crate::ascii::fold(s.as_bytes())
 }
 
-/// Folded ID and folded name → position in [`CLASSES`]. Built once; 106 keys.
-/// [`Index::build`] refuses a roster where one folded key names two classes.
-#[allow(
-    clippy::expect_used,
-    reason = "the table is constant, so build either always or never succeeds; tests build it"
-)]
-static INDEX: LazyLock<Index> = LazyLock::new(|| {
-    let keys = CLASSES.iter().flat_map(|c| [fold(c.id), fold(c.name)]).collect();
-    let owners = (0..CLASSES.len()).flat_map(|i| [i, i]).collect();
-    Index::build(keys, owners).expect("two classes share a folded ID or name")
-});
-
 /// Finds a class by ID or display name, ignoring case, spaces and punctuation.
 ///
 /// ```
@@ -262,7 +247,7 @@ static INDEX: LazyLock<Index> = LazyLock::new(|| {
 /// ```
 #[must_use]
 pub fn find(name: &str) -> Option<&'static Class> {
-    INDEX.get(&fold(name)).map(|i| &CLASSES[i])
+    crate::names::class::find(&fold(name)).and_then(|i| CLASSES.get(i))
 }
 
 #[cfg(test)]
