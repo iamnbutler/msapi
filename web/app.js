@@ -37,7 +37,13 @@ async function api(method, path, body) {
   const headers = {};
   if (session) headers.authorization = `Bearer ${session.token}`;
   if (body !== undefined) headers["content-type"] = "application/json";
-  const res = await fetch(path, { method, headers, body: body === undefined ? undefined : JSON.stringify(body) });
+  let res;
+  // A cold container answers 503 while it boots and restores; wait it out.
+  for (let attempt = 0; ; attempt++) {
+    res = await fetch(path, { method, headers, body: body === undefined ? undefined : JSON.stringify(body) });
+    if (res.status !== 503 || attempt >= 12) break;
+    await new Promise((r) => setTimeout(r, 1000 * Number(res.headers.get("retry-after") || 5)));
+  }
   const text = await res.text();
   const data = text ? JSON.parse(text) : null;
   if (res.status === 401 && session && !path.startsWith("/v1/auth/")) {
