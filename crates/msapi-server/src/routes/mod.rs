@@ -1,5 +1,14 @@
 //! Routing: path and method to a typed [`Route`], then to its handler.
 
+#![allow(
+    clippy::cast_lossless,
+    clippy::single_char_add_str,
+    clippy::manual_map,
+    clippy::manual_unwrap_or_default,
+    clippy::manual_unwrap_or,
+    reason = "Verus checks plain casts, matches and `push_str`; it has no spec for `From` widening or `Option` combinators"
+)]
+
 mod accounts;
 mod audit_log;
 mod characters;
@@ -28,7 +37,9 @@ use vstd::string::StringSliceAdditionalSpecFns;
 use vstd::utf8::encode_utf8;
 
 /// What each of [`api::PLANNED`] is, in the same order.
-const PLANNED_WHAT: [&str; 7] = [
+#[cfg_attr(feature = "verus", verus_verify)]
+#[allow(clippy::redundant_static_lifetimes, reason = "Verus needs the lifetime spelled out")]
+const PLANNED_WHAT: [&'static str; 7] = [
     "equipment: items, star force, potentials, flames",
     "Arcane and Sacred symbols",
     "hyper stat presets",
@@ -38,9 +49,34 @@ const PLANNED_WHAT: [&str; 7] = [
     "HEXA skills and HEXA stat cores",
 ];
 
-/// The planned resources: their path names and what they are.
-fn planned() -> impl Iterator<Item = (&'static str, &'static str)> {
-    api::PLANNED.into_iter().map(http::word).zip(PLANNED_WHAT)
+/// Planned resource `k`: its path name and what it is.
+#[cfg_attr(feature = "verus", verus_verify)]
+#[cfg_attr(feature = "verus", verus_spec(r =>
+    ensures
+        k < 7 ==> (r matches Some((name, _)) && name@ == msapi_core::msg::chars(api::word(api::PLANNED[k as int]))),
+        k >= 7 ==> r is None,
+))]
+fn planned_at(k: usize) -> Option<(&'static str, &'static str)> {
+    if k < api::PLANNED.len() { Some((http::word(api::PLANNED[k]), PLANNED_WHAT[k])) } else { None }
+}
+
+/// 501 for planned resource `k` of character `id`.
+#[cfg_attr(feature = "verus", verus_verify)]
+#[cfg_attr(feature = "verus", verus_spec(r => ensures r.status == 501, r.name == "not_implemented"))]
+fn planned_error(k: u8, id: &str) -> ApiError {
+    let (resource, what) = match planned_at(k as usize) {
+        Some(p) => p,
+        None => ("", ""),
+    };
+    let mut m = String::new();
+    m.push_str("`");
+    m.push_str(resource);
+    m.push_str("` (");
+    m.push_str(what);
+    m.push_str(") is planned but not built yet; the stat window is at /v1/characters/");
+    m.push_str(id);
+    m.push_str("/stat");
+    ApiError::not_implemented(m)
 }
 
 /// Runs an authenticated route; `id` is its path parameter (segment 2), if
@@ -70,10 +106,7 @@ fn run(route: Route, id: &str, conn: &mut Connection, ctx: &Ctx, req: &Request) 
         Route::StatHistory => stats::history(conn, ctx, req, id),
         Route::Planned(k) => {
             characters::find(conn, &ctx.principal, id)?;
-            let (resource, what) = planned().nth(usize::from(k)).unwrap_or(("", ""));
-            Err(ApiError::not_implemented(format!(
-                "`{resource}` ({what}) is planned but not built yet; the stat window is at /v1/characters/{id}/stat"
-            )))
+            Err(planned_error(k, id))
         }
         // Public and passkey routes are answered before authentication.
         Route::Health
@@ -242,10 +275,14 @@ mod tests {
 
     #[test]
     fn planned_names_line_up_with_core() {
-        let names: Vec<_> = planned().map(|(name, _)| name).collect();
+        let names: Vec<_> = (0..8).filter_map(planned_at).map(|(name, _)| name).collect();
         assert_eq!(
             names,
             ["item-equipment", "symbol-equipment", "hyper-stat", "ability", "link-skill", "vmatrix", "hexamatrix"]
+        );
+        assert_eq!(
+            planned_error(1, "chr_1").message,
+            "`symbol-equipment` (Arcane and Sacred symbols) is planned but not built yet; the stat window is at /v1/characters/chr_1/stat"
         );
     }
 }

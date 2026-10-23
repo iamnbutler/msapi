@@ -1,5 +1,14 @@
 //! `/v1/accounts`: game accounts, one per region login.
 
+#![allow(
+    clippy::cast_lossless,
+    clippy::single_char_add_str,
+    clippy::manual_map,
+    clippy::manual_unwrap_or_default,
+    clippy::manual_unwrap_or,
+    reason = "Verus checks plain casts, matches and `push_str`; it has no spec for `From` widening or `Option` combinators"
+)]
+
 use rusqlite::{Connection, OptionalExtension, params};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
@@ -15,6 +24,8 @@ use crate::error::ApiError;
 use crate::http::{Request, Response};
 use crate::ids;
 use crate::json::merge_patch;
+#[cfg(feature = "verus")]
+use vstd::prelude::*;
 
 /// The editable fields of an account.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
@@ -28,19 +39,30 @@ struct AccountInput {
 }
 
 impl AccountInput {
+    /// The proven [`check_account`] on this input's fields.
     fn validate(&self) -> Result<(), ApiError> {
-        if !self.region.is_supported() {
-            return Err(ApiError::invalid(format!(
-                "region `{}` is not supported yet: its worlds are not catalogued (see /v1/ref/regions)",
-                self.region
-            )));
-        }
-        api::account_fields(opt_bytes(self.label.as_ref()), opt_bytes(self.notes.as_ref())).map_err(|refusal| {
-            match refusal {
-                AccountRefusal::LabelTooLong => ApiError::invalid("label must be at most 100 characters"),
-                AccountRefusal::NotesTooLong => ApiError::invalid("notes must be at most 4000 characters"),
-            }
-        })
+        check_account(self.region, self.label.as_ref(), self.notes.as_ref())
+    }
+}
+
+/// Checks an account's fields: its region must be catalogued, and the label
+/// and notes within the proven [`api::account_fields`] limits.
+#[cfg_attr(feature = "verus", verus_verify)]
+#[cfg_attr(feature = "verus", verus_spec(r =>
+    ensures r matches Err(e) ==> e.status == 422 && e.name == "invalid",
+))]
+fn check_account(region: Region, label: Option<&String>, notes: Option<&String>) -> Result<(), ApiError> {
+    if !region.is_supported() {
+        let mut m = String::new();
+        m.push_str("region `");
+        m.push_str(region.as_str());
+        m.push_str("` is not supported yet: its worlds are not catalogued (see /v1/ref/regions)");
+        return Err(ApiError::invalid(m));
+    }
+    match api::account_fields(opt_bytes(label), opt_bytes(notes)) {
+        Ok(()) => Ok(()),
+        Err(AccountRefusal::LabelTooLong) => Err(ApiError::invalid("label must be at most 100 characters")),
+        Err(AccountRefusal::NotesTooLong) => Err(ApiError::invalid("notes must be at most 4000 characters")),
     }
 }
 

@@ -302,42 +302,25 @@ These parts are not proven. They are covered by tests instead.
   string-to-enum lookups, `ring` (SHA-256 and signature checks), the OS random
   number generator, and the Cloudflare Worker and Durable Object that keep the
   log (`deploy/src/index.ts`, TypeScript).
-- **Code that only moves data between those and the proofs:** SQL query
-  text and account ownership (a SQL query), converting `serde_json` values to
-  and from `json::Json` around the merge patch, the rusqlite-value conversions
-  in `durable.rs`, turning ASCII bytes into `String`s (including `Scope::as_str` over
-  `scope::scope_name`, and action and method names over `api::word_bytes`, every
-  one of which a test checks is ASCII), cutting a `&str` at a range a proven
-  function returned (`bearer`, `forwarded`, `name_in`: each cuts after ASCII
-  or trims whole characters, so the range is on character boundaries, and the
-  server uses `str::get`, which cannot panic), splitting the path on `/`
-  before `route`, the proven `limit` and `before` cursor values going into SQL, the
-  passkey ceremony table (its size cap and the five-minute expiry measured with
-  `Instant`), and the log client's socket I/O. In the token and audit routes, viewing
-  ID `String`s as their bytes (`String::as_bytes`) for
-  `account_checks` and `is_member`, `CharacterName::new` counting characters
-  and checking for surrounding whitespace and control characters (std's
-  Unicode tables) before the proven `name_check`, and `Timestamp`'s `Display`, `FromStr`
-  and serde impls passing bytes to and from the proven `format_rfc3339` and
-  `parse_rfc3339`. `Timestamp::now` reads the system clock.
-- **Forwarding shims Verus cannot see into:** each of these only passes its
-  arguments to a proven function and wraps the result, because its type derives
-  serde or holds `&str`, which Verus does not check:
-  - `StatBreakdown::implied_total` → `breakdown_total`
-  - `StatWindow::check` → `findings`; the shim reads the fields into raw values and writes each finding's message
-  - `class::find`, `world::find`, `world::by_key`, `world::in_region` → the `names` and `world` lookups, then index the table
-  - `Region::is_supported` → `world::has_tag`
-  - `Ratio`'s `Ord` → the proven `compare`
-  - `Region::display_name` and the class and world tables themselves: constant labels
-  - the `From`, `Debug` and serde impls of the unit types Their `Display`,
-  `FromStr` and JSON impls only write or read the bytes of the proven
-  `format_decimal`, `format_uint` and `parse_decimal`: `Fixed` crosses JSON as
-  its exact decimal text (`serde_json`'s `arbitrary_precision`), never as an
-  `f64`. PATCH documents are read back from their JSON text after the merge,
-  so they take the same exact path as request bodies.
-- **Error wording:** messages built with `format!` (`not_found`,
-  `too_large`, `unsupported_media_type`, the scope and account refusals), and
-  the error envelope's JSON. The status and name are proven; the text is not.
+- **Calls into those libraries, and nothing else:** every unverified function
+  in both crates is either I/O (`io`: SQL, sockets, the clock, randomness,
+  logging, `io::Error`) or a hand-off to an outside library Verus has no spec
+  for (`lib`): `Formatter::write_str` in the `Display`/`Debug` impls (each
+  writes the text of a proven function), serde and `serde_json` (hand-written
+  impls around proven parsers, `json!` responses, and reading the fields of
+  serde-derived request types, since Verus panics on the `Deserialize`
+  derive), rusqlite values, `String::from_utf8_lossy` for query strings,
+  `ring`'s SHA-256, and std's Unicode tables. `coverage.md` gives the reason
+  for each. There is no remaining glue: error wording (scope, account, token,
+  character and planned-resource refusals, `not_found`, `too_large`,
+  `unsupported_media_type`), the API's word table, `&str` cuts at proven
+  ranges (`msg::cut`, over vstd's `str::split_at`, with the character-boundary
+  proofs), splitting a request target at `?`, log frames, the token-mint
+  checks (`check_mint`, given the clock reading), and the class and world
+  lookups are all proven, most with the exact text of their messages in the
+  spec. Where a range comes from a proven trim that would need a long
+  boundary proof (`name_in` for token labels), the code checks
+  `str::is_char_boundary` first, which is what `str::get` did.
 - **Spec against reality:** that the specs are the game's formulas and the
   RFCs' formats is checked by golden tests and known vectors, not proofs.
 - **The verifier itself:** Verus, Z3, and `vstd`'s specs of the standard

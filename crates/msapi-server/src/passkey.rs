@@ -18,6 +18,15 @@
 //! origin, the relying party, user presence and the signature counter (see
 //! [`msapi_core::webauthn`] for the byte layouts and rules).
 
+#![allow(
+    clippy::cast_lossless,
+    clippy::single_char_add_str,
+    clippy::manual_map,
+    clippy::manual_unwrap_or_default,
+    clippy::manual_unwrap_or,
+    reason = "Verus checks plain casts, matches and `push_str`; it has no spec for `From` widening or `Option` combinators"
+)]
+
 use std::sync::{Mutex, OnceLock, PoisonError};
 use std::time::{Duration, Instant};
 
@@ -210,11 +219,23 @@ fn client_data(json: &[u8], kind: &str) -> Result<Pending, ApiError> {
     Ok(ceremony)
 }
 
-/// The checks both ceremonies make on authenticator data.
+/// The checks both ceremonies make on authenticator data, against this
+/// site's relying-party ID hash.
 fn check_auth_data(auth_data: &[u8]) -> Result<webauthn::AuthDataLayout, ApiError> {
-    let layout = webauthn::auth_data_layout(auth_data)
-        .ok_or_else(|| ApiError::bad_request("authenticator data is truncated"))?;
-    if !webauthn::rp_id_hash_ok(auth_data, digest(&SHA256, rp().id.as_bytes()).as_ref()) {
+    check_layout(auth_data, digest(&SHA256, rp().id.as_bytes()).as_ref())
+}
+
+/// The proven [`webauthn`] layout, RP-ID-hash and presence checks on
+/// `auth_data`, with their refusals worded.
+#[cfg_attr(feature = "verus", verus_verify)]
+#[cfg_attr(feature = "verus", verus_spec(r =>
+    ensures r matches Err(e) ==> e.status == 400 || e.status == 401,
+))]
+fn check_layout(auth_data: &[u8], rp_id_hash: &[u8]) -> Result<webauthn::AuthDataLayout, ApiError> {
+    let Some(layout) = webauthn::auth_data_layout(auth_data) else {
+        return Err(ApiError::bad_request("authenticator data is truncated"));
+    };
+    if !webauthn::rp_id_hash_ok(auth_data, rp_id_hash) {
         return Err(ApiError::unauthorized("the passkey is for a different site"));
     }
     if !webauthn::presence_ok(layout.flags) {
