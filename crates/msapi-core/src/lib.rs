@@ -25,6 +25,7 @@ macro_rules! proof {
     ($($t:tt)*) => {};
 }
 
+pub mod api;
 #[cfg(feature = "verus")]
 mod arith;
 pub mod ascii;
@@ -37,6 +38,7 @@ pub mod class;
 pub mod decimal;
 pub mod fixed;
 pub mod formula;
+pub mod http1;
 pub mod json;
 pub mod lookup;
 pub mod names;
@@ -47,6 +49,7 @@ pub mod region;
 pub mod rules;
 pub mod scope;
 pub mod stat;
+pub mod text;
 pub mod time;
 pub mod units;
 pub mod webauthn;

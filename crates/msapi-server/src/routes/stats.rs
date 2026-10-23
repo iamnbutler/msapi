@@ -8,7 +8,7 @@ use serde::Serialize;
 use serde_json::json;
 
 use msapi_core::stat::{Issue, Severity, StatWindow};
-use msapi_core::{Timestamp, rules};
+use msapi_core::{Timestamp, api, rules};
 
 use super::{characters, corrupt, page};
 use crate::audit::{Ctx, Target, Write};
@@ -117,6 +117,6 @@ pub fn history(conn: &Connection, ctx: &Ctx, req: &Request, id: &str) -> Result<
     let mut stmt = conn
         .prepare(&format!("{SELECT} WHERE character_id = ?1 AND (?2 IS NULL OR id < ?2) ORDER BY id DESC LIMIT ?3"))?;
     let snapshots = stmt.query_map(params![id, before, limit], from_row)?.collect::<rusqlite::Result<Vec<_>>>()?;
-    let next = (snapshots.len() == limit as usize).then(|| snapshots.last().map(|s| s.id.clone())).flatten();
+    let next = api::more_pages(snapshots.len(), limit).then(|| snapshots.last().map(|s| s.id.clone())).flatten();
     Ok(Response::json(200, &json!({ "history": snapshots, "next_before": next })))
 }

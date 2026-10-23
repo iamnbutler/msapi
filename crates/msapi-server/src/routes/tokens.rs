@@ -5,10 +5,11 @@ use serde::Serialize;
 use serde_json::json;
 
 use msapi_core::Timestamp;
+use msapi_core::policy;
 
 use super::{corrupt, token_subtree};
 use crate::audit::{Ctx, Target, Write};
-use crate::auth::{MintRequest, Scope, Scopes};
+use crate::auth::{MintRequest, Scope, Scopes, as_bytes};
 use crate::error::ApiError;
 use crate::http::{Request, Response};
 use crate::ids;
@@ -102,7 +103,7 @@ pub fn get(conn: &Connection, ctx: &Ctx, id: &str) -> Result<Response, ApiError>
     if id != ctx.principal.token_id {
         ctx.principal.require(Scope::TokensRead)?;
     }
-    if !visible(conn, ctx)?.iter().any(|v| v == id) {
+    if !policy::is_member(id.as_bytes(), &as_bytes(&visible(conn, ctx)?)) {
         return Err(ApiError::not_found(format!("token `{id}`")));
     }
     let token = load(conn, id)?.ok_or_else(|| ApiError::not_found(format!("token `{id}`")))?;
@@ -169,7 +170,7 @@ pub fn revoke(conn: &mut Connection, ctx: &Ctx, id: &str) -> Result<Response, Ap
     if id != ctx.principal.token_id {
         ctx.principal.require(Scope::TokensWrite)?;
     }
-    if !visible(conn, ctx)?.iter().any(|v| v == id) {
+    if !policy::is_member(id.as_bytes(), &as_bytes(&visible(conn, ctx)?)) {
         return Err(ApiError::not_found(format!("token `{id}`")));
     }
     let before = load(conn, id)?.ok_or_else(|| ApiError::not_found(format!("token `{id}`")))?;

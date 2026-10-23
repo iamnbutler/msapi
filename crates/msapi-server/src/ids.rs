@@ -37,10 +37,9 @@ static LAST: Mutex<u128> = Mutex::new(0);
 /// rely on that order.
 #[must_use]
 pub fn new_id(prefix: &str) -> String {
-    let ms = u128::from(u64::try_from(Timestamp::now().millis()).unwrap_or(0) & 0xffff_ffff_ffff);
     let mut rand = [0u8; 16];
     rand[6..].copy_from_slice(&random::<10>());
-    let candidate = (ms << 80) | u128::from_be_bytes(rand);
+    let candidate = msapi_core::policy::id_candidate(Timestamp::now().millis(), u128::from_be_bytes(rand));
     let value = {
         let mut last = LAST.lock().unwrap_or_else(PoisonError::into_inner);
         *last = msapi_core::policy::next_id(*last, candidate);

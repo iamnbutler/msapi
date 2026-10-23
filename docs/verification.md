@@ -95,8 +95,59 @@ each error is returned exactly in its case. `value()` is a unit's raw integer.
 | `chain_expiry` | a token works exactly when no token in its chain is revoked or expired, and then expires at the earliest expiry in the chain (or never, if none expire) |
 | `is_member`, `reaches` | byte-for-byte membership of an ID in a list; `reaches` is true for an unlimited token |
 | `account_checks` | one `AccountCheck` per requested ID, with `owned` its membership in the user's accounts and `reachable` its `reaches` under the parent's limit |
+| `with`, `first` | a set with one scope added; the set of the first `n` scopes (`first(COUNT)` is every scope) |
+| `id_candidate` | the clock's milliseconds mod 2⁴⁸ (0 before the epoch) times 2⁸⁰, plus the 80 random bits |
 | `next_id` | strictly greater than the last ID, and at least the time-based candidate |
+| `next_seq`, `snapshot_due` | the log's next sequence number; a snapshot is due exactly when `seq >= snapshot + every` |
 | `page_size` | 50 by default, else exactly 1-200 |
+
+### `api.rs`: routing and requests
+
+The server splits the path on `/` (dropping empty segments) and hands the
+segments to `route`; everything after that is decided here.
+
+| Function | Proven |
+| --- | --- |
+| `Method::parse`, `word`, `is_write` | `GET` and `HEAD` are `Get`, the other four names their methods, anything else `Other`; writes are exactly `POST`, `PUT`, `PATCH`, `DELETE` |
+| `route` | equals `route_spec`: the public routes (`GET` only, else 405), then `/v1/auth/passkey/…` (`POST` only, else 405; an unknown step is 404), then the API table; a found route's method is its own, and 405 is returned only for a path that exists under another method or lies under `/v1/auth/passkey/` (`lemma_route`). A route's audit action reads exactly when its method does not write |
+| `planned` | the position in `PLANNED` of the resource named, byte for byte |
+| `action` | each route's audit action name (`None` for the public routes and the passkey starts) |
+| `page_limit` | an absent `limit` is 50; text that is not a `u64` counts as 0; then exactly 1-200 |
+| `more_pages` | a page has a `next_before` cursor exactly when it is full |
+| `flag` | absent or `false` is `false`, `true` is `true`, anything else is refused |
+| `json_type` | a JSON body is read only under a content type starting `application/json` or `application/merge-patch+json` |
+| `body_fits` | at most `MAX_BODY` (256 KiB) |
+| `bearer` | the token is the text after `Bearer ` or `bearer `, trimmed as `str::trim` |
+| `forwarded` | the client is the `X-Forwarded-For` text before the first `,`, trimmed |
+| `session_expiry` | a passkey session ends `SESSION_MS` (30 days) after it starts, saturating at `i64::MAX` |
+| `name_in` | a token label or display name is trimmed and then `min..=max` characters; the range returned is exactly the trimmed text |
+| `character_fields`, `account_fields`, `text_fits` | each refusal is returned exactly in its case and in the order checked: experience rate, experience over `i64::MAX`, guild over 32 characters, image over 4096, notes over 4000, image not `https://`; an account's label over 100, notes over 4000 |
+
+`/v1/auth/passkey/<anything>` with a method other than `POST` is 405 even
+when the step does not exist; this is what the server always did, and the
+`route` spec states it rather than hiding it.
+
+### `text.rs`: Unicode text without `str`
+
+| Function | Proven |
+| --- | --- |
+| `trim`, `trim_in` | equals `trimmed`: leading and trailing Unicode White_Space removed, the exact set `str::trim` uses (the 1-, 2- and 3-byte UTF-8 forms); a test compares with `str::trim` for every `char` |
+| `char_count`, `char_count_in` | equals `chars`: the bytes that are not UTF-8 continuation bytes, which is `str::chars().count()` for UTF-8 |
+| `starts_with` | equals `has_prefix` |
+| `parse_u64`, `parse_u64_in` | an optional `+`, then one or more decimal digits whose value fits `u64`, exactly as `str::parse::<u64>` |
+| `parse_hex`, `parse_hex_in` | the same in hex, exactly as `usize::from_str_radix(_, 16)` |
+
+### `http1.rs`: the changeset log's responses
+
+| Function | Proven |
+| --- | --- |
+| `is_utf8` | equals `utf8`: well-formed UTF-8 by Unicode Table 3-7 (a test compares with `str::from_utf8` on every 1- and 2-byte string and a sample of longer ones) |
+| `response` | equals `response_spec`: the head ends at the first `\r\n\r\n` and must be UTF-8; the status is the second space-separated field as a `u16`; the body is chunked when a `\n`-separated head line starts with `transfer-encoding:` in any case and contains `chunked` |
+| `dechunk` | equals `dechunk_spec`: each chunk is a UTF-8 size line (the text before `;`, trimmed, in hex), `\r\n`, that many bytes and two more; size 0 ends it |
+| `success` | exactly 200-299 |
+
+Tests compare `response` and `dechunk` with the `std`-based code they
+replaced.
 
 ### `rules.rs`: what the routes accept
 
@@ -118,19 +169,21 @@ goes through a proven function.
 
 | Route | Decided by |
 | --- | --- |
-| every authenticated route | `chain_expiry` (is the token alive, and until when), `contains` (scope), `reaches` (account limit) |
-| `POST /v1/tokens` | `account_checks`, `check_mint`, `length_ok` (label) |
-| `GET` lists (`limit`) | `page_size` |
-| `POST`/`PATCH /v1/accounts` | `length_ok` (label, notes) |
-| `POST`/`PATCH /v1/characters…` | `bounded_u16`/`bounded_u8` (levels), `name_check`, `gms_name_ok`, `exp_rate_ok`, `length_ok`, `world::find` |
+| every request | `Method::parse`, `route` (which handler, 404 or 405), `body_fits`, `forwarded` (behind a proxy), `json_type` (bodies) |
+| every authenticated route | `bearer`, `chain_expiry` (is the token alive, and until when), `contains` (scope), `reaches` (account limit), `action` (the audit record), `is_write` (whether a 403 is audited) |
+| `POST /v1/tokens` | `account_checks`, `check_mint`, `name_in` (label) |
+| `GET /v1/tokens/{id}`, `DELETE /v1/tokens/{id}`, `GET /v1/audit?token_id=` | `is_member` (is the token visible) |
+| `GET /v1/audit`, `GET …/stat/history` | `page_limit` (through `page_size`), `more_pages`, `flag` (`include_descendants`) |
+| `POST`/`PATCH /v1/accounts` | `account_fields` |
+| `POST`/`PATCH /v1/characters…` | `bounded_u16`/`bounded_u8` (levels), `name_check`, `gms_name_ok`, `world::find`, `character_fields` (through `exp_rate_ok`) |
 | `POST`/`PATCH /v1/accounts` (region) | `world::has_tag` (`Region::is_supported`) |
 | `PUT`/`PATCH …/stat` | `captured_at_ok` and `stat::findings` (which uses `ignore_defense_ok`, `cooldown_reduction_ok`, `percentage_ok`, `range_ok`, with `breakdown_total` for tooltips) |
-| `/v1/auth/passkey/*` | `base64url::decode` (every binary field and the challenge), `Cbor::decode`, `PublicKey::from_cose`, `bytes_eq` (type, credential ID), `origin_ok`, `rp_id_hash_ok`, `es256_point`, `auth_data_layout`, `presence_ok`, `counter_ok`, `length_ok` (display name) |
+| `/v1/auth/passkey/*` | `base64url::decode` (every binary field and the challenge), `Cbor::decode`, `PublicKey::from_cose`, `bytes_eq` (type, credential ID), `origin_ok`, `rp_id_hash_ok`, `es256_point`, `auth_data_layout`, `presence_ok`, `attested`, `counter_ok`, `name_in` (display name), `session_expiry`, `action` |
 | every query parameter | `parse_query` |
 | stat fields with decimals | `parse_decimal` in, `format_decimal` out (exact JSON text) |
-| new IDs (audit and history order) | `next_id`, then `base32::encode_u128` (proven order-preserving) |
+| new IDs (audit and history order) | `id_candidate`, `next_id`, then `base32::encode_u128` (proven order-preserving) |
 | token secrets | `base32::encode` |
-| every write (the durable log) | `encode_statement`; on restore `frames`, `decode_batch`, `next_batch_ok` |
+| every write (the durable log) | `encode_statement`, `next_seq`, `snapshot_due`, and `response`, `dechunk`, `success` on the log's replies; on restore `frames`, `decode_batch`, `next_batch_ok` |
 | calculators (`calc`, `units`) | the wrappers above, and through them `formula.rs` and `ratio.rs` |
 
 ### `webauthn.rs`: passkey bytes and rules
@@ -141,6 +194,7 @@ goes through a proven function.
 | `cbor_head` | the major type, and the argument read big-endian from the 0, 1, 2, 4 or 8 bytes the initial byte declares; the content offset is in bounds; indefinite and reserved lengths are refused |
 | `counter_ok` | a sign-in counter is accepted only if it grew, or if the authenticator keeps none (both 0) |
 | `presence_ok` | sign-in requires the user-present flag |
+| `attested` | registration requires the attested-credential flag |
 | `Cbor::decode` | every item ends after it starts and within the buffer, and every byte and text string it returns lies inside its item. Nesting is capped at 8 and counts larger than the remaining bytes are refused, so it terminates without unbounded allocation |
 | `get_int`, `get_text`, `as_bytes`, `as_int` | a value found is one of the map's entries; `get_text` compares the key's exact bytes; `as_bytes` returns exactly the item's range of the buffer; `as_int` is the exact integer |
 | `origin_ok` | the client data's origin is byte-for-byte this site's and `crossOrigin` is false |
@@ -223,9 +277,17 @@ These parts are not proven. They are covered by tests instead.
   text and account ownership (a SQL query), converting `serde_json` values to
   and from `json::Json` around the merge patch, the rusqlite-value conversions
   in `durable.rs`, turning ASCII bytes into `String`s (including `Scope::as_str` over
-  `scope::scope_name`), and in `auth.rs` viewing
-  account-ID `String`s as their bytes (`String::as_bytes`) for
-  `account_checks` and `reaches`, `CharacterName::new` counting characters
+  `scope::scope_name`, and action and method names over `api::word_bytes`, every
+  one of which a test checks is ASCII), cutting a `&str` at a range a proven
+  function returned (`bearer`, `forwarded`, `name_in`: each cuts after ASCII
+  or trims whole characters, so the range is on character boundaries, and the
+  server uses `str::get`, which cannot panic), splitting the path on `/`
+  before `route`, the `limit` and `before` cursor values going into SQL, the
+  passkey ceremony table (its size cap and the five-minute expiry measured with
+  `Instant`), and the log client's socket I/O. In `auth.rs` and the token and
+  audit routes, viewing
+  ID `String`s as their bytes (`String::as_bytes`) for
+  `account_checks`, `reaches` and `is_member`, `CharacterName::new` counting characters
   and checking for surrounding whitespace and control characters (std's
   Unicode tables) before the proven `name_check`, and `Timestamp`'s `Display`, `FromStr`
   and serde impls passing bytes to and from the proven `format_rfc3339` and

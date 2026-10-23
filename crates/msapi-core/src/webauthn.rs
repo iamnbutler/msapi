@@ -127,6 +127,15 @@ pub const fn presence_ok(flags: u8) -> bool {
     flags & USER_PRESENT != 0
 }
 
+/// Whether the flags say the authenticator data carries a credential, as a
+/// registration's must.
+#[cfg_attr(feature = "verus", verus_verify)]
+#[cfg_attr(feature = "verus", verus_spec(r => ensures r == (flags & ATTESTED != 0)))]
+#[must_use]
+pub const fn attested(flags: u8) -> bool {
+    flags & ATTESTED != 0
+}
+
 /// The head of a CBOR item at `data[at..]`: its major type (0-7), its
 /// argument, and where its content starts. `None` for indefinite lengths,
 /// reserved encodings, or a head that runs past the end.

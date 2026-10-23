@@ -134,7 +134,7 @@ fn insert(
             ctx.principal.token_id,
             ctx.principal.label,
             ctx.request_id,
-            ctx.method.as_str(),
+            crate::http::method_name(ctx.method),
             ctx.path,
             ctx.action,
             target.map(|t| t.kind),

@@ -10,7 +10,7 @@
 //! Options and credentials use the browser's JSON forms
 //! (`PublicKeyCredential.parseCreationOptionsFromJSON`, `credential.toJSON()`):
 //! binary fields are base64url. A session is a root token that expires after
-//! [`SESSION_DAYS`]; it can mint delegated tokens like any root token.
+//! thirty days ([`api::SESSION_MS`]); it can mint delegated tokens like any root token.
 //!
 //! Attestation is not requested, so registration trusts the key the browser
 //! reports for this origin, as passkey sites generally do. Sign-in checks the
@@ -29,17 +29,16 @@ use serde::Deserialize;
 use serde_json::json;
 
 use msapi_core::Timestamp;
+use msapi_core::api::{self, Route};
 use msapi_core::base64url;
 use msapi_core::webauthn::{self, ALGORITHMS, Cbor, PublicKey};
 
 use crate::audit::{Ctx, Target, Write};
 use crate::auth::{Principal, Scopes};
 use crate::error::ApiError;
-use crate::http::{Method, Request, Response};
+use crate::http::{Request, Response};
 use crate::ids;
 
-/// How long a passkey session lasts.
-pub const SESSION_DAYS: i64 = 30;
 /// How long a ceremony may take, from start to finish.
 const CEREMONY: Duration = Duration::from_secs(5 * 60);
 /// Most ceremonies pending at once; starting more evicts expired ones first.
@@ -105,17 +104,13 @@ pub fn handle(
     conn: &mut Connection,
     req: &Request,
     request_id: &str,
-    segments: &[&str],
+    route: Route,
 ) -> Option<Result<Response, ApiError>> {
-    let ["v1", "auth", "passkey", step @ ..] = segments else { return None };
-    if req.method != Method::Post {
-        return Some(Err(ApiError::method_not_allowed()));
-    }
-    Some(match step {
-        ["register", "start"] => register_start(req),
-        ["register", "finish"] => register_finish(conn, req, request_id),
-        ["login", "start"] => login_start(),
-        ["login", "finish"] => login_finish(conn, req, request_id),
+    Some(match route {
+        Route::RegisterStart => register_start(req),
+        Route::RegisterFinish => register_finish(conn, req, request_id),
+        Route::LoginStart => login_start(),
+        Route::LoginFinish => login_finish(conn, req, request_id),
         _ => return None,
     })
 }
@@ -128,10 +123,10 @@ struct RegisterStart {
 
 fn register_start(req: &Request) -> Result<Response, ApiError> {
     let body: RegisterStart = req.json()?;
-    let display_name = body.display_name.trim().to_owned();
-    if !msapi_core::rules::length_ok(display_name.chars().count(), 1, 64) {
-        return Err(ApiError::invalid("display_name must be 1-64 characters"));
-    }
+    let display_name = api::name_in(body.display_name.as_bytes(), 1, 64)
+        .and_then(|(a, b)| body.display_name.get(a..b))
+        .ok_or_else(|| ApiError::invalid("display_name must be 1-64 characters"))?
+        .to_owned();
     let user_id = ids::new_id("usr");
     let options = json!({
         "rp": { "id": rp().id, "name": "msapi" },
@@ -240,7 +235,7 @@ fn register_finish(conn: &mut Connection, req: &Request, request_id: &str) -> Re
         .and_then(|v| v.as_bytes(&attestation))
         .ok_or_else(|| ApiError::bad_request("attestationObject has no authData"))?;
     let layout = check_auth_data(&auth_data)?;
-    if layout.flags & webauthn::ATTESTED == 0 {
+    if !webauthn::attested(layout.flags) {
         return Err(ApiError::bad_request("authenticator data has no credential"));
     }
     let id = &auth_data[layout.id_start..layout.id_end];
@@ -256,7 +251,7 @@ fn register_finish(conn: &mut Connection, req: &Request, request_id: &str) -> Re
 
     let now = Timestamp::now().millis();
     let session = Session::new(user_id, now);
-    let ctx = session.ctx(req, request_id, "user.create");
+    let ctx = session.ctx(req, request_id, Route::RegisterFinish);
     let write = Write::begin(conn, &ctx)?;
     write.execute(
         "INSERT INTO users (id, display_name, created_at) VALUES (?1, ?2, ?3)",
@@ -316,7 +311,7 @@ fn login_finish(conn: &mut Connection, req: &Request, request_id: &str) -> Resul
 
     let now = Timestamp::now().millis();
     let session = Session::new(user_id, now);
-    let ctx = session.ctx(req, request_id, "session.create");
+    let ctx = session.ctx(req, request_id, Route::LoginFinish);
     let write = Write::begin(conn, &ctx)?;
     write.execute(
         "UPDATE passkeys SET sign_count = ?2, last_used_at = ?3 WHERE id = ?1",
@@ -357,11 +352,11 @@ impl Session {
             token_id: ids::new_id("tok"),
             secret: ids::new_token_secret(),
             created_at: now,
-            expires_at: now + SESSION_DAYS * 24 * 60 * 60 * 1000,
+            expires_at: api::session_expiry(now),
         }
     }
 
-    fn ctx(&self, req: &Request, request_id: &str, action: &'static str) -> Ctx {
+    fn ctx(&self, req: &Request, request_id: &str, route: Route) -> Ctx {
         Ctx {
             principal: Principal {
                 user_id: self.user_id.clone(),
@@ -377,7 +372,7 @@ impl Session {
             path: req.path.clone(),
             client: req.client.clone(),
             user_agent: req.header("user-agent").map(str::to_owned),
-            action,
+            action: api::action(route).map_or("", crate::http::word),
         }
     }
 

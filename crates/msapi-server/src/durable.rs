@@ -30,6 +30,7 @@ use std::sync::{Mutex, OnceLock, PoisonError};
 use std::time::{Duration, Instant};
 
 use msapi_core::batch::{self, Param, Statement};
+use msapi_core::{http1, policy};
 use rusqlite::types::{ToSqlOutput, Value, ValueRef};
 use rusqlite::{Connection, Row, ToSql, params_from_iter};
 
@@ -131,7 +132,7 @@ impl<'c> Logged<'c> {
         // Hold the position across send and commit, so the log's order is the
         // commit order.
         let mut pos = log.state.lock().unwrap_or_else(PoisonError::into_inner);
-        let seq = pos.seq + 1;
+        let seq = policy::next_seq(pos.seq);
         if let Err(err) = send(&log.host, "POST", &format!("/changeset?seq={seq}"), &batch) {
             // `self` drops here and rolls back.
             return Err(rusqlite::Error::ToSqlConversionFailure(Box::new(err)));
@@ -144,7 +145,7 @@ impl<'c> Logged<'c> {
             std::process::exit(70);
         }
         pos.seq = seq;
-        if pos.seq - pos.snapshot >= SNAPSHOT_EVERY {
+        if policy::snapshot_due(pos.seq, pos.snapshot, SNAPSHOT_EVERY) {
             match snapshot(self.conn, &log.host, pos.seq) {
                 Ok(()) => pos.snapshot = pos.seq,
                 Err(err) => eprintln!("snapshot at {seq} failed (will retry later): {err}"),
@@ -313,35 +314,19 @@ fn send(host: &str, method: &str, path: &str, body: &[u8]) -> io::Result<Vec<u8>
 
     let mut response = Vec::new();
     stream.read_to_end(&mut response)?;
-    let split = response.windows(4).position(|w| w == b"\r\n\r\n").ok_or_else(|| bad("no end of headers"))?;
-    let head = std::str::from_utf8(&response[..split]).map_err(|_| bad("headers are not UTF-8"))?;
-    let status: u16 = head.split(' ').nth(1).and_then(|s| s.parse().ok()).ok_or_else(|| bad("no status"))?;
-    let mut payload = response[split + 4..].to_vec();
-    if head.lines().any(|l| l.to_ascii_lowercase().starts_with("transfer-encoding:") && l.contains("chunked")) {
-        payload = dechunk(&payload)?;
+    // Where the head ends, the status and the chunking are read by
+    // `msapi_core::http1`, checked by Verus.
+    let (status, start, chunked) =
+        http1::response(&response).ok_or_else(|| bad("no end of headers, headers not UTF-8, or no status"))?;
+    let mut payload = response[start..].to_vec();
+    if chunked {
+        payload = http1::dechunk(&payload).ok_or_else(|| bad("bad chunked body"))?;
     }
-    if !(200..300).contains(&status) {
+    if !http1::success(status) {
         let text = String::from_utf8_lossy(&payload);
         return Err(bad(&format!("{method} {path}: {status} {}", text.trim())));
     }
     Ok(payload)
-}
-
-fn dechunk(mut data: &[u8]) -> io::Result<Vec<u8>> {
-    let mut out = Vec::new();
-    loop {
-        let line_end = data.windows(2).position(|w| w == b"\r\n").ok_or_else(|| bad("bad chunk"))?;
-        let size_text = std::str::from_utf8(&data[..line_end]).map_err(|_| bad("bad chunk size"))?;
-        let size = usize::from_str_radix(size_text.split(';').next().unwrap_or("").trim(), 16)
-            .map_err(|_| bad("bad chunk size"))?;
-        data = &data[line_end + 2..];
-        if size == 0 {
-            return Ok(out);
-        }
-        let chunk = data.get(..size).ok_or_else(|| bad("short chunk"))?;
-        out.extend_from_slice(chunk);
-        data = data.get(size + 2..).ok_or_else(|| bad("short chunk"))?;
-    }
 }
 
 fn bad(message: &str) -> io::Error {
@@ -389,10 +374,5 @@ mod tests {
             ])
         );
         assert!(decode_batch(&batch[..batch.len() - 1]).is_err());
-    }
-
-    #[test]
-    fn chunked_bodies_decode() {
-        assert_eq!(dechunk(b"3\r\nabc\r\n2\r\nde\r\n0\r\n\r\n").ok(), Some(b"abcde".to_vec()));
     }
 }

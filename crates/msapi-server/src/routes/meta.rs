@@ -5,8 +5,9 @@ use serde_json::json;
 
 use msapi_core::{Region, class, world};
 
-use crate::error::ApiError;
-use crate::http::{Method, Response};
+use msapi_core::api::Route;
+
+use crate::http::Response;
 
 /// The agent-facing guide, served verbatim.
 const DOCS: &str = include_str!("../../../../docs/api.md");
@@ -18,24 +19,23 @@ struct RegionView {
     supported: bool,
 }
 
-/// Answers a public route, or `None` if the path needs authentication.
-pub fn public(method: Method, segments: &[&str]) -> Result<Option<Response>, ApiError> {
-    let response = match *segments {
-        ["health"] => Response::json(200, &json!({ "ok": true })),
-        ["v1"] => Response::json(200, &index()),
-        ["v1", "docs"] => Response::text(200, "text/markdown; charset=utf-8", DOCS),
-        ["v1", "ref", "regions"] => {
+/// Answers a public route, or `None` if the route needs authentication.
+pub fn public(route: Route) -> Option<Response> {
+    Some(match route {
+        Route::Health => Response::json(200, &json!({ "ok": true })),
+        Route::Index => Response::json(200, &index()),
+        Route::Docs => Response::text(200, "text/markdown; charset=utf-8", DOCS),
+        Route::RefRegions => {
             let regions: Vec<_> = Region::ALL
                 .into_iter()
                 .map(|r| RegionView { region: r, name: r.display_name(), supported: r.is_supported() })
                 .collect();
             Response::json(200, &json!({ "regions": regions }))
         }
-        ["v1", "ref", "worlds"] => Response::json(200, &json!({ "worlds": world::WORLDS })),
-        ["v1", "ref", "classes"] => Response::json(200, &json!({ "classes": class::CLASSES })),
-        _ => return Ok(None),
-    };
-    if method == Method::Get { Ok(Some(response)) } else { Err(ApiError::method_not_allowed()) }
+        Route::RefWorlds => Response::json(200, &json!({ "worlds": world::WORLDS })),
+        Route::RefClasses => Response::json(200, &json!({ "classes": class::CLASSES })),
+        _ => return None,
+    })
 }
 
 fn index() -> serde_json::Value {
@@ -58,6 +58,6 @@ fn index() -> serde_json::Value {
             "GET    /v1/characters/{id}/stat   PUT /v1/characters/{id}/stat   PATCH /v1/characters/{id}/stat",
             "GET    /v1/characters/{id}/stat/history",
         ],
-        "planned": super::PLANNED.iter().map(|(name, what)| json!({ "path": format!("/v1/characters/{{id}}/{name}"), "what": what })).collect::<Vec<_>>(),
+        "planned": super::planned().map(|(name, what)| json!({ "path": format!("/v1/characters/{{id}}/{name}"), "what": what })).collect::<Vec<_>>(),
     })
 }

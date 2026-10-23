@@ -8,14 +8,14 @@ use rusqlite::{Connection, OptionalExtension, Row, params};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 
+use msapi_core::api::{self, CharacterRefusal};
 use msapi_core::class::Class;
-use msapi_core::rules;
 use msapi_core::{
     CharacterName, ClassLevel, DataCenter, ExpRate, Gender, JobType, Level, Liberation, Region, Timestamp, World,
     WorldType, class, world,
 };
 
-use super::{corrupt, enum_from_sql, enum_to_sql, in_list, is_unique_violation};
+use super::{corrupt, enum_from_sql, enum_to_sql, in_list, is_unique_violation, opt_bytes};
 use crate::audit::{Ctx, Target, Write};
 use crate::auth::{Principal, Scope};
 use crate::error::ApiError;
@@ -74,30 +74,24 @@ impl CharacterInput {
         let class = class::find(&self.character_class).ok_or_else(|| {
             ApiError::invalid(format!("unknown class `{}`; see /v1/ref/classes", self.character_class))
         })?;
-        if let Some(rate) = self.character_exp_rate
-            && !rules::exp_rate_ok(rate.raw())
-        {
-            return Err(ApiError::invalid(format!("character_exp_rate must be in [0, 100), got {rate}")));
-        }
-        let exp = self
-            .character_exp
-            .map(i64::try_from)
-            .transpose()
-            .map_err(|_| ApiError::invalid("character_exp is too large"))?;
-        let too_long = |field: &str, value: &Option<String>, max: usize| -> Result<(), ApiError> {
-            if value.as_ref().is_some_and(|v| !rules::length_ok(v.chars().count(), 0, max)) {
-                return Err(ApiError::invalid(format!("{field} must be at most {max} characters")));
-            }
-            Ok(())
-        };
-        too_long("character_guild_name", &self.character_guild_name, 32)?;
-        too_long("character_image", &self.character_image, 4096)?;
-        too_long("notes", &self.notes, 4000)?;
-        if let Some(url) = &self.character_image
-            && !url.starts_with("https://")
-        {
-            return Err(ApiError::invalid("character_image must be an https:// URL"));
-        }
+        let exp = api::character_fields(
+            self.character_exp_rate.map(ExpRate::raw),
+            self.character_exp,
+            opt_bytes(self.character_guild_name.as_ref()),
+            opt_bytes(self.character_image.as_ref()),
+            opt_bytes(self.notes.as_ref()),
+        )
+        .map_err(|refusal| match refusal {
+            CharacterRefusal::ExpRate => ApiError::invalid(format!(
+                "character_exp_rate must be in [0, 100), got {}",
+                self.character_exp_rate.map(|r| r.to_string()).unwrap_or_default()
+            )),
+            CharacterRefusal::ExpTooLarge => ApiError::invalid("character_exp is too large"),
+            CharacterRefusal::GuildTooLong => ApiError::invalid("character_guild_name must be at most 32 characters"),
+            CharacterRefusal::ImageTooLong => ApiError::invalid("character_image must be at most 4096 characters"),
+            CharacterRefusal::NotesTooLong => ApiError::invalid("notes must be at most 4000 characters"),
+            CharacterRefusal::ImageNotHttps => ApiError::invalid("character_image must be an https:// URL"),
+        })?;
         Ok(Valid { input: self, world, class, exp })
     }
 }

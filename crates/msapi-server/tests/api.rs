@@ -351,3 +351,31 @@ fn the_guide_examples_are_accepted() {
     assert_eq!(status, 200, "{body}");
     assert_eq!(body["warnings"], json!([]), "the guide's example should be self-consistent");
 }
+
+#[test]
+fn routing_statuses() {
+    let (mut api, root) = Api::new();
+    let cases: &[(Method, &str, &str, u16)] = &[
+        (Method::Get, &root, "/health", 200),
+        (Method::Post, &root, "/health", 405),
+        (Method::Get, &root, "//v1//", 200),
+        (Method::Get, &root, "/nope", 404),
+        (Method::Put, &root, "/v1/characters", 405),
+        (Method::Other, &root, "/v1/me", 405),
+        (Method::Get, &root, "/v1/characters/chr_x/nope", 404),
+        (Method::Post, &root, "/v1/characters/chr_x/hyper-stat", 405),
+        (Method::Get, &root, "/v1/characters/chr_x/hyper-stat", 404),
+        (Method::Get, &root, "/v1/auth/passkey/anything", 405),
+        (Method::Post, &root, "/v1/auth/passkey/anything", 404),
+        (Method::Get, "nope", "/v1/me", 401),
+        (Method::Get, &root, "/v1/me", 200),
+        (Method::Get, &root, "/v1/audit?limit=0", 400),
+        (Method::Get, &root, "/v1/audit?limit=x", 400),
+        (Method::Get, &root, "/v1/audit?limit=200", 200),
+        (Method::Get, &root, "/v1/audit?token_id=x&include_descendants=maybe", 400),
+    ];
+    for &(method, token, target, want) in cases {
+        let (status, body) = api.call(token, method, target, None);
+        assert_eq!(status, want, "{method:?} {target}: {body}");
+    }
+}
