@@ -83,26 +83,6 @@ pub open spec fn trimmed(s: Seq<u8>) -> Seq<u8> {
     t.subrange(0, t.len() - trail(t))
 }
 
-proof fn lemma_lead_bound(s: Seq<u8>)
-    ensures lead(s) <= s.len(),
-    decreases s.len(),
-{
-    let k = ws_prefix(s);
-    if k != 0 && k <= s.len() {
-        lemma_lead_bound(s.skip(k as int));
-    }
-}
-
-proof fn lemma_trail_bound(s: Seq<u8>)
-    ensures trail(s) <= s.len(),
-    decreases s.len(),
-{
-    let k = ws_suffix(s);
-    if k != 0 && k <= s.len() {
-        lemma_trail_bound(s.subrange(0, s.len() - k));
-    }
-}
-
 /// Whether `b` begins a UTF-8 character (is not a continuation byte).
 pub open spec fn starts_char(b: u8) -> bool {
     !(0x80 <= b && b < 0xC0)
@@ -192,14 +172,14 @@ pub open spec fn has_prefix(s: Seq<u8>, p: Seq<u8>) -> bool {
 
 } // verus!
 
-/// The length of the whitespace character at `s[i..]`, or 0.
+/// The length of the whitespace character at `s[i..hi]`, or 0.
 #[cfg_attr(feature = "verus", verus_verify)]
 #[cfg_attr(feature = "verus", verus_spec(r =>
-    requires i <= s.len(),
-    ensures r as nat == ws_prefix(s@.skip(i as int)),
+    requires i <= hi <= s.len(),
+    ensures r as nat == ws_prefix(s@.subrange(i as int, hi as int)),
 ))]
-fn ws_at(s: &[u8], i: usize) -> usize {
-    let n = s.len() - i;
+fn ws_at(s: &[u8], i: usize, hi: usize) -> usize {
+    let n = hi - i;
     if n >= 1 && ((9 <= s[i] && s[i] <= 13) || s[i] == 32) {
         1
     } else if n >= 2 && s[i] == 0xC2 && (s[i + 1] == 0x85 || s[i + 1] == 0xA0) {
@@ -248,35 +228,51 @@ fn ws_before(s: &[u8], i: usize, j: usize) -> usize {
 ))]
 #[must_use]
 pub fn trim(s: &[u8]) -> (usize, usize) {
-    let mut i: usize = 0;
-    let mut k = ws_at(s, 0);
-    proof! { assert(s@.skip(0) =~= s@); }
+    proof! { assert(s@.subrange(0, s.len() as int) =~= s@); }
+    trim_in(s, 0, s.len())
+}
+
+/// The range of `s` that [`trimmed`] keeps of `s[lo..hi]`.
+#[cfg_attr(feature = "verus", verus_verify)]
+#[cfg_attr(feature = "verus", verus_spec(r =>
+    requires lo <= hi <= s.len(),
+    ensures
+        lo <= r.0 <= r.1 <= hi,
+        s@.subrange(r.0 as int, r.1 as int) == trimmed(s@.subrange(lo as int, hi as int)),
+))]
+#[must_use]
+pub fn trim_in(s: &[u8], lo: usize, hi: usize) -> (usize, usize) {
+    let mut i: usize = lo;
+    let mut k = ws_at(s, lo, hi);
+    proof! { assert(s@.subrange(lo as int, hi as int).skip(0) =~= s@.subrange(lo as int, hi as int)); }
     #[cfg_attr(feature = "verus", verus_spec(
         invariant
-            i <= s.len(),
-            k as nat == ws_prefix(s@.skip(i as int)),
-            lead(s@) == i + lead(s@.skip(i as int)),
-        decreases s.len() - i
+            lo <= i <= hi <= s.len(),
+            k as nat == ws_prefix(s@.subrange(i as int, hi as int)),
+            lead(s@.subrange(lo as int, hi as int)) == (i - lo) + lead(s@.subrange(i as int, hi as int)),
+            s@.subrange(lo as int, hi as int).skip(i - lo) == s@.subrange(i as int, hi as int),
+        decreases hi - i
     ))]
     while k != 0 {
         proof! {
-            assert(s@.skip(i as int).skip(k as int) =~= s@.skip(i + k));
+            assert(s@.subrange(i as int, hi as int).skip(k as int) =~= s@.subrange(i + k, hi as int));
+            assert(s@.subrange(lo as int, hi as int).skip(i + k - lo) =~= s@.subrange(i + k, hi as int));
         }
         i += k;
-        k = ws_at(s, i);
+        k = ws_at(s, i, hi);
     }
-    let mut j: usize = s.len();
+    let mut j: usize = hi;
     proof! {
-        assert(lead(s@.skip(i as int)) == 0);
-        assert(s@.subrange(i as int, s.len() as int) =~= s@.skip(i as int));
+        assert(lead(s@.subrange(i as int, hi as int)) == 0);
     }
     let mut k = ws_before(s, i, j);
     #[cfg_attr(feature = "verus", verus_spec(
         invariant
-            i <= j <= s.len(),
-            lead(s@) == i,
+            lo <= i <= j <= hi <= s.len(),
+            lead(s@.subrange(lo as int, hi as int)) == i - lo,
+            s@.subrange(lo as int, hi as int).skip(i - lo) == s@.subrange(i as int, hi as int),
             k as nat == ws_suffix(s@.subrange(i as int, j as int)),
-            trail(s@.skip(i as int)) == (s.len() - j) + trail(s@.subrange(i as int, j as int)),
+            trail(s@.subrange(i as int, hi as int)) == (hi - j) + trail(s@.subrange(i as int, j as int)),
         decreases j - i
     ))]
     while k != 0 {
@@ -288,7 +284,7 @@ pub fn trim(s: &[u8]) -> (usize, usize) {
     }
     proof! {
         assert(trail(s@.subrange(i as int, j as int)) == 0);
-        let t = s@.skip(i as int);
+        let t = s@.subrange(i as int, hi as int);
         assert(t.subrange(0, t.len() - trail(t)) =~= s@.subrange(i as int, j as int));
     }
     (i, j)
@@ -467,8 +463,18 @@ mod tests {
     use super::*;
 
     const SAMPLES: &[&str] = &[
-        "", " ", "a", " a ", "\t\n a b \r\n", "\u{a0}x\u{3000}", "\u{85}\u{1680}y\u{2000}\u{200a}\u{2028}\u{2029}\u{202f}\u{205f}",
-        "\u{200b}z\u{200b}", "é", " é ", "\u{2000}\u{2000}", "\u{feff}w",
+        "",
+        " ",
+        "a",
+        " a ",
+        "\t\n a b \r\n",
+        "\u{a0}x\u{3000}",
+        "\u{85}\u{1680}y\u{2000}\u{200a}\u{2028}\u{2029}\u{202f}\u{205f}",
+        "\u{200b}z\u{200b}",
+        "é",
+        " é ",
+        "\u{2000}\u{2000}",
+        "\u{feff}w",
     ];
 
     #[test]
@@ -495,8 +501,23 @@ mod tests {
     #[test]
     fn parsers_match_std() {
         let cases = [
-            "", "+", "-", "0", "+0", "-0", "007", "18446744073709551615", "18446744073709551616", "1a", " 1", "ff",
-            "+FF", "fffffffffffffffff", "ffffffffffffffff", "g", "99999999999999999999",
+            "",
+            "+",
+            "-",
+            "0",
+            "+0",
+            "-0",
+            "007",
+            "18446744073709551615",
+            "18446744073709551616",
+            "1a",
+            " 1",
+            "ff",
+            "+FF",
+            "fffffffffffffffff",
+            "ffffffffffffffff",
+            "g",
+            "99999999999999999999",
         ];
         for s in cases {
             assert_eq!(parse_u64(s.as_bytes()), s.parse::<u64>().ok(), "{s}");

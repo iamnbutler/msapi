@@ -25,6 +25,7 @@ macro_rules! proof {
     ($($t:tt)*) => {};
 }
 
+pub mod api;
 #[cfg(feature = "verus")]
 mod arith;
 pub mod ascii;
