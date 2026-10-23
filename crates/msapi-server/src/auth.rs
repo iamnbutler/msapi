@@ -371,9 +371,7 @@ impl MintRequest {
             MintRefusal::ExcessScopes(excess) => {
                 ApiError::forbidden(format!("cannot grant scopes this token does not have: {}", Scopes(excess)))
             }
-            MintRefusal::TooDeep => {
-                ApiError::forbidden(format!("delegation chains are limited to {MAX_DEPTH} levels"))
-            }
+            MintRefusal::TooDeep => ApiError::forbidden(format!("delegation chains are limited to {MAX_DEPTH} levels")),
             MintRefusal::MustListAccounts => ApiError::invalid(
                 "this token is limited to specific accounts, so the new token must list account_ids too",
             ),
