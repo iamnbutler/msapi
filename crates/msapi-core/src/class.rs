@@ -1,8 +1,27 @@
 //! The class (job) roster.
 
+#![allow(
+    clippy::cast_lossless,
+    clippy::single_char_add_str,
+    clippy::manual_unwrap_or_default,
+    clippy::manual_map,
+    clippy::single_match,
+    clippy::collapsible_if,
+    clippy::manual_unwrap_or,
+    clippy::single_match_else,
+    reason = "Verus checks plain casts, matches and `push_str`; it has no spec for `From` widening, `Option` combinators or `if let` chains"
+)]
+
 use serde::ser::{Serialize, SerializeStruct, Serializer};
 #[cfg(feature = "verus")]
 use vstd::prelude::*;
+#[cfg(feature = "verus")]
+use vstd::string::StringSliceAdditionalSpecFns;
+
+#[cfg(feature = "verus")]
+use crate::ascii::folded;
+#[cfg(feature = "verus")]
+use crate::names::class as names_class;
 
 use crate::fixed::{Fixed, Pct};
 use crate::units::WeaponMastery;
@@ -114,6 +133,8 @@ pub type WeaponConstant = Fixed<4>;
 
 /// One table row. Positional so the roster below reads as a table.
 #[allow(clippy::too_many_arguments, reason = "a table-row constructor; each argument is one column")]
+#[cfg_attr(feature = "verus", verus_verify)]
+#[cfg_attr(feature = "verus", verus_spec(requires -1000 <= mastery_percent <= 1000))]
 const fn row(
     id: &'static str,
     name: &'static str,
@@ -148,7 +169,8 @@ const fn row(
 /// Lethe is KMS-only until it reaches GMS (expected November 2026); Beast
 /// Tamer, Jett and Zen were removed from the game.
 #[rustfmt::skip] // one class per line, as a table
-pub static CLASSES: &[Class] = &[
+#[cfg_attr(feature = "verus", verus_verify)]
+static ROWS: [Class; 53] = [
     row("hero", "Hero", JobType::Warrior, &[MainStat::Str], &[MainStat::Dex], false, 14400, 90, true),
     row("paladin", "Paladin", JobType::Warrior, &[MainStat::Str], &[MainStat::Dex], false, 13400, 90, true),
     row("dark-knight", "Dark Knight", JobType::Warrior, &[MainStat::Str], &[MainStat::Dex], false, 14900, 90, true),
@@ -264,6 +286,11 @@ pub static CLASSES: &[Class] = &[
     row("erel-light", "Erel Light", JobType::Warrior, &[MainStat::Str], &[MainStat::Dex], false, 14900, 90, false),
 ];
 
+/// Every GMS class: the rows above.
+#[allow(clippy::redundant_static_lifetimes, reason = "Verus needs the lifetime spelled out")]
+#[cfg_attr(feature = "verus", verus_verify)]
+pub static CLASSES: &'static [Class] = &ROWS;
+
 // Each class's ID and name are exactly the texts `names::class` proves its
 // lookup over; the build fails otherwise (rerun `scripts/name_keys.py`).
 // Normal builds run it; under `verus` the ghost code is not const-evaluable.
@@ -284,6 +311,8 @@ const _: () = {
 
 /// Lowercases and keeps only ASCII letters and digits, so `"Night Walker"`,
 /// `"night-walker"` and `"nightwalker"` compare equal.
+#[cfg_attr(feature = "verus", verus_verify)]
+#[cfg_attr(feature = "verus", verus_spec(r => ensures r@ == folded(s.spec_bytes())))]
 fn fold(s: &str) -> Vec<u8> {
     crate::ascii::fold(s.as_bytes())
 }
@@ -298,9 +327,18 @@ fn fold(s: &str) -> Vec<u8> {
 /// assert_eq!(class::find("Arch Mage (Fire, Poison)").unwrap().id, "arch-mage-fp");
 /// assert!(class::find("Beast Tamer").is_none());
 /// ```
+#[cfg_attr(feature = "verus", verus_verify)]
+#[cfg_attr(feature = "verus", verus_spec(r =>
+    ensures
+        r is Some ==> exists|i: usize| i < names_class::LEN && #[trigger] names_class::key(i) == folded(name.spec_bytes()),
+))]
 #[must_use]
 pub fn find(name: &str) -> Option<&'static Class> {
-    crate::names::class::find(&fold(name)).and_then(|i| CLASSES.get(i))
+    let q = fold(name);
+    match crate::names::class::find(q.as_slice()) {
+        Some(i) if i < CLASSES.len() => Some(&CLASSES[i]),
+        _ => None,
+    }
 }
 
 #[cfg(test)]

@@ -12,17 +12,18 @@ whether Verus checks it:
 
 | crate | spec | checked | unverified |
 |---|---:|---:|---:|
-| `msapi-core` | 249 | 1 | 55 |
+| `msapi-core` | 304 | 1 | 38 |
 | `msapi-server` | 31 | 0 | 142 |
 
 ## Unverified functions by reason
 
 | reason | functions |
 |---|---:|
-| moves data between a proven function and the server's types | 48 |
+| moves data between a proven function and the server's types | 34 |
 | I/O: SQL, HTTP, clock, randomness, process | 83 |
 | hands data to or from an outside library (serde, rusqlite, ring, tiny_http) | 39 |
-| trait shim forwarding to a proven function (`Display`, `FromStr`, serde) | 27 |
+| missing | 7 |
+| trait shim forwarding to a proven function (`Display`, `FromStr`, serde) | 17 |
 
 ## Every function
 
@@ -82,33 +83,41 @@ whether Verus checks it:
 | `decode_batch` | `crates/msapi-core/src/batch.rs:994` | spec |  |
 | `frame_at` | `crates/msapi-core/src/batch.rs:1072` | spec |  |
 | `frames` | `crates/msapi-core/src/batch.rs:1118` | spec |  |
-| `fmt::Display for CalcError::fmt` | `crates/msapi-core/src/calc.rs:34` | unverified | writes a fixed message per error variant |
-| `MainStats::get` | `crates/msapi-core/src/calc.rs:102` | spec |  |
-| `totals_of` | `crates/msapi-core/src/calc.rs:135` | spec |  |
-| `StatValue::get` | `crates/msapi-core/src/calc.rs:175` | spec |  |
-| `StatValue::for_class` | `crates/msapi-core/src/calc.rs:198` | spec |  |
-| `JobAttack::for_class` | `crates/msapi-core/src/calc.rs:233` | spec |  |
-| `JobAttack::get` | `crates/msapi-core/src/calc.rs:241` | spec |  |
-| `ScaledAttack::total` | `crates/msapi-core/src/calc.rs:263` | spec |  |
-| `displayed_range` | `crates/msapi-core/src/calc.rs:323` | spec |  |
-| `bow_normalised_attack` | `crates/msapi-core/src/calc.rs:357` | spec |  |
-| `combat_power` | `crates/msapi-core/src/calc.rs:417` | spec |  |
-| `CharacterName::new` | `crates/msapi-core/src/character.rs:35` | unverified | trims and counts Unicode chars with std, then returns the proven rules::name_check verdict |
-| `CharacterName::check_region` | `crates/msapi-core/src/character.rs:52` | unverified | returns the proven rules::gms_name_ok verdict as a message |
-| `CharacterName::as_str` | `crates/msapi-core/src/character.rs:62` | unverified | returns the stored String |
-| `TryFrom for CharacterName::try_from` | `crates/msapi-core/src/character.rs:70` | unverified | forwards to CharacterName::new |
-| `From for String::from` | `crates/msapi-core/src/character.rs:76` | unverified | unwraps the stored String |
-| `fmt::Display for CharacterName::fmt` | `crates/msapi-core/src/character.rs:82` | unverified | writes the stored String |
-| `$name::new` | `crates/msapi-core/src/character.rs:101` | unverified | returns the proven rules::bounded_* verdict as a message |
-| `$name::get` | `crates/msapi-core/src/character.rs:108` | unverified | returns the stored integer |
-| `TryFrom for $name::try_from` | `crates/msapi-core/src/character.rs:116` | unverified | forwards to new |
-| `From for i64::from` | `crates/msapi-core/src/character.rs:122` | unverified | widens the stored integer |
-| `Serialize for JobType::serialize` | `crates/msapi-core/src/class.rs:72` | unverified | hands serde the wire name |
-| `Serialize for MainStat::serialize` | `crates/msapi-core/src/class.rs:85` | unverified | hands serde the wire name |
-| `Serialize for Class::serialize` | `crates/msapi-core/src/class.rs:97` | unverified | hands serde the class's fields |
-| `row` | `crates/msapi-core/src/class.rs:116` | unverified | builds one constant table row; Verus cannot read the &str fields |
-| `fold` | `crates/msapi-core/src/class.rs:287` | unverified | the proven ascii::fold over the &str's bytes |
-| `find` | `crates/msapi-core/src/class.rs:301` | unverified | indexes CLASSES at the position the proven names::class::find returns |
+| `CalcError::message` | `crates/msapi-core/src/calc.rs:36` | spec |  |
+| `fmt::Display for CalcError::fmt` | `crates/msapi-core/src/calc.rs:58` | unverified | writes a fixed message per error variant |
+| `MainStats::get` | `crates/msapi-core/src/calc.rs:123` | spec |  |
+| `totals_of` | `crates/msapi-core/src/calc.rs:156` | spec |  |
+| `StatValue::get` | `crates/msapi-core/src/calc.rs:196` | spec |  |
+| `StatValue::for_class` | `crates/msapi-core/src/calc.rs:219` | spec |  |
+| `JobAttack::for_class` | `crates/msapi-core/src/calc.rs:254` | spec |  |
+| `JobAttack::get` | `crates/msapi-core/src/calc.rs:262` | spec |  |
+| `ScaledAttack::total` | `crates/msapi-core/src/calc.rs:284` | spec |  |
+| `displayed_range` | `crates/msapi-core/src/calc.rs:344` | spec |  |
+| `bow_normalised_attack` | `crates/msapi-core/src/calc.rs:378` | spec |  |
+| `combat_power` | `crates/msapi-core/src/calc.rs:438` | spec |  |
+| `CharacterName::from_string` | `crates/msapi-core/src/character.rs:119` | spec |  |
+| `CharacterName::check_region` | `crates/msapi-core/src/character.rs:181` | spec |  |
+| `CharacterName::as_str` | `crates/msapi-core/src/character.rs:202` | spec |  |
+| `CharacterName::into_string` | `crates/msapi-core/src/character.rs:209` | spec |  |
+| `CharacterName::new` | `crates/msapi-core/src/character.rs:222` | unverified | trims and counts Unicode chars with std, then returns the proven rules::name_check verdict |
+| `TryFrom for CharacterName::try_from` | `crates/msapi-core/src/character.rs:230` | spec |  |
+| `From for String::from` | `crates/msapi-core/src/character.rs:237` | spec |  |
+| `fmt::Display for CharacterName::fmt` | `crates/msapi-core/src/character.rs:243` | unverified | writes the stored String |
+| `Serialize for CharacterName::serialize` | `crates/msapi-core/src/character.rs:250` | unverified |  |
+| `Deserialize for CharacterName::deserialize` | `crates/msapi-core/src/character.rs:258` | unverified |  |
+| `$name::new` | `crates/msapi-core/src/character.rs:313` | spec |  |
+| `$name::get` | `crates/msapi-core/src/character.rs:340` | spec |  |
+| `$name::wide` | `crates/msapi-core/src/character.rs:347` | spec |  |
+| `TryFrom for $name::try_from` | `crates/msapi-core/src/character.rs:357` | spec |  |
+| `From for i64::from` | `crates/msapi-core/src/character.rs:364` | spec |  |
+| `Serialize for $name::serialize` | `crates/msapi-core/src/character.rs:371` | unverified |  |
+| `Deserialize for $name::deserialize` | `crates/msapi-core/src/character.rs:379` | unverified |  |
+| `Serialize for JobType::serialize` | `crates/msapi-core/src/class.rs:91` | unverified | hands serde the wire name |
+| `Serialize for MainStat::serialize` | `crates/msapi-core/src/class.rs:104` | unverified | hands serde the wire name |
+| `Serialize for Class::serialize` | `crates/msapi-core/src/class.rs:116` | unverified | hands serde the class's fields |
+| `row` | `crates/msapi-core/src/class.rs:135` | spec |  |
+| `fold` | `crates/msapi-core/src/class.rs:314` | spec |  |
+| `find` | `crates/msapi-core/src/class.rs:330` | spec |  |
 | `is_digit_byte` | `crates/msapi-core/src/decimal.rs:299` | spec |  |
 | `parse_decimal` | `crates/msapi-core/src/decimal.rs:322` | spec |  |
 | `format_then_parse` | `crates/msapi-core/src/decimal.rs:715` | spec |  |
@@ -118,19 +127,22 @@ whether Verus checks it:
 | `padded_digits` | `crates/msapi-core/src/decimal.rs:814` | spec |  |
 | `push_all` | `crates/msapi-core/src/decimal.rs:834` | spec |  |
 | `format_decimal` | `crates/msapi-core/src/decimal.rs:869` | spec |  |
-| `Fixed::from_raw` | `crates/msapi-core/src/fixed.rs:63` | spec |  |
-| `Fixed::raw` | `crates/msapi-core/src/fixed.rs:70` | spec |  |
-| `fmt::Display for FixedError::fmt` | `crates/msapi-core/src/fixed.rs:98` | unverified | writes a fixed message per error variant |
-| `saturating_add` | `crates/msapi-core/src/fixed.rs:159` | spec |  |
-| `saturating_sub` | `crates/msapi-core/src/fixed.rs:175` | spec |  |
-| `std::ops::Add for Fixed::add` | `crates/msapi-core/src/fixed.rs:193` | spec |  |
-| `std::ops::Sub for Fixed::sub` | `crates/msapi-core/src/fixed.rs:204` | spec |  |
-| `FromStr for Fixed::from_str` | `crates/msapi-core/src/fixed.rs:215` | unverified | forwards to the proven parse_decimal |
-| `fmt::Display for Fixed::fmt` | `crates/msapi-core/src/fixed.rs:225` | unverified | writes the bytes of the proven format_decimal |
-| `fmt::Debug for Fixed::fmt` | `crates/msapi-core/src/fixed.rs:234` | unverified | writes the bytes of the proven format_decimal |
-| `Fixed::from_number_text` | `crates/msapi-core/src/fixed.rs:245` | unverified | forwards a serde_json number's text to from_str |
-| `Serialize for Fixed::serialize` | `crates/msapi-core/src/fixed.rs:253` | unverified | hands serde_json the proven format_decimal text as a number |
-| `Deserialize for Fixed::deserialize` | `crates/msapi-core/src/fixed.rs:266` | unverified | takes serde_json's number text to the proven parse_decimal |
+| `Fixed::from_raw` | `crates/msapi-core/src/fixed.rs:82` | spec |  |
+| `Fixed::raw` | `crates/msapi-core/src/fixed.rs:89` | spec |  |
+| `FixedError::message` | `crates/msapi-core/src/fixed.rs:120` | spec |  |
+| `fmt::Display for FixedError::fmt` | `crates/msapi-core/src/fixed.rs:150` | unverified | writes a fixed message per error variant |
+| `saturating_add` | `crates/msapi-core/src/fixed.rs:205` | spec |  |
+| `saturating_sub` | `crates/msapi-core/src/fixed.rs:221` | spec |  |
+| `std::ops::Add for Fixed::add` | `crates/msapi-core/src/fixed.rs:239` | spec |  |
+| `std::ops::Sub for Fixed::sub` | `crates/msapi-core/src/fixed.rs:250` | spec |  |
+| `Fixed::parse` | `crates/msapi-core/src/fixed.rs:265` | spec |  |
+| `Fixed::text` | `crates/msapi-core/src/fixed.rs:289` | spec |  |
+| `FromStr for Fixed::from_str` | `crates/msapi-core/src/fixed.rs:304` | spec |  |
+| `fmt::Display for Fixed::fmt` | `crates/msapi-core/src/fixed.rs:310` | unverified | writes the bytes of the proven format_decimal |
+| `fmt::Debug for Fixed::fmt` | `crates/msapi-core/src/fixed.rs:319` | unverified | writes the bytes of the proven format_decimal |
+| `Fixed::from_number_text` | `crates/msapi-core/src/fixed.rs:330` | unverified | forwards a serde_json number's text to from_str |
+| `Serialize for Fixed::serialize` | `crates/msapi-core/src/fixed.rs:338` | unverified | hands serde_json the proven format_decimal text as a number |
+| `Deserialize for Fixed::deserialize` | `crates/msapi-core/src/fixed.rs:351` | unverified | takes serde_json's number text to the proven parse_decimal |
 | `fraction` | `crates/msapi-core/src/formula.rs:198` | spec |  |
 | `one_plus_factor` | `crates/msapi-core/src/formula.rs:213` | spec |  |
 | `one_minus_factor` | `crates/msapi-core/src/formula.rs:223` | spec |  |
@@ -168,6 +180,11 @@ whether Verus checks it:
 | `merge_patch` | `crates/msapi-core/src/json.rs:436` | spec |  |
 | `merge_members` | `crates/msapi-core/src/json.rs:466` | spec |  |
 | `tagged_key` | `crates/msapi-core/src/lookup.rs:81` | spec |  |
+| `text` | `crates/msapi-core/src/msg.rs:45` | spec |  |
+| `push_bytes` | `crates/msapi-core/src/msg.rs:69` | spec |  |
+| `push_uint` | `crates/msapi-core/src/msg.rs:77` | spec |  |
+| `push_int` | `crates/msapi-core/src/msg.rs:85` | spec |  |
+| `concat` | `crates/msapi-core/src/msg.rs:93` | spec |  |
 | `same` | `crates/msapi-core/src/names.rs:15` | spec |  |
 | `text` | `crates/msapi-core/src/names.rs:328` | spec |  |
 | `find` | `crates/msapi-core/src/names.rs:450` | spec |  |
@@ -196,26 +213,30 @@ whether Verus checks it:
 | `percent_decode` | `crates/msapi-core/src/query.rs:175` | spec |  |
 | `find_byte` | `crates/msapi-core/src/query.rs:196` | spec |  |
 | `parse_query` | `crates/msapi-core/src/query.rs:219` | spec |  |
-| `gcd` | `crates/msapi-core/src/ratio.rs:77` | spec |  |
-| `Ratio::new` | `crates/msapi-core/src/ratio.rs:103` | spec |  |
-| `Ratio::from_int` | `crates/msapi-core/src/ratio.rs:128` | spec |  |
-| `Ratio::numer` | `crates/msapi-core/src/ratio.rs:136` | spec |  |
-| `Ratio::denom` | `crates/msapi-core/src/ratio.rs:143` | spec |  |
-| `Ratio::checked_mul` | `crates/msapi-core/src/ratio.rs:150` | spec |  |
-| `Ratio::checked_div` | `crates/msapi-core/src/ratio.rs:198` | spec |  |
-| `Ratio::checked_add` | `crates/msapi-core/src/ratio.rs:222` | spec |  |
-| `Ratio::checked_saturating_sub` | `crates/msapi-core/src/ratio.rs:257` | spec |  |
-| `Ratio::floor` | `crates/msapi-core/src/ratio.rs:309` | spec |  |
-| `Ratio::round_half_up` | `crates/msapi-core/src/ratio.rs:326` | spec |  |
-| `Ratio::compare` | `crates/msapi-core/src/ratio.rs:355` | spec |  |
-| `PartialOrd for Ratio::partial_cmp` | `crates/msapi-core/src/ratio.rs:427` | unverified | forwards to cmp |
-| `Ord for Ratio::cmp` | `crates/msapi-core/src/ratio.rs:433` | unverified | forwards to the proven Ratio::compare |
-| `fmt::Display for Ratio::fmt` | `crates/msapi-core/src/ratio.rs:439` | unverified | writes numerator/denominator |
-| `Region::as_str` | `crates/msapi-core/src/region.rs:35` | unverified | the proven names::region::text as &str (ASCII, so from_utf8 cannot fail) |
-| `Region::display_name` | `crates/msapi-core/src/region.rs:44` | unverified | a constant label per region |
-| `Region::is_supported` | `crates/msapi-core/src/region.rs:65` | unverified | forwards to the proven world::has_tag |
-| `fmt::Display for Region::fmt` | `crates/msapi-core/src/region.rs:91` | unverified | writes as_str |
-| `FromStr for Region::from_str` | `crates/msapi-core/src/region.rs:99` | unverified | indexes Region::ALL at the position the proven names::region::find returns |
+| `gcd` | `crates/msapi-core/src/ratio.rs:91` | spec |  |
+| `Ratio::new` | `crates/msapi-core/src/ratio.rs:117` | spec |  |
+| `Ratio::from_int` | `crates/msapi-core/src/ratio.rs:142` | spec |  |
+| `Ratio::numer` | `crates/msapi-core/src/ratio.rs:150` | spec |  |
+| `Ratio::denom` | `crates/msapi-core/src/ratio.rs:157` | spec |  |
+| `Ratio::checked_mul` | `crates/msapi-core/src/ratio.rs:164` | spec |  |
+| `Ratio::checked_div` | `crates/msapi-core/src/ratio.rs:212` | spec |  |
+| `Ratio::checked_add` | `crates/msapi-core/src/ratio.rs:236` | spec |  |
+| `Ratio::checked_saturating_sub` | `crates/msapi-core/src/ratio.rs:271` | spec |  |
+| `Ratio::floor` | `crates/msapi-core/src/ratio.rs:323` | spec |  |
+| `Ratio::round_half_up` | `crates/msapi-core/src/ratio.rs:340` | spec |  |
+| `Ratio::compare` | `crates/msapi-core/src/ratio.rs:369` | spec |  |
+| `Ratio::text` | `crates/msapi-core/src/ratio.rs:443` | spec |  |
+| `PartialOrd for Ratio::partial_cmp` | `crates/msapi-core/src/ratio.rs:507` | spec |  |
+| `Ord for Ratio::cmp` | `crates/msapi-core/src/ratio.rs:514` | spec |  |
+| `fmt::Display for Ratio::fmt` | `crates/msapi-core/src/ratio.rs:525` | unverified | writes numerator/denominator |
+| `Region::index` | `crates/msapi-core/src/region.rs:75` | spec |  |
+| `Region::from_index` | `crates/msapi-core/src/region.rs:88` | spec |  |
+| `Region::as_str` | `crates/msapi-core/src/region.rs:103` | spec |  |
+| `Region::display_name` | `crates/msapi-core/src/region.rs:125` | spec |  |
+| `Region::is_supported` | `crates/msapi-core/src/region.rs:156` | spec |  |
+| `Region::parse` | `crates/msapi-core/src/region.rs:172` | spec |  |
+| `fmt::Display for Region::fmt` | `crates/msapi-core/src/region.rs:221` | unverified | writes as_str |
+| `FromStr for Region::from_str` | `crates/msapi-core/src/region.rs:230` | spec |  |
 | `in_range` | `crates/msapi-core/src/rules.rs:21` | spec |  |
 | `length_ok` | `crates/msapi-core/src/rules.rs:29` | spec |  |
 | `ignore_defense_ok` | `crates/msapi-core/src/rules.rs:38` | spec |  |
@@ -236,77 +257,86 @@ whether Verus checks it:
 | `parse_scopes` | `crates/msapi-core/src/scope.rs:270` | spec |  |
 | `format_scopes` | `crates/msapi-core/src/scope.rs:328` | spec |  |
 | `push_all` | `crates/msapi-core/src/scope.rs:376` | spec |  |
-| `StatBreakdown::implied_total` | `crates/msapi-core/src/stat.rs:62` | unverified | forwards to the proven breakdown_total |
-| `breakdown_total` | `crates/msapi-core/src/stat.rs:70` | spec |  |
-| `Serialize for Severity::serialize` | `crates/msapi-core/src/stat.rs:267` | unverified | hands serde the lowercase wire name |
-| `Serialize for Issue::serialize` | `crates/msapi-core/src/stat.rs:276` | unverified | hands serde the issue's fields |
-| `findings` | `crates/msapi-core/src/stat.rs:411` | spec |  |
-| `tooltip` | `crates/msapi-core/src/stat.rs:509` | unverified | pairs a breakdown's proven implied_total with its total |
-| `StatWindow::check` | `crates/msapi-core/src/stat.rs:527` | unverified | reads fields into the proven findings and writes one message per finding |
+| `StatBreakdown::implied_total` | `crates/msapi-core/src/stat.rs:79` | unverified | forwards to the proven breakdown_total |
+| `breakdown_total` | `crates/msapi-core/src/stat.rs:87` | spec |  |
+| `Serialize for Severity::serialize` | `crates/msapi-core/src/stat.rs:284` | unverified | hands serde the lowercase wire name |
+| `Serialize for Issue::serialize` | `crates/msapi-core/src/stat.rs:293` | unverified | hands serde the issue's fields |
+| `findings` | `crates/msapi-core/src/stat.rs:432` | spec |  |
+| `push_pct` | `crates/msapi-core/src/stat.rs:665` | spec |  |
+| `tooltip_of` | `crates/msapi-core/src/stat.rs:814` | spec |  |
+| `tooltip` | `crates/msapi-core/src/stat.rs:833` | unverified | pairs a breakdown's proven implied_total with its total |
+| `StatWindow::check` | `crates/msapi-core/src/stat.rs:851` | unverified | reads fields into the proven findings and writes one message per finding |
 | `ws_at` | `crates/msapi-core/src/text.rs:181` | spec |  |
 | `is_ws3` | `crates/msapi-core/src/text.rs:199` | spec |  |
 | `ws_before` | `crates/msapi-core/src/text.rs:209` | spec |  |
-| `trim` | `crates/msapi-core/src/text.rs:228` | spec |  |
-| `trim_in` | `crates/msapi-core/src/text.rs:241` | spec |  |
-| `char_count` | `crates/msapi-core/src/text.rs:299` | spec |  |
-| `char_count_in` | `crates/msapi-core/src/text.rs:308` | spec |  |
-| `starts_with` | `crates/msapi-core/src/text.rs:338` | spec |  |
-| `parse_u64` | `crates/msapi-core/src/text.rs:365` | spec |  |
-| `parse_u64_in` | `crates/msapi-core/src/text.rs:374` | spec |  |
-| `parse_hex` | `crates/msapi-core/src/text.rs:432` | spec |  |
-| `parse_hex_in` | `crates/msapi-core/src/text.rs:441` | spec |  |
-| `Timestamp::from_millis` | `crates/msapi-core/src/time.rs:94` | spec |  |
-| `Timestamp::millis` | `crates/msapi-core/src/time.rs:101` | spec |  |
-| `Timestamp::plus_millis` | `crates/msapi-core/src/time.rs:108` | spec |  |
-| `Timestamp::now` | `crates/msapi-core/src/time.rs:128` | unverified | reads the system clock |
-| `is_leap` | `crates/msapi-core/src/time.rs:509` | spec |  |
-| `days_in_month` | `crates/msapi-core/src/time.rs:519` | spec |  |
-| `year_days` | `crates/msapi-core/src/time.rs:534` | spec |  |
-| `month_days` | `crates/msapi-core/src/time.rs:544` | spec |  |
-| `days_from_civil` | `crates/msapi-core/src/time.rs:569` | spec |  |
-| `civil_from_days` | `crates/msapi-core/src/time.rs:584` | spec |  |
-| `digit_char` | `crates/msapi-core/src/time.rs:631` | spec |  |
-| `date_time` | `crates/msapi-core/src/time.rs:642` | spec |  |
-| `render` | `crates/msapi-core/src/time.rs:676` | spec |  |
-| `format_rfc3339` | `crates/msapi-core/src/time.rs:725` | spec |  |
-| `num2_at` | `crates/msapi-core/src/time.rs:741` | spec |  |
-| `num4_at` | `crates/msapi-core/src/time.rs:762` | spec |  |
-| `parse_rfc3339` | `crates/msapi-core/src/time.rs:779` | spec |  |
-| `fmt::Display for Timestamp::fmt` | `crates/msapi-core/src/time.rs:866` | unverified | writes the bytes of the proven format_rfc3339 |
-| `FromStr for Timestamp::from_str` | `crates/msapi-core/src/time.rs:878` | unverified | forwards to the proven parse_rfc3339 |
-| `Serialize for Timestamp::serialize` | `crates/msapi-core/src/time.rs:886` | unverified | hands serde the Display text |
-| `Deserialize for Timestamp::deserialize` | `crates/msapi-core/src/time.rs:892` | unverified | takes serde's string to from_str |
-| `Serialize for $name::serialize` | `crates/msapi-core/src/units.rs:131` | unverified | hands serde the inner proven value |
-| `Deserialize for $name::deserialize` | `crates/msapi-core/src/units.rs:137` | unverified | takes the inner value from serde |
-| `$name::new` | `crates/msapi-core/src/units.rs:165` | spec |  |
-| `$name::get` | `crates/msapi-core/src/units.rs:172` | spec |  |
-| `$name::plus` | `crates/msapi-core/src/units.rs:181` | spec |  |
-| `Count for $name::get` | `crates/msapi-core/src/units.rs:203` | spec |  |
-| `Count for $name::of_count` | `crates/msapi-core/src/units.rs:207` | spec |  |
-| `From for $name::from` | `crates/msapi-core/src/units.rs:213` | unverified | wraps the value |
-| `fmt::Display for $name::fmt` | `crates/msapi-core/src/units.rs:219` | unverified | writes the inner proven value |
-| `fmt::Debug for $name::fmt` | `crates/msapi-core/src/units.rs:225` | unverified | writes the inner proven value |
-| `Add for $name::add` | `crates/msapi-core/src/units.rs:269` | spec |  |
-| `AddAssign for $name::add_assign` | `crates/msapi-core/src/units.rs:277` | spec |  |
-| `Serialize for $name::serialize` | `crates/msapi-core/src/units.rs:295` | unverified | hands serde the inner proven value |
-| `Deserialize for $name::deserialize` | `crates/msapi-core/src/units.rs:301` | unverified | takes the inner value from serde |
-| `$name::new` | `crates/msapi-core/src/units.rs:331` | spec |  |
-| `$name::pct` | `crates/msapi-core/src/units.rs:338` | spec |  |
-| `$name::raw` | `crates/msapi-core/src/units.rs:345` | spec |  |
-| `$name::plus` | `crates/msapi-core/src/units.rs:353` | spec |  |
-| `Percent for $name::pct` | `crates/msapi-core/src/units.rs:388` | spec |  |
-| `FromStr for $name::from_str` | `crates/msapi-core/src/units.rs:395` | unverified | forwards to the proven parse_decimal |
-| `fmt::Display for $name::fmt` | `crates/msapi-core/src/units.rs:401` | unverified | writes the inner proven value |
-| `fmt::Debug for $name::fmt` | `crates/msapi-core/src/units.rs:407` | unverified | writes the inner proven value |
-| `one_plus` | `crates/msapi-core/src/units.rs:570` | spec |  |
-| `DamagePct::factor` | `crates/msapi-core/src/units.rs:601` | spec |  |
-| `FinalDamage::factor` | `crates/msapi-core/src/units.rs:611` | spec |  |
-| `FinalDamage::stack` | `crates/msapi-core/src/units.rs:626` | spec |  |
-| `IgnoreDefense::remaining` | `crates/msapi-core/src/units.rs:655` | spec |  |
-| `IgnoreDefense::stack` | `crates/msapi-core/src/units.rs:672` | spec |  |
-| `IgnoreDefense::defense_factor` | `crates/msapi-core/src/units.rs:707` | spec |  |
-| `CritDamage::crit_factor` | `crates/msapi-core/src/units.rs:725` | spec |  |
-| `StatAttack::displayed` | `crates/msapi-core/src/units.rs:735` | spec |  |
+| `has_control` | `crates/msapi-core/src/text.rs:241` | spec |  |
+| `trim` | `crates/msapi-core/src/text.rs:264` | spec |  |
+| `trim_in` | `crates/msapi-core/src/text.rs:277` | spec |  |
+| `char_count` | `crates/msapi-core/src/text.rs:335` | spec |  |
+| `char_count_in` | `crates/msapi-core/src/text.rs:344` | spec |  |
+| `starts_with` | `crates/msapi-core/src/text.rs:374` | spec |  |
+| `parse_u64` | `crates/msapi-core/src/text.rs:401` | spec |  |
+| `parse_u64_in` | `crates/msapi-core/src/text.rs:410` | spec |  |
+| `parse_hex` | `crates/msapi-core/src/text.rs:468` | spec |  |
+| `parse_hex_in` | `crates/msapi-core/src/text.rs:477` | spec |  |
+| `Timestamp::from_millis` | `crates/msapi-core/src/time.rs:107` | spec |  |
+| `Timestamp::millis` | `crates/msapi-core/src/time.rs:114` | spec |  |
+| `Timestamp::plus_millis` | `crates/msapi-core/src/time.rs:121` | spec |  |
+| `Timestamp::now` | `crates/msapi-core/src/time.rs:141` | unverified | reads the system clock |
+| `is_leap` | `crates/msapi-core/src/time.rs:522` | spec |  |
+| `days_in_month` | `crates/msapi-core/src/time.rs:532` | spec |  |
+| `year_days` | `crates/msapi-core/src/time.rs:547` | spec |  |
+| `month_days` | `crates/msapi-core/src/time.rs:557` | spec |  |
+| `days_from_civil` | `crates/msapi-core/src/time.rs:582` | spec |  |
+| `civil_from_days` | `crates/msapi-core/src/time.rs:597` | spec |  |
+| `digit_char` | `crates/msapi-core/src/time.rs:644` | spec |  |
+| `date_time` | `crates/msapi-core/src/time.rs:655` | spec |  |
+| `render` | `crates/msapi-core/src/time.rs:689` | spec |  |
+| `format_rfc3339` | `crates/msapi-core/src/time.rs:738` | spec |  |
+| `num2_at` | `crates/msapi-core/src/time.rs:754` | spec |  |
+| `num4_at` | `crates/msapi-core/src/time.rs:775` | spec |  |
+| `parse_rfc3339` | `crates/msapi-core/src/time.rs:792` | spec |  |
+| `Timestamp::to_rfc3339` | `crates/msapi-core/src/time.rs:882` | spec |  |
+| `Timestamp::parse` | `crates/msapi-core/src/time.rs:900` | spec |  |
+| `fmt::Display for Timestamp::fmt` | `crates/msapi-core/src/time.rs:923` | unverified | writes the bytes of the proven format_rfc3339 |
+| `FromStr for Timestamp::from_str` | `crates/msapi-core/src/time.rs:933` | spec |  |
+| `Serialize for Timestamp::serialize` | `crates/msapi-core/src/time.rs:939` | unverified | hands serde the Display text |
+| `Deserialize for Timestamp::deserialize` | `crates/msapi-core/src/time.rs:945` | unverified | takes serde's string to from_str |
+| `Serialize for $name::serialize` | `crates/msapi-core/src/units.rs:148` | unverified | hands serde the inner proven value |
+| `Deserialize for $name::deserialize` | `crates/msapi-core/src/units.rs:154` | unverified | takes the inner value from serde |
+| `$name::new` | `crates/msapi-core/src/units.rs:182` | spec |  |
+| `$name::get` | `crates/msapi-core/src/units.rs:189` | spec |  |
+| `$name::plus` | `crates/msapi-core/src/units.rs:198` | spec |  |
+| `Count for $name::get` | `crates/msapi-core/src/units.rs:220` | spec |  |
+| `Count for $name::of_count` | `crates/msapi-core/src/units.rs:224` | spec |  |
+| `From for $name::from` | `crates/msapi-core/src/units.rs:251` | spec |  |
+| `$name::text` | `crates/msapi-core/src/units.rs:259` | spec |  |
+| `$name::debug_text` | `crates/msapi-core/src/units.rs:269` | spec |  |
+| `fmt::Display for $name::fmt` | `crates/msapi-core/src/units.rs:284` | unverified | writes the inner proven value |
+| `fmt::Debug for $name::fmt` | `crates/msapi-core/src/units.rs:290` | unverified | writes the inner proven value |
+| `Add for $name::add` | `crates/msapi-core/src/units.rs:334` | spec |  |
+| `AddAssign for $name::add_assign` | `crates/msapi-core/src/units.rs:342` | spec |  |
+| `Serialize for $name::serialize` | `crates/msapi-core/src/units.rs:360` | unverified | hands serde the inner proven value |
+| `Deserialize for $name::deserialize` | `crates/msapi-core/src/units.rs:366` | unverified | takes the inner value from serde |
+| `$name::new` | `crates/msapi-core/src/units.rs:396` | spec |  |
+| `$name::pct` | `crates/msapi-core/src/units.rs:403` | spec |  |
+| `$name::raw` | `crates/msapi-core/src/units.rs:410` | spec |  |
+| `$name::plus` | `crates/msapi-core/src/units.rs:418` | spec |  |
+| `Percent for $name::pct` | `crates/msapi-core/src/units.rs:453` | spec |  |
+| `$name::text` | `crates/msapi-core/src/units.rs:461` | spec |  |
+| `$name::debug_text` | `crates/msapi-core/src/units.rs:468` | spec |  |
+| `FromStr for $name::from_str` | `crates/msapi-core/src/units.rs:486` | spec |  |
+| `fmt::Display for $name::fmt` | `crates/msapi-core/src/units.rs:495` | unverified | writes the inner proven value |
+| `fmt::Debug for $name::fmt` | `crates/msapi-core/src/units.rs:501` | unverified | writes the inner proven value |
+| `one_plus` | `crates/msapi-core/src/units.rs:664` | spec |  |
+| `DamagePct::factor` | `crates/msapi-core/src/units.rs:695` | spec |  |
+| `FinalDamage::factor` | `crates/msapi-core/src/units.rs:705` | spec |  |
+| `FinalDamage::stack` | `crates/msapi-core/src/units.rs:720` | spec |  |
+| `IgnoreDefense::remaining` | `crates/msapi-core/src/units.rs:749` | spec |  |
+| `IgnoreDefense::stack` | `crates/msapi-core/src/units.rs:766` | spec |  |
+| `IgnoreDefense::defense_factor` | `crates/msapi-core/src/units.rs:801` | spec |  |
+| `CritDamage::crit_factor` | `crates/msapi-core/src/units.rs:819` | spec |  |
+| `StatAttack::displayed` | `crates/msapi-core/src/units.rs:829` | spec |  |
 | `auth_data_layout` | `crates/msapi-core/src/webauthn.rs:69` | spec |  |
 | `counter_ok` | `crates/msapi-core/src/webauthn.rs:111` | spec |  |
 | `presence_ok` | `crates/msapi-core/src/webauthn.rs:123` | spec |  |
@@ -327,12 +357,21 @@ whether Verus checks it:
 | `PublicKey::from_cose` | `crates/msapi-core/src/webauthn.rs:762` | spec |  |
 | `int_at` | `crates/msapi-core/src/webauthn.rs:797` | checked |  |
 | `bytes_at` | `crates/msapi-core/src/webauthn.rs:806` | spec |  |
-| `find` | `crates/msapi-core/src/world.rs:144` | unverified | indexes WORLDS at the position the proven names::world::find returns |
-| `by_key` | `crates/msapi-core/src/world.rs:150` | unverified | indexes WORLDS at the position the proven key_index returns |
-| `in_region` | `crates/msapi-core/src/world.rs:156` | unverified | indexes WORLDS at the positions the proven with_tag returns |
-| `key_index` | `crates/msapi-core/src/world.rs:180` | spec |  |
-| `with_tag` | `crates/msapi-core/src/world.rs:208` | spec |  |
-| `has_tag` | `crates/msapi-core/src/world.rs:230` | spec |  |
+| `serde::Serialize for $ty::serialize` | `crates/msapi-core/src/wire.rs:14` | unverified |  |
+| `serde::Deserialize for $ty::deserialize` | `crates/msapi-core/src/wire.rs:22` | unverified |  |
+| `DataCenter::index` | `crates/msapi-core/src/world.rs:46` | spec |  |
+| `DataCenter::from_index` | `crates/msapi-core/src/world.rs:56` | spec |  |
+| `DataCenter::as_str` | `crates/msapi-core/src/world.rs:67` | spec |  |
+| `WorldType::index` | `crates/msapi-core/src/world.rs:98` | spec |  |
+| `WorldType::from_index` | `crates/msapi-core/src/world.rs:108` | spec |  |
+| `WorldType::as_str` | `crates/msapi-core/src/world.rs:119` | spec |  |
+| `Serialize for World::serialize` | `crates/msapi-core/src/world.rs:153` | unverified |  |
+| `find` | `crates/msapi-core/src/world.rs:257` | spec |  |
+| `by_key` | `crates/msapi-core/src/world.rs:277` | spec |  |
+| `in_region` | `crates/msapi-core/src/world.rs:290` | spec |  |
+| `key_index` | `crates/msapi-core/src/world.rs:334` | spec |  |
+| `with_tag` | `crates/msapi-core/src/world.rs:362` | spec |  |
+| `has_tag` | `crates/msapi-core/src/world.rs:384` | spec |  |
 | `Write::begin` | `crates/msapi-server/src/audit.rs:56` | unverified | SQLite writes for the audit log |
 | `Write::tx` | `crates/msapi-server/src/audit.rs:62` | unverified | SQLite writes for the audit log |
 | `Write::execute` | `crates/msapi-server/src/audit.rs:68` | unverified | SQLite writes for the audit log |

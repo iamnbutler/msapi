@@ -1,14 +1,33 @@
 //! Exact decimals with a fixed number of fractional digits.
 
-use std::fmt::{self, Write as _};
+#![allow(
+    clippy::cast_lossless,
+    clippy::single_char_add_str,
+    clippy::manual_unwrap_or_default,
+    clippy::manual_map,
+    clippy::single_match,
+    clippy::collapsible_if,
+    clippy::manual_unwrap_or,
+    clippy::single_match_else,
+    reason = "Verus checks plain casts, matches and `push_str`; it has no spec for `From` widening, `Option` combinators or `if let` chains"
+)]
+
+use std::fmt;
 use std::str::FromStr;
 
 use serde::de::{self, Visitor};
 
 use crate::decimal::{DecimalError, format_decimal, parse_decimal};
+#[cfg(feature = "verus")]
+use crate::decimal::{decimal_text, decimal_value, frac_len, splits_at};
+#[cfg(feature = "verus")]
+use crate::msg::{chars, uint_chars};
+use crate::msg::{push_uint, text};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 #[cfg(feature = "verus")]
 use vstd::prelude::*;
+#[cfg(feature = "verus")]
+use vstd::string::StringSliceAdditionalSpecFns;
 
 /// A decimal with exactly `DP` fractional digits, stored as an integer count
 /// of `10^-DP` units.
@@ -81,6 +100,7 @@ pub type Pct = Fixed<2>;
 pub type ExpRate = Fixed<3>;
 
 /// Why a value could not become a [`Fixed`].
+#[cfg_attr(feature = "verus", verus_verify)]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum FixedError {
     /// The input was not a decimal number.
@@ -94,15 +114,41 @@ pub enum FixedError {
     OutOfRange,
 }
 
+#[cfg_attr(feature = "verus", verus_verify)]
+impl FixedError {
+    /// The message [`Display`](fmt::Display) writes.
+    #[cfg_attr(feature = "verus", verus_spec(r =>
+        ensures
+            r@ == match self {
+                Self::Invalid(s) => "`"@ + s@ + "` is not a decimal number"@,
+                Self::TooPrecise { max_decimals } => "more than "@ + uint_chars(*max_decimals as nat)
+                    + " decimal places; send the value exactly as displayed"@,
+                Self::OutOfRange => "number out of range"@,
+            },
+    ))]
+    #[must_use]
+    pub fn message(&self) -> String {
+        let mut m = String::new();
+        match self {
+            Self::Invalid(s) => {
+                m.push_str("`");
+                m.push_str(s.as_str());
+                m.push_str("` is not a decimal number");
+            }
+            Self::TooPrecise { max_decimals } => {
+                m.push_str("more than ");
+                push_uint(&mut m, *max_decimals as u128);
+                m.push_str(" decimal places; send the value exactly as displayed");
+            }
+            Self::OutOfRange => m.push_str("number out of range"),
+        }
+        m
+    }
+}
+
 impl fmt::Display for FixedError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Invalid(s) => write!(f, "`{s}` is not a decimal number"),
-            Self::TooPrecise { max_decimals } => {
-                write!(f, "more than {max_decimals} decimal places; send the value exactly as displayed")
-            }
-            Self::OutOfRange => f.write_str("number out of range"),
-        }
+        f.write_str(&self.message())
     }
 }
 
@@ -209,24 +255,63 @@ impl<const DP: u32> std::ops::Sub for Fixed<DP> {
     }
 }
 
+#[cfg_attr(feature = "verus", verus_verify)]
+impl<const DP: u32> Fixed<DP> {
+    /// Parses `s` with the proven [`parse_decimal`], naming the error.
+    ///
+    /// # Errors
+    ///
+    /// As [`parse_decimal`] reports it.
+    #[cfg_attr(feature = "verus", verus_spec(r =>
+        ensures
+            match r {
+                Ok(v) => exists|k: int| #[trigger] splits_at(s.spec_bytes(), k) && frac_len(s.spec_bytes(), k) <= DP
+                    && v.value() == decimal_value(s.spec_bytes(), k, DP as nat),
+                Err(FixedError::Invalid(t)) => t@ == s@ && forall|k: int| !(#[trigger] splits_at(s.spec_bytes(), k)),
+                Err(FixedError::TooPrecise { max_decimals }) => max_decimals == DP
+                    && exists|k: int| #[trigger] splits_at(s.spec_bytes(), k) && frac_len(s.spec_bytes(), k) > DP,
+                Err(FixedError::OutOfRange) => exists|k: int| #[trigger] splits_at(s.spec_bytes(), k)
+                    && frac_len(s.spec_bytes(), k) <= DP
+                    && !(i64::MIN <= decimal_value(s.spec_bytes(), k, DP as nat)
+                        && decimal_value(s.spec_bytes(), k, DP as nat) <= i64::MAX),
+            },
+    ))]
+    pub fn parse(s: &str) -> Result<Self, FixedError> {
+        match parse_decimal(s.as_bytes(), DP) {
+            Ok(v) => Ok(Self(v)),
+            Err(DecimalError::Invalid) => Err(FixedError::Invalid(s.to_owned())),
+            Err(DecimalError::TooPrecise) => Err(FixedError::TooPrecise { max_decimals: DP }),
+            Err(DecimalError::OutOfRange) => Err(FixedError::OutOfRange),
+        }
+    }
+
+    /// The exact digits the proven [`format_decimal`] writes, as text.
+    #[cfg_attr(feature = "verus", verus_spec(r =>
+        requires DP <= 18,
+        ensures r@ == chars(decimal_text(self.value(), DP as nat)),
+    ))]
+    #[must_use]
+    pub fn text(self) -> String {
+        let d = format_decimal(self.0, DP);
+        text(d.as_slice())
+    }
+}
+
+#[cfg_attr(feature = "verus", verus_verify)]
 impl<const DP: u32> FromStr for Fixed<DP> {
     type Err = FixedError;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        parse_decimal(s.as_bytes(), DP).map(Self).map_err(|e| match e {
-            DecimalError::Invalid => FixedError::Invalid(s.to_owned()),
-            DecimalError::TooPrecise => FixedError::TooPrecise { max_decimals: DP },
-            DecimalError::OutOfRange => FixedError::OutOfRange,
-        })
+        Self::parse(s)
     }
 }
 
 impl<const DP: u32> fmt::Display for Fixed<DP> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         // `SCALE` is `10^DP` in an `i64`, which only compiles for `DP <= 18`,
-        // the precondition of the proven `format_decimal`.
+        // the precondition of `text`.
         let _ = Self::SCALE;
-        format_decimal(self.0, DP).into_iter().try_for_each(|b| f.write_char(char::from(b)))
+        f.write_str(&self.text())
     }
 }
 

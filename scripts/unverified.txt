@@ -4,57 +4,39 @@
 # Categories: io, lib, shim, glue, test (see scripts/coverage.py).
 
 # msapi-core
-crates/msapi-core/src/calc.rs::fmt::Display for CalcError::fmt | shim | writes a fixed message per error variant
-crates/msapi-core/src/character.rs::CharacterName::new | lib | trims and counts Unicode chars with std, then returns the proven rules::name_check verdict
-crates/msapi-core/src/character.rs::CharacterName::check_region | glue | returns the proven rules::gms_name_ok verdict as a message
-crates/msapi-core/src/character.rs::CharacterName::as_str | glue | returns the stored String
-crates/msapi-core/src/character.rs::TryFrom for CharacterName::try_from | shim | forwards to CharacterName::new
-crates/msapi-core/src/character.rs::From for String::from | shim | unwraps the stored String
-crates/msapi-core/src/character.rs::fmt::Display for CharacterName::fmt | shim | writes the stored String
-crates/msapi-core/src/character.rs::$name::new | glue | returns the proven rules::bounded_* verdict as a message
-crates/msapi-core/src/character.rs::$name::get | glue | returns the stored integer
-crates/msapi-core/src/character.rs::TryFrom for $name::try_from | shim | forwards to new
-crates/msapi-core/src/character.rs::From for i64::from | shim | widens the stored integer
-crates/msapi-core/src/class.rs::row | glue | builds one constant table row; Verus cannot read the &str fields
-crates/msapi-core/src/class.rs::fold | glue | the proven ascii::fold over the &str's bytes
+crates/msapi-core/src/calc.rs::fmt::Display for CalcError::fmt | lib | writes the proven CalcError::message to the std Formatter; vstd has no spec for Formatter::write_str
+crates/msapi-core/src/character.rs::fmt::Display for CharacterName::fmt | lib | writes the proven CharacterName::as_str to the std Formatter; vstd has no spec for Formatter::write_str
 crates/msapi-core/src/class.rs::Serialize for JobType::serialize | lib | hands serde the wire name
 crates/msapi-core/src/class.rs::Serialize for MainStat::serialize | lib | hands serde the wire name
 crates/msapi-core/src/class.rs::Serialize for Class::serialize | lib | hands serde the class's fields
-crates/msapi-core/src/class.rs::find | glue | indexes CLASSES at the position the proven names::class::find returns
-crates/msapi-core/src/fixed.rs::fmt::Display for FixedError::fmt | shim | writes a fixed message per error variant
-crates/msapi-core/src/fixed.rs::FromStr for Fixed::from_str | shim | forwards to the proven parse_decimal
-crates/msapi-core/src/fixed.rs::fmt::Display for Fixed::fmt | shim | writes the bytes of the proven format_decimal
-crates/msapi-core/src/fixed.rs::fmt::Debug for Fixed::fmt | shim | writes the bytes of the proven format_decimal
+crates/msapi-core/src/fixed.rs::fmt::Display for FixedError::fmt | lib | writes the proven FixedError::message to the std Formatter; vstd has no spec for Formatter::write_str
+crates/msapi-core/src/fixed.rs::fmt::Display for Fixed::fmt | lib | writes the proven Fixed::text to the std Formatter; vstd has no spec for Formatter::write_str
+crates/msapi-core/src/fixed.rs::fmt::Debug for Fixed::fmt | lib | the Display above, through the std Formatter; vstd has no spec for Formatter::write_str
 crates/msapi-core/src/fixed.rs::Fixed::from_number_text | lib | forwards a serde_json number's text to from_str
 crates/msapi-core/src/fixed.rs::Serialize for Fixed::serialize | lib | hands serde_json the proven format_decimal text as a number
 crates/msapi-core/src/fixed.rs::Deserialize for Fixed::deserialize | lib | takes serde_json's number text to the proven parse_decimal
-crates/msapi-core/src/ratio.rs::PartialOrd for Ratio::partial_cmp | shim | forwards to cmp
-crates/msapi-core/src/ratio.rs::Ord for Ratio::cmp | shim | forwards to the proven Ratio::compare
-crates/msapi-core/src/ratio.rs::fmt::Display for Ratio::fmt | shim | writes numerator/denominator
-crates/msapi-core/src/region.rs::Region::as_str | glue | the proven names::region::text as &str (ASCII, so from_utf8 cannot fail)
-crates/msapi-core/src/region.rs::Region::display_name | glue | a constant label per region
-crates/msapi-core/src/region.rs::Region::is_supported | glue | forwards to the proven world::has_tag
-crates/msapi-core/src/region.rs::fmt::Display for Region::fmt | shim | writes as_str
-crates/msapi-core/src/region.rs::FromStr for Region::from_str | glue | indexes Region::ALL at the position the proven names::region::find returns
-crates/msapi-core/src/stat.rs::StatBreakdown::implied_total | glue | forwards to the proven breakdown_total
-crates/msapi-core/src/stat.rs::tooltip | glue | pairs a breakdown's proven implied_total with its total
+crates/msapi-core/src/ratio.rs::fmt::Display for Ratio::fmt | lib | writes the proven Ratio::text to the std Formatter; vstd has no spec for Formatter::write_str
+crates/msapi-core/src/region.rs::fmt::Display for Region::fmt | lib | writes the proven Region::as_str to the std Formatter; vstd has no spec for Formatter::write_str
+crates/msapi-core/src/stat.rs::StatBreakdown::implied_total | lib | reads the fields of serde-derived StatBreakdown into the proven breakdown_total; Verus panics on serde's Deserialize derive, so the type cannot be checked
+crates/msapi-core/src/stat.rs::tooltip | lib | reads the fields of serde-derived StatBreakdown into the proven tooltip_of; Verus panics on serde's Deserialize derive, so the type cannot be checked
 crates/msapi-core/src/stat.rs::Serialize for Severity::serialize | lib | hands serde the lowercase wire name
 crates/msapi-core/src/stat.rs::Serialize for Issue::serialize | lib | hands serde the issue's fields
-crates/msapi-core/src/stat.rs::StatWindow::check | glue | reads fields into the proven findings and writes one message per finding
+crates/msapi-core/src/stat.rs::StatWindow::check | lib | reads the fields of serde-derived StatWindow into the proven issues; Verus panics on serde's Deserialize derive, so the type cannot be checked
 crates/msapi-core/src/time.rs::Timestamp::now | io | reads the system clock
-crates/msapi-core/src/time.rs::fmt::Display for Timestamp::fmt | shim | writes the bytes of the proven format_rfc3339
-crates/msapi-core/src/time.rs::FromStr for Timestamp::from_str | shim | forwards to the proven parse_rfc3339
+crates/msapi-core/src/time.rs::fmt::Display for Timestamp::fmt | lib | writes the proven Timestamp::to_rfc3339 to the std Formatter; vstd has no spec for Formatter::write_str
 crates/msapi-core/src/time.rs::Serialize for Timestamp::serialize | lib | hands serde the Display text
 crates/msapi-core/src/time.rs::Deserialize for Timestamp::deserialize | lib | takes serde's string to from_str
 crates/msapi-core/src/units.rs::Serialize for $name::serialize | lib | hands serde the inner proven value
 crates/msapi-core/src/units.rs::Deserialize for $name::deserialize | lib | takes the inner value from serde
-crates/msapi-core/src/units.rs::From for $name::from | shim | wraps the value
-crates/msapi-core/src/units.rs::fmt::Display for $name::fmt | shim | writes the inner proven value
-crates/msapi-core/src/units.rs::fmt::Debug for $name::fmt | shim | writes the inner proven value
-crates/msapi-core/src/units.rs::FromStr for $name::from_str | shim | forwards to the proven parse_decimal
-crates/msapi-core/src/world.rs::find | glue | indexes WORLDS at the position the proven names::world::find returns
-crates/msapi-core/src/world.rs::by_key | glue | indexes WORLDS at the position the proven key_index returns
-crates/msapi-core/src/world.rs::in_region | glue | indexes WORLDS at the positions the proven with_tag returns
+crates/msapi-core/src/units.rs::fmt::Display for $name::fmt | lib | writes the proven text to the std Formatter; vstd has no spec for Formatter::write_str
+crates/msapi-core/src/units.rs::fmt::Debug for $name::fmt | lib | writes the proven debug_text to the std Formatter; vstd has no spec for Formatter::write_str
+crates/msapi-core/src/character.rs::Serialize for CharacterName::serialize | lib | hands serde the name, as the derive with into = "String" did
+crates/msapi-core/src/character.rs::Deserialize for CharacterName::deserialize | lib | takes serde's string to the proven from_string, as the derive with try_from = "String" did
+crates/msapi-core/src/character.rs::Serialize for $name::serialize | lib | hands serde the proven wide value, as the derive with into = "i64" did
+crates/msapi-core/src/character.rs::Deserialize for $name::deserialize | lib | takes serde's integer to the proven new, as the derive with try_from = "i64" did
+crates/msapi-core/src/wire.rs::serde::Serialize for $ty::serialize | lib | hands serde the proven wire name as a unit variant, as the derive did
+crates/msapi-core/src/wire.rs::serde::Deserialize for $ty::deserialize | lib | serde's enum protocol with the derive's messages, over the proven from_index and as_str
+crates/msapi-core/src/world.rs::Serialize for World::serialize | lib | hands serde the world's fields, as the derive did
 
 # msapi-server
 crates/msapi-server/src/audit.rs::Write::begin | io | SQLite writes for the audit log

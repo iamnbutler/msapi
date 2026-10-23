@@ -15,6 +15,16 @@
 //! Parsing rejects text whose instant falls outside it.
 
 #![allow(
+    clippy::single_char_add_str,
+    clippy::manual_unwrap_or_default,
+    clippy::manual_map,
+    clippy::single_match,
+    clippy::collapsible_if,
+    clippy::manual_unwrap_or,
+    clippy::single_match_else,
+    reason = "Verus checks plain casts, matches and `push_str`; it has no spec for `From` widening, `Option` combinators or `if let` chains"
+)]
+#![allow(
     clippy::cast_possible_truncation,
     clippy::cast_sign_loss,
     clippy::cast_lossless,
@@ -28,7 +38,10 @@
 
 use std::fmt;
 use std::str::FromStr;
+
 use std::time::{SystemTime, UNIX_EPOCH};
+#[cfg(feature = "verus")]
+use vstd::string::StringSliceAdditionalSpecFns;
 
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 #[cfg(feature = "verus")]
@@ -862,23 +875,63 @@ pub fn parse_rfc3339(s: &[u8]) -> Option<i64> {
     Some(t)
 }
 
-impl fmt::Display for Timestamp {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(std::str::from_utf8(&format_rfc3339(self.0)).map_err(|_| fmt::Error)?)
+#[cfg_attr(feature = "verus", verus_verify)]
+impl Timestamp {
+    /// The RFC 3339 text the proven [`format_rfc3339`] writes, saturated to
+    /// [`MIN_MS`]..=[`MAX_MS`].
+    #[cfg_attr(feature = "verus", verus_spec(r =>
+        ensures
+            exists|d: DateTime| r@ == crate::msg::chars(#[trigger] text(d)) && dt_valid(d) && dt_instant(d) == clamp(self.ms()),
+    ))]
+    #[must_use]
+    pub fn to_rfc3339(self) -> String {
+        let b = format_rfc3339(self.0);
+        crate::msg::text(b.as_slice())
     }
-}
-
-impl FromStr for Timestamp {
-    type Err = String;
 
     /// Parses `YYYY-MM-DDTHH:MM:SS[.fraction](Z|+HH:MM|-HH:MM)`.
     ///
     /// Fractions beyond milliseconds are truncated. A timestamp without an
     /// offset is rejected: guessing a timezone is how captures end up an hour off.
+    ///
+    /// # Errors
+    ///
+    /// `s` is not such a timestamp; the message shows the expected form.
+    #[cfg_attr(feature = "verus", verus_spec(r =>
+        ensures
+            match r {
+                Ok(t) => parse_spec(s.spec_bytes()) == Some(t.ms()),
+                Err(m) => parse_spec(s.spec_bytes()) is None
+                    && m@ == "`"@ + s@ + "` is not an RFC 3339 timestamp like 2026-10-23T09:38:00Z"@,
+            },
+    ))]
+    pub fn parse(s: &str) -> Result<Self, String> {
+        match parse_rfc3339(s.as_bytes()) {
+            Some(v) => Ok(Self(v)),
+            None => {
+                let mut m = String::new();
+                m.push_str("`");
+                m.push_str(s);
+                m.push_str("` is not an RFC 3339 timestamp like 2026-10-23T09:38:00Z");
+                Err(m)
+            }
+        }
+    }
+}
+
+impl fmt::Display for Timestamp {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(&self.to_rfc3339())
+    }
+}
+
+#[cfg_attr(feature = "verus", verus_verify)]
+impl FromStr for Timestamp {
+    type Err = String;
+
+    /// Parses `YYYY-MM-DDTHH:MM:SS[.fraction](Z|+HH:MM|-HH:MM)`: [`Timestamp::parse`].
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        parse_rfc3339(s.as_bytes())
-            .map(Self)
-            .ok_or_else(|| format!("`{s}` is not an RFC 3339 timestamp like 2026-10-23T09:38:00Z"))
+        Self::parse(s)
     }
 }
 

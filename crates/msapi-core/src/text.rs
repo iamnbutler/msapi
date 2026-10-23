@@ -224,6 +224,42 @@ fn ws_before(s: &[u8], i: usize, j: usize) -> usize {
     }
 }
 
+#[cfg(feature = "verus")]
+verus! {
+
+/// A control character (`char::is_control`: U+0000–U+001F, U+007F–U+009F)
+/// starts at `s[i]`. In UTF-8 that is one byte below `0x20` or `0x7F`, or
+/// `0xC2` followed by `0x80`–`0x9F`.
+pub open spec fn control_at(s: Seq<u8>, i: int) -> bool {
+    s[i] < 0x20 || s[i] == 0x7F || (s[i] == 0xC2 && i + 1 < s.len() && 0x80 <= s[i + 1] && s[i + 1] <= 0x9F)
+}
+
+} // verus!
+
+/// Whether `s` holds a control character: `str::chars().any(char::is_control)`
+/// on the bytes of a `&str`.
+#[cfg_attr(feature = "verus", verus_verify)]
+#[cfg_attr(feature = "verus", verus_spec(r => ensures r == exists|i: int| 0 <= i < s@.len() && #[trigger] control_at(s@, i)))]
+#[must_use]
+pub fn has_control(s: &[u8]) -> bool {
+    let mut i: usize = 0;
+    #[cfg_attr(feature = "verus", verus_spec(
+        invariant
+            i <= s.len(),
+            forall|j: int| 0 <= j < i ==> !#[trigger] control_at(s@, j),
+        decreases s.len() - i
+    ))]
+    while i < s.len() {
+        let b = s[i];
+        if b < 0x20 || b == 0x7F || (b == 0xC2 && i + 1 < s.len() && 0x80 <= s[i + 1] && s[i + 1] <= 0x9F) {
+            proof! { assert(control_at(s@, i as int)); }
+            return true;
+        }
+        i += 1;
+    }
+    false
+}
+
 /// The range of `s` that [`trimmed`] keeps: `str::trim` on the bytes of a `&str`.
 #[cfg_attr(feature = "verus", verus_verify)]
 #[cfg_attr(feature = "verus", verus_spec(r =>
@@ -519,6 +555,15 @@ mod tests {
         "\u{2000}\u{2000}",
         "\u{feff}w",
     ];
+
+    #[test]
+    fn has_control_is_char_is_control() {
+        for c in (0..=0x10_ffff).filter_map(char::from_u32) {
+            for s in [c.to_string(), format!("a{c}"), format!("{c}b"), format!("\u{a0}{c}\u{85}")] {
+                assert_eq!(has_control(s.as_bytes()), s.chars().any(char::is_control), "{s:?}");
+            }
+        }
+    }
 
     #[test]
     fn trim_is_str_trim() {

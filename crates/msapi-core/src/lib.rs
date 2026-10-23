@@ -41,6 +41,7 @@ pub mod formula;
 pub mod http1;
 pub mod json;
 pub mod lookup;
+pub mod msg;
 pub mod names;
 pub mod policy;
 pub mod query;
@@ -53,6 +54,7 @@ pub mod text;
 pub mod time;
 pub mod units;
 pub mod webauthn;
+mod wire;
 pub mod world;
 
 pub use character::{CharacterName, ClassLevel, Gender, Level, Liberation};

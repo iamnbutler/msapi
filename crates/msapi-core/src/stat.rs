@@ -1,19 +1,36 @@
 //! The Character Info stat window.
 
+#![allow(
+    clippy::cast_lossless,
+    clippy::single_char_add_str,
+    clippy::manual_unwrap_or_default,
+    clippy::manual_map,
+    clippy::single_match,
+    clippy::collapsible_if,
+    clippy::manual_unwrap_or,
+    clippy::single_match_else,
+    reason = "Verus checks plain casts, matches and `push_str`; it has no spec for `From` widening, `Option` combinators or `if let` chains"
+)]
+
 use serde::{Deserialize, Serialize};
 
 #[cfg(feature = "verus")]
 use vstd::prelude::*;
 
+#[cfg(feature = "verus")]
+use crate::decimal::decimal_text;
 use crate::fixed::Pct;
+use crate::msg::push_uint;
+#[cfg(feature = "verus")]
+use crate::msg::{self, uint_chars};
 use crate::rules;
 use crate::time::Timestamp;
 use crate::units::{
     AbilityPoints, AbnormalStatusDamage, AdditionalExp, ArcanePower, AttackPower, BuffDuration, CombatPower,
-    CooldownReductionPct, CooldownSeconds, CooldownSkip, Count, CritDamage, CritRate, DamagePct, Defense, Dex,
-    FinalDamage, IgnoreDefense, IgnoreElementalResistance, Int, ItemDropRate, Jump, Luk, MagicAttack, MaxHp, MaxMp,
-    MesosObtained, Percent, SacredPower, Scalable, Speed, Stance, StarForce, StatAttack, StatusResistance, Str,
-    SummonDuration, WeaponMastery,
+    CooldownReductionPct, CooldownSeconds, CooldownSkip, CritDamage, CritRate, DamagePct, Defense, Dex, FinalDamage,
+    IgnoreDefense, IgnoreElementalResistance, Int, ItemDropRate, Jump, Luk, MagicAttack, MaxHp, MaxMp, MesosObtained,
+    Percent, SacredPower, Scalable, Speed, Stance, StarForce, StatAttack, StatusResistance, Str, SummonDuration,
+    WeaponMastery,
 };
 
 /// A stat as its hover tooltip breaks it down.
@@ -312,7 +329,9 @@ pub enum Finding {
 }
 
 /// The percentage fields that can never be negative, in check order.
-pub const PERCENT_FIELDS: [&str; 19] = [
+#[allow(clippy::redundant_static_lifetimes, reason = "Verus needs the lifetime spelled out")]
+#[cfg_attr(feature = "verus", verus_verify)]
+pub const PERCENT_FIELDS: [&'static str; 19] = [
     "damage",
     "boss_damage",
     "normal_damage",
@@ -335,7 +354,9 @@ pub const PERCENT_FIELDS: [&str; 19] = [
 ];
 
 /// The stats with a tooltip breakdown, in check order.
-pub const TOOLTIP_FIELDS: [&str; 7] = ["str", "dex", "int", "luk", "hp", "attack_power", "magic_attack"];
+#[allow(clippy::redundant_static_lifetimes, reason = "Verus needs the lifetime spelled out")]
+#[cfg_attr(feature = "verus", verus_verify)]
+pub const TOOLTIP_FIELDS: [&'static str; 7] = ["str", "dex", "int", "luk", "hp", "attack_power", "magic_attack"];
 
 #[cfg(feature = "verus")]
 verus! {
@@ -505,15 +526,318 @@ pub fn findings(
     out
 }
 
+#[cfg(feature = "verus")]
+verus! {
+
+/// What `{}` prints for a percentage in hundredths: `93.14`.
+pub open spec fn pct_chars(raw: int) -> Seq<char> {
+    msg::chars(decimal_text(raw, 2))
+}
+
+/// The message [`issues`] gives a finding.
+pub open spec fn message_of(
+    f: Finding,
+    ied: Option<i64>,
+    cdr: Option<i64>,
+    range: Option<(u64, u64)>,
+    percents: Seq<Option<i64>>,
+    tooltips: Seq<Option<Tooltip>>,
+) -> Seq<char> {
+    match f {
+        Finding::IgnoreDefense => "Ignore Enemy Defense is always below 100%, got "@
+            + pct_chars(match ied { Some(v) => v as int, None => 0 }),
+        Finding::CooldownReduction => "cooldown reduction cannot exceed 100%, got "@
+            + pct_chars(match cdr { Some(v) => v as int, None => 0 }),
+        Finding::Range => {
+            let (min, max) = match range { Some(r) => r, None => (0u64, 0u64) };
+            "damage range minimum "@ + uint_chars(min as nat) + " is above the maximum "@ + uint_chars(max as nat)
+        },
+        Finding::Negative(k) => PERCENT_FIELDS[k as int]@ + " cannot be negative, got "@
+            + pct_chars(match percents[k as int] { Some(v) => v as int, None => 0 }),
+        Finding::Mismatch(k) => {
+            let t = match tooltips[k as int] { Some(t) => t, None => Tooltip { implied: None, total: 0 } };
+            "tooltip implies "@ + uint_chars(match t.implied { Some(i) => i as nat, None => 0 })
+                + " (floor(base × (1 + percent/100)) + flat) but the total reads "@ + uint_chars(t.total as nat)
+                + "; one of them is probably misread"@
+        },
+        Finding::Overflow(_) => "tooltip values are too large to combine"@,
+    }
+}
+
+/// The severity [`issues`] gives a finding: only a tooltip mismatch is a warning.
+pub open spec fn severity_of(f: Finding) -> Severity {
+    match f {
+        Finding::Mismatch(_) => Severity::Warning,
+        _ => Severity::Error,
+    }
+}
+
+/// The field [`issues`] names for a finding.
+pub open spec fn field_of(f: Finding) -> Seq<char> {
+    match f {
+        Finding::IgnoreDefense => "ignore_defense"@,
+        Finding::CooldownReduction => "cooldown_reduction_percent"@,
+        Finding::Range => "stat_attack_min"@,
+        Finding::Negative(k) => PERCENT_FIELDS[k as int]@,
+        Finding::Mismatch(k) => TOOLTIP_FIELDS[k as int]@,
+        Finding::Overflow(k) => TOOLTIP_FIELDS[k as int]@,
+    }
+}
+
+/// The findings' indices are in range: a `Negative` names one of the
+/// percentages, a `Mismatch` or `Overflow` one of the tooltips.
+pub open spec fn in_range(f: Finding, np: int, nt: int) -> bool {
+    match f {
+        Finding::Negative(k) => k < np,
+        Finding::Mismatch(k) => k < nt,
+        Finding::Overflow(k) => k < nt,
+        _ => true,
+    }
+}
+
+proof fn lemma_negatives_in_range(p: Seq<Option<i64>>, n: int, np: int, nt: int)
+    requires 0 <= n <= p.len(), n <= np,
+    ensures forall|j: int| 0 <= j < negatives(p, n).len() ==> in_range(#[trigger] negatives(p, n)[j], np, nt),
+    decreases n,
+{
+    if n > 0 {
+        lemma_negatives_in_range(p, n - 1, np, nt);
+        let rest = negatives(p, n - 1);
+        let all = negatives(p, n);
+        assert forall|j: int| 0 <= j < all.len() implies in_range(#[trigger] all[j], np, nt) by {
+            if j < rest.len() {
+                assert(all[j] == rest[j]);
+            }
+        }
+    }
+}
+
+proof fn lemma_disagreements_in_range(t: Seq<Option<Tooltip>>, n: int, np: int, nt: int)
+    requires 0 <= n <= t.len(), n <= nt,
+    ensures forall|j: int| 0 <= j < disagreements(t, n).len() ==> in_range(#[trigger] disagreements(t, n)[j], np, nt),
+    decreases n,
+{
+    if n > 0 {
+        lemma_disagreements_in_range(t, n - 1, np, nt);
+        let rest = disagreements(t, n - 1);
+        let all = disagreements(t, n);
+        assert forall|j: int| 0 <= j < all.len() implies in_range(#[trigger] all[j], np, nt) by {
+            if j < rest.len() {
+                assert(all[j] == rest[j]);
+            }
+        }
+    }
+}
+
+proof fn lemma_findings_in_range(
+    ied: Option<i64>,
+    cdr: Option<i64>,
+    range: Option<(u64, u64)>,
+    percents: Seq<Option<i64>>,
+    tooltips: Seq<Option<Tooltip>>,
+)
+    ensures
+        forall|j: int| 0 <= j < findings_spec(ied, cdr, range, percents, tooltips).len()
+            ==> in_range(#[trigger] findings_spec(ied, cdr, range, percents, tooltips)[j], percents.len() as int, tooltips.len() as int),
+{
+    let h = head(ied, cdr, range);
+    let ng = negatives(percents, percents.len() as int);
+    let d = disagreements(tooltips, tooltips.len() as int);
+    lemma_negatives_in_range(percents, percents.len() as int, percents.len() as int, tooltips.len() as int);
+    lemma_disagreements_in_range(tooltips, tooltips.len() as int, percents.len() as int, tooltips.len() as int);
+    assert forall|j: int| 0 <= j < h.len() implies in_range(#[trigger] h[j], percents.len() as int, tooltips.len() as int) by {}
+    let all = findings_spec(ied, cdr, range, percents, tooltips);
+    assert(all == h + ng + d);
+    assert forall|j: int| 0 <= j < all.len() implies in_range(#[trigger] all[j], percents.len() as int, tooltips.len() as int) by {
+        if j < h.len() {
+            assert(all[j] == h[j]);
+        } else if j < h.len() + ng.len() {
+            assert(all[j] == ng[j - h.len()]);
+        } else {
+            assert(all[j] == d[j - h.len() - ng.len()]);
+        }
+    }
+}
+
+} // verus!
+
+/// What `{}` prints for a percentage of `raw` hundredths.
+#[cfg_attr(feature = "verus", verus_verify)]
+#[cfg_attr(feature = "verus", verus_spec(ensures final(m)@ == old(m)@ + pct_chars(raw as int)))]
+fn push_pct(m: &mut String, raw: i64) {
+    let t = Pct::from_raw(raw).text();
+    m.push_str(t.as_str());
+}
+
+/// The issue for one finding, worded for whoever is reading the screen.
+#[cfg_attr(feature = "verus", verus_verify)]
+#[cfg_attr(feature = "verus", verus_spec(r =>
+    requires in_range(f, 19, 7),
+    ensures
+        r.severity == severity_of(f),
+        r.field@ == field_of(f),
+        r.message@ == message_of(f, ied, cdr, range, percents@, tooltips@),
+))]
+fn issue(
+    f: Finding,
+    ied: Option<i64>,
+    cdr: Option<i64>,
+    range: Option<(u64, u64)>,
+    percents: &[Option<i64>; 19],
+    tooltips: &[Option<Tooltip>; 7],
+) -> Issue {
+    let mut text = String::new();
+    match f {
+        Finding::IgnoreDefense => {
+            text.push_str("Ignore Enemy Defense is always below 100%, got ");
+            push_pct(
+                &mut text,
+                match ied {
+                    Some(v) => v,
+                    None => 0,
+                },
+            );
+            Issue { severity: Severity::Error, field: "ignore_defense", message: text }
+        }
+        Finding::CooldownReduction => {
+            text.push_str("cooldown reduction cannot exceed 100%, got ");
+            push_pct(
+                &mut text,
+                match cdr {
+                    Some(v) => v,
+                    None => 0,
+                },
+            );
+            Issue { severity: Severity::Error, field: "cooldown_reduction_percent", message: text }
+        }
+        Finding::Range => {
+            let (min, max) = match range {
+                Some(r) => r,
+                None => (0, 0),
+            };
+            text.push_str("damage range minimum ");
+            push_uint(&mut text, min as u128);
+            text.push_str(" is above the maximum ");
+            push_uint(&mut text, max as u128);
+            Issue { severity: Severity::Error, field: "stat_attack_min", message: text }
+        }
+        Finding::Negative(k) => {
+            let field = PERCENT_FIELDS[k];
+            text.push_str(field);
+            text.push_str(" cannot be negative, got ");
+            push_pct(
+                &mut text,
+                match percents[k] {
+                    Some(v) => v,
+                    None => 0,
+                },
+            );
+            Issue { severity: Severity::Error, field, message: text }
+        }
+        Finding::Mismatch(k) => {
+            let t = match tooltips[k] {
+                Some(t) => t,
+                None => Tooltip { implied: None, total: 0 },
+            };
+            text.push_str("tooltip implies ");
+            push_uint(
+                &mut text,
+                match t.implied {
+                    Some(i) => i as u128,
+                    None => 0,
+                },
+            );
+            text.push_str(" (floor(base × (1 + percent/100)) + flat) but the total reads ");
+            push_uint(&mut text, t.total as u128);
+            text.push_str("; one of them is probably misread");
+            Issue { severity: Severity::Warning, field: TOOLTIP_FIELDS[k], message: text }
+        }
+        Finding::Overflow(k) => {
+            text.push_str("tooltip values are too large to combine");
+            Issue { severity: Severity::Error, field: TOOLTIP_FIELDS[k], message: text }
+        }
+    }
+}
+
+/// Every rule a window breaks ([`findings`]), each worded as an [`Issue`].
+#[cfg_attr(feature = "verus", verus_verify)]
+#[cfg_attr(feature = "verus", verus_spec(r =>
+    ensures
+        r@.len() == findings_spec(ied, cdr, range, percents@, tooltips@).len(),
+        forall|i: int| 0 <= i < r@.len() ==> {
+            let f = #[trigger] findings_spec(ied, cdr, range, percents@, tooltips@)[i];
+            &&& r@[i].severity == severity_of(f)
+            &&& r@[i].field@ == field_of(f)
+            &&& r@[i].message@ == message_of(f, ied, cdr, range, percents@, tooltips@)
+        },
+))]
+#[must_use]
+pub fn issues(
+    ied: Option<i64>,
+    cdr: Option<i64>,
+    range: Option<(u64, u64)>,
+    percents: &[Option<i64>; 19],
+    tooltips: &[Option<Tooltip>; 7],
+) -> Vec<Issue> {
+    let fs = findings(ied, cdr, range, percents.as_slice(), tooltips.as_slice());
+    proof! {
+        lemma_findings_in_range(ied, cdr, range, percents@, tooltips@);
+        assert(percents@.len() == 19 && tooltips@.len() == 7);
+        assert forall|j: int| 0 <= j < fs@.len() implies in_range(#[trigger] fs@[j], 19, 7) by {
+            assert(in_range(findings_spec(ied, cdr, range, percents@, tooltips@)[j], 19, 7));
+        }
+    }
+    let mut out: Vec<Issue> = Vec::new();
+    let mut i: usize = 0;
+    #[cfg_attr(feature = "verus", verus_spec(
+        invariant
+            i <= fs@.len(),
+            fs@ == findings_spec(ied, cdr, range, percents@, tooltips@),
+            forall|j: int| 0 <= j < fs@.len() ==> in_range(#[trigger] fs@[j], 19, 7),
+            out@.len() == i,
+            forall|j: int| 0 <= j < i ==> {
+                let f = #[trigger] fs@[j];
+                &&& out@[j].severity == severity_of(f)
+                &&& out@[j].field@ == field_of(f)
+                &&& out@[j].message@ == message_of(f, ied, cdr, range, percents@, tooltips@)
+            },
+        decreases fs@.len() - i
+    ))]
+    while i < fs.len() {
+        out.push(issue(fs[i], ied, cdr, range, percents, tooltips));
+        i += 1;
+    }
+    out
+}
+
+/// One tooltip set against its total.
+#[cfg_attr(feature = "verus", verus_verify)]
+#[cfg_attr(feature = "verus", verus_spec(r =>
+    ensures
+        r.total as int == total.count(),
+        match r.implied {
+            Some(i) => i as int == crate::formula::scaled_spec(base.count(), percent_raw(percent)) + flat_count(flat),
+            None => crate::formula::scaled_spec(base.count(), percent_raw(percent)) + flat_count(flat) > u64::MAX,
+        },
+))]
+#[must_use]
+pub fn tooltip_of<T: Scalable>(base: T, percent: Option<T::Percent>, flat: Option<T>, total: T) -> Tooltip {
+    let implied = match breakdown_total(base, percent, flat) {
+        Some(t) => Some(t.get()),
+        None => None,
+    };
+    Tooltip { implied, total: total.get() }
+}
+
 /// One tooltip against its total, if both were captured.
 fn tooltip<T: Scalable>(breakdown: Option<StatBreakdown<T>>, total: Option<T>) -> Option<Tooltip> {
-    let (Some(breakdown), Some(total)) = (breakdown, total) else { return None };
-    Some(Tooltip { implied: breakdown.implied_total().map(Count::get), total: total.get() })
+    let (Some(b), Some(total)) = (breakdown, total) else { return None };
+    Some(tooltip_of(b.base, b.percent, b.flat, total))
 }
 
 impl StatWindow {
     /// Checks the window for impossible and suspicious values: the rules
-    /// [`findings`] proves, each turned into a message.
+    /// [`findings`] proves, each worded by [`issues`].
     ///
     /// ```
     /// use msapi_core::{Severity, StatWindow};
@@ -526,13 +850,10 @@ impl StatWindow {
     /// ```
     #[must_use]
     pub fn check(&self) -> Vec<Issue> {
-        let ied = self.ignore_defense.map(Percent::pct);
-        let cdr = self.cooldown_reduction_percent.map(Percent::pct);
-        let range = self.stat_attack_min.zip(self.stat_attack_max);
-        let percents = self.percentages();
-        let raw: Vec<Option<i64>> = percents.iter().map(|p| p.map(Pct::raw)).collect();
-        let tooltips: Vec<Option<Tooltip>> = self.breakdowns.map_or_else(Vec::new, |b| {
-            vec![
+        let raw = |p: Option<Pct>| p.map(Pct::raw);
+        let percents = self.percentages().map(raw);
+        let tooltips = self.breakdowns.map_or([None; 7], |b| {
+            [
                 tooltip(b.str, self.str),
                 tooltip(b.dex, self.dex),
                 tooltip(b.int, self.int),
@@ -542,42 +863,14 @@ impl StatWindow {
                 tooltip(b.magic_attack, self.magic_attack),
             ]
         });
-        let error = |field, message: String| Issue { severity: Severity::Error, field, message };
-        findings(ied.map(Pct::raw), cdr.map(Pct::raw), range.map(|(a, b)| (a.get(), b.get())), &raw, &tooltips)
-            .into_iter()
-            .map(|f| match f {
-                Finding::IgnoreDefense => error(
-                    "ignore_defense",
-                    format!("Ignore Enemy Defense is always below 100%, got {}", ied.unwrap_or(Pct::ZERO)),
-                ),
-                Finding::CooldownReduction => error(
-                    "cooldown_reduction_percent",
-                    format!("cooldown reduction cannot exceed 100%, got {}", cdr.unwrap_or(Pct::ZERO)),
-                ),
-                Finding::Range => {
-                    let (min, max) = range.map_or((0, 0), |(a, b)| (a.get(), b.get()));
-                    error("stat_attack_min", format!("damage range minimum {min} is above the maximum {max}"))
-                }
-                Finding::Negative(k) => {
-                    let field = PERCENT_FIELDS[k];
-                    let v = percents[k].unwrap_or(Pct::ZERO);
-                    error(field, format!("{field} cannot be negative, got {v}"))
-                }
-                Finding::Mismatch(k) => {
-                    let t = tooltips[k].unwrap_or(Tooltip { implied: None, total: 0 });
-                    Issue {
-                        severity: Severity::Warning,
-                        field: TOOLTIP_FIELDS[k],
-                        message: format!(
-                            "tooltip implies {} (floor(base × (1 + percent/100)) + flat) but the total reads {}; one of them is probably misread",
-                            t.implied.unwrap_or(0),
-                            t.total
-                        ),
-                    }
-                }
-                Finding::Overflow(k) => error(TOOLTIP_FIELDS[k], "tooltip values are too large to combine".into()),
-            })
-            .collect()
+        let range = self.stat_attack_min.zip(self.stat_attack_max).map(|(a, b)| (a.get(), b.get()));
+        issues(
+            raw(self.ignore_defense.map(Percent::pct)),
+            raw(self.cooldown_reduction_percent.map(Percent::pct)),
+            range,
+            &percents,
+            &tooltips,
+        )
     }
 
     /// Every percentage field that can never be negative, in [`PERCENT_FIELDS`] order.
@@ -664,5 +957,41 @@ mod tests {
         )
         .unwrap();
         assert_eq!(window.check(), vec![]);
+    }
+
+    #[test]
+    fn messages_are_unchanged() {
+        let window: StatWindow = serde_json::from_str(
+            r#"{
+                "stat_attack_min": 30, "stat_attack_max": 20,
+                "ignore_defense": 100.5, "cooldown_reduction_percent": 101,
+                "boss_damage": -3.25, "speed": -1,
+                "luk": 38000, "str": 5,
+                "breakdowns": {
+                    "luk": { "base": 5000, "percent": 300, "flat": 18120 },
+                    "str": { "base": 18446744073709551615, "percent": 100 }
+                }
+            }"#,
+        )
+        .unwrap();
+        let got: Vec<(Severity, &str, String)> =
+            window.check().into_iter().map(|i| (i.severity, i.field, i.message)).collect();
+        let e = Severity::Error;
+        assert_eq!(
+            got,
+            vec![
+                (e, "ignore_defense", "Ignore Enemy Defense is always below 100%, got 100.50".to_owned()),
+                (e, "cooldown_reduction_percent", "cooldown reduction cannot exceed 100%, got 101.00".to_owned()),
+                (e, "stat_attack_min", "damage range minimum 30 is above the maximum 20".to_owned()),
+                (e, "boss_damage", "boss_damage cannot be negative, got -3.25".to_owned()),
+                (e, "speed", "speed cannot be negative, got -1.00".to_owned()),
+                (e, "str", "tooltip values are too large to combine".to_owned()),
+                (
+                    Severity::Warning,
+                    "luk",
+                    "tooltip implies 38120 (floor(base × (1 + percent/100)) + flat) but the total reads 38000; one of them is probably misread".to_owned()
+                ),
+            ]
+        );
     }
 }
