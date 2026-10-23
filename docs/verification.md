@@ -49,7 +49,7 @@ types and call them. Percentages are raw hundredths (`Pct::raw`).
 | `implied_total` (stat tooltips) | `scaled + flat`, and `None` exactly on overflow |
 | `displayed_range` | the damage range formula (`upper_actual`, `lower_actual`, then the shown floors) |
 | `combat_power` | `floor(N / D)` for the CP numerator and denominator, including dividing out class Final Damage |
-| `bow_normalised` | `flat + floor((bow - w)(w + sf) / w)` with floor division, and `Some` whenever the result fits |
+| `bow_normalised` | `flat + floor((bow - w)(w + sf) / w)` with floor division, and `Some` whenever the result and the intermediate product fit |
 | `stack_final_damage` | `Π (10000 + fdᵢ) / 10000ⁿ` |
 | `stack_ignore_defense` | `Π (10000 - iedᵢ) / 10000ⁿ` |
 | `defense_factor` | `max(0, 1 - pdr × (1 - ied))` with PDR clamped to [0, 500%] |
