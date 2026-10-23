@@ -46,6 +46,7 @@ use std::str::FromStr;
 use serde::{Deserialize, Serialize};
 
 use crate::fixed::{Fixed, FixedError, Pct};
+use crate::formula;
 use crate::ratio::Ratio;
 
 /// A unit stored as a plain count.
@@ -325,7 +326,7 @@ pub type CooldownSeconds = Fixed<2>;
 
 /// `1 + p / 100` as an exact ratio.
 fn one_plus(p: Pct) -> Ratio {
-    Ratio::from_fixed(Pct::from_int(100) + p, 100)
+    formula::one_plus_factor(p.raw())
 }
 
 impl DamagePct {
@@ -361,7 +362,8 @@ impl FinalDamage {
     /// ```
     #[must_use]
     pub fn stack(sources: impl IntoIterator<Item = Self>) -> Option<Ratio> {
-        Ratio::product(sources.into_iter().map(Self::factor))
+        let raws: Vec<i64> = sources.into_iter().map(|s| s.0.raw()).collect();
+        formula::stack_final_damage(&raws)
     }
 }
 
@@ -369,7 +371,7 @@ impl IgnoreDefense {
     /// The share of defense left after this source: `1 - i`.
     #[must_use]
     pub fn remaining(self) -> Ratio {
-        Ratio::from_fixed(Pct::from_int(100) - self.0, 100)
+        formula::one_minus_factor(self.0.raw())
     }
 
     /// The defense left after several independent sources:
@@ -385,7 +387,8 @@ impl IgnoreDefense {
     /// ```
     #[must_use]
     pub fn stack(sources: impl IntoIterator<Item = Self>) -> Option<Ratio> {
-        Ratio::product(sources.into_iter().map(Self::remaining))
+        let raws: Vec<i64> = sources.into_iter().map(|s| s.0.raw()).collect();
+        formula::stack_ignore_defense(&raws)
     }
 
     /// The defense multiplier against a monster: `max(0, 1 - pdr × (1 - ied))`,
@@ -400,8 +403,7 @@ impl IgnoreDefense {
     /// ```
     #[must_use]
     pub fn defense_factor(self, monster: DefenseRate) -> Option<Ratio> {
-        let pdr = Ratio::from_fixed(monster.0.clamp(Pct::ZERO, Pct::from_int(500)), 100);
-        Ratio::ONE.checked_saturating_sub(pdr.checked_mul(self.remaining())?)
+        formula::defense_factor(self.0.raw(), monster.0.raw())
     }
 }
 
@@ -411,7 +413,7 @@ impl CritDamage {
     /// A crit rolls uniformly between `1.20 + cd` and `1.50 + cd`.
     #[must_use]
     pub fn crit_factor(self) -> Ratio {
-        Ratio::from_fixed(Pct::from_int(135) + self.0, 100)
+        formula::crit_factor(self.0.raw())
     }
 }
 

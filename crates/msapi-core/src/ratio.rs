@@ -9,8 +9,9 @@ use vstd::arithmetic::div_mod::lemma_fundamental_div_mod;
 use vstd::prelude::*;
 
 #[cfg(feature = "verus")]
-use crate::arith::{gcd_spec, lemma_divides_exact, lemma_gcd_one, lemma_reduced_coprime};
-use crate::fixed::Fixed;
+use crate::arith::{
+    gcd_spec, lemma_divides_exact, lemma_gcd_one, lemma_reduced_coprime, lemma_same_value, lemma_same_value_scaled,
+};
 
 /// An exact, non-negative rational number with no unit.
 ///
@@ -87,34 +88,12 @@ const fn gcd(a: u128, b: u128) -> u128 {
     x
 }
 
-// Constants and conversions Verus does not check: they touch types it does
-// not know (`Fixed`, iterators, floats) or build values by hand.
+// Verus does not check constants built by hand; both are in lowest terms.
 impl Ratio {
     /// Zero.
     pub const ZERO: Self = Self { num: 0, den: 1 };
     /// One.
     pub const ONE: Self = Self { num: 1, den: 1 };
-
-    /// `value / per`, where `value` is a [`Fixed`]. Negative values clamp to zero,
-    /// since no factor in a damage formula is negative.
-    #[must_use]
-    pub fn from_fixed<const DP: u32>(value: Fixed<DP>, per: u64) -> Self {
-        let num = u128::try_from(value.raw()).unwrap_or(0);
-        let scale = u128::try_from(Fixed::<DP>::SCALE).unwrap_or(1);
-        Self::new(num, scale * u128::from(per.max(1))).unwrap_or(Self::ZERO)
-    }
-
-    /// The product of several ratios, or `None` on overflow.
-    pub fn product(factors: impl IntoIterator<Item = Self>) -> Option<Self> {
-        factors.into_iter().try_fold(Self::ONE, Self::checked_mul)
-    }
-
-    /// An approximate float, for display only.
-    #[must_use]
-    #[allow(clippy::cast_precision_loss, reason = "display approximation by definition")]
-    pub fn to_f64(self) -> f64 {
-        self.num as f64 / self.den as f64
-    }
 }
 
 #[cfg_attr(feature = "verus", verus_verify)]
@@ -124,7 +103,7 @@ impl Ratio {
     #[cfg_attr(feature = "verus", verus_spec(r =>
         ensures
             den == 0 <==> r is None,
-            r matches Some(r) ==> r.wf() && r.is(num as int, den as int),
+            r matches Some(r) ==> r.wf() && r.is(num as int, den as int) && r.n() <= num && r.d() <= den,
     ))]
     pub const fn new(num: u128, den: u128) -> Option<Self> {
         if den == 0 {
@@ -138,13 +117,15 @@ impl Ratio {
             let (x, y) = (num as nat / g as nat, den as nat / g as nat);
             assert(x * den == num * y) by (nonlinear_arith)
                 requires num == g * x, den == g * y;
+            assert(x <= num && y <= den) by (nonlinear_arith)
+                requires num == g * x, den == g * y, g >= 1;
         }
         Some(Self { num: num / g, den: den / g })
     }
 
     /// A whole number.
     #[must_use]
-    #[cfg_attr(feature = "verus", verus_spec(r => ensures r.wf(), r.is(n as int, 1)))]
+    #[cfg_attr(feature = "verus", verus_spec(r => ensures r.wf(), r.is(n as int, 1), r.n() == n, r.d() == 1))]
     pub const fn from_int(n: u64) -> Self {
         proof! { lemma_gcd_one(n as nat); }
         Self { num: n as u128, den: 1 }
@@ -168,7 +149,9 @@ impl Ratio {
     #[must_use]
     #[cfg_attr(feature = "verus", verus_spec(r =>
         requires self.wf(), rhs.wf(),
-        ensures r matches Some(r) ==> r.wf() && r.is(self.n() * rhs.n(), self.d() * rhs.d()),
+        ensures
+            r matches Some(r) ==> r.wf() && r.is(self.n() * rhs.n(), self.d() * rhs.d()),
+            self.n() * rhs.n() <= u128::MAX && self.d() * rhs.d() <= u128::MAX ==> r is Some,
     ))]
     pub fn checked_mul(self, rhs: Self) -> Option<Self> {
         // Cross-reduce first so intermediate products stay small.
@@ -181,6 +164,14 @@ impl Ratio {
             lemma_divides_exact(g1 as nat, rhs.den as nat);
             lemma_divides_exact(g2 as nat, rhs.num as nat);
             lemma_divides_exact(g2 as nat, self.den as nat);
+        }
+        proof! {
+            // Cross-reducing only shrinks the products, so it adds no overflow.
+            let (a, b, c, d) = (self.num as int, self.den as int, rhs.num as int, rhs.den as int);
+            let (ka, kb, kc, kd) = (a / g1 as int, b / g2 as int, c / g2 as int, d / g1 as int);
+            assert(ka * kc <= a * c && kb * kd <= b * d) by (nonlinear_arith)
+                requires a == g1 * ka, d == g1 * kd, c == g2 * kc, b == g2 * kb, g1 >= 1, g2 >= 1,
+                    ka >= 0, kb >= 0, kc >= 0, kd >= 0;
         }
         let num = (self.num / g1).checked_mul(rhs.num / g2)?;
         let den = (self.den / g2).checked_mul(rhs.den / g1)?;
@@ -215,8 +206,12 @@ impl Ratio {
         let r = self.checked_mul(inv);
         proof! {
             if let Some(r) = r {
-                lemma_same_value_mul(r.n(), r.d(), self.n(), self.d(), inv.n(), inv.d(),
+                assert(r.n() * (inv.d() * self.d()) == (inv.n() * self.n()) * r.d()) by (nonlinear_arith)
+                    requires r.n() * (self.d() * inv.d()) == (self.n() * inv.n()) * r.d();
+                lemma_same_value_scaled(r.n(), r.d(), inv.n(), inv.d(), self.n(), self.d(),
                     rhs.d(), rhs.n());
+                assert(r.n() * (self.d() * rhs.n()) == (self.n() * rhs.d()) * r.d()) by (nonlinear_arith)
+                    requires r.n() * (rhs.n() * self.d()) == (rhs.d() * self.n()) * r.d();
             }
         }
         r
@@ -427,33 +422,6 @@ impl Ratio {
     }
 }
 
-#[cfg(feature = "verus")]
-verus! {
-
-/// Two fractions equal to the same positive-denominator fraction are equal.
-proof fn lemma_same_value(rn: int, rd: int, n: int, d: int, tn: int, td: int)
-    requires d > 0, rn * d == n * rd, n * td == tn * d,
-    ensures rn * td == tn * rd,
-{
-    assert(d * (rn * td) == d * (tn * rd)) by (nonlinear_arith)
-        requires rn * d == n * rd, n * td == tn * d;
-    vstd::arithmetic::mul::lemma_mul_equality_converse(d, rn * td, tn * rd);
-}
-
-/// `r = s × inv` and `inv = p / q` give `r = (sn·p) / (sd·q)`.
-proof fn lemma_same_value_mul(rn: int, rd: int, sn: int, sd: int, inn: int, ind: int, p: int, q: int)
-    requires rd > 0, sd > 0, ind > 0, q > 0,
-        rn * (sd * ind) == (sn * inn) * rd, inn * q == p * ind,
-    ensures rn * (sd * q) == (sn * p) * rd,
-{
-    assert(ind * (rn * (sd * q)) == q * (rn * (sd * ind))) by (nonlinear_arith);
-    assert(q * ((sn * inn) * rd) == (sn * rd) * (inn * q)) by (nonlinear_arith);
-    assert((sn * rd) * (p * ind) == ind * ((sn * p) * rd)) by (nonlinear_arith);
-    vstd::arithmetic::mul::lemma_mul_equality_converse(ind, rn * (sd * q), (sn * p) * rd);
-}
-
-} // verus!
-
 impl PartialOrd for Ratio {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         Some(self.cmp(other))
@@ -490,7 +458,7 @@ mod tests {
     fn overflow_is_reported_not_wrapped() {
         let big = Ratio::new(u128::MAX, 1).unwrap();
         assert!(big.checked_mul(Ratio::from_int(2)).is_none());
-        assert!(Ratio::product([big, big]).is_none());
+        assert!(big.checked_mul(big).is_none());
     }
 
     #[test]

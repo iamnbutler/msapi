@@ -31,6 +31,7 @@ pub mod calc;
 pub mod character;
 pub mod class;
 pub mod fixed;
+pub mod formula;
 pub mod ratio;
 pub mod region;
 pub mod stat;

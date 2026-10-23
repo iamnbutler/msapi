@@ -3,7 +3,6 @@
 use serde::{Deserialize, Serialize};
 
 use crate::fixed::Pct;
-use crate::ratio::Ratio;
 use crate::time::Timestamp;
 use crate::units::{
     AbilityPoints, AbnormalStatusDamage, AdditionalExp, ArcanePower, AttackPower, BuffDuration, CombatPower,
@@ -58,11 +57,8 @@ impl<T: Scalable> StatBreakdown<T> {
     /// ```
     #[must_use]
     pub fn implied_total(&self) -> Option<T> {
-        let percent = self.percent.map_or(Pct::ZERO, Percent::pct);
-        let scale = Ratio::from_fixed(Pct::from_int(100) + percent, 100);
-        let scaled = Ratio::from_int(self.base.get()).checked_mul(scale)?.floor();
-        let total = u64::try_from(scaled).ok()?.checked_add(self.flat.map_or(0, Count::get))?;
-        Some(T::from(total))
+        let percent = self.percent.map_or(0, |p| p.pct().raw());
+        crate::formula::implied_total(self.base.get(), percent, self.flat.map_or(0, Count::get)).map(T::from)
     }
 }
 

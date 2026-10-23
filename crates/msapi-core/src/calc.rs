@@ -9,11 +9,10 @@
 use std::fmt;
 
 use crate::class::{Class, MainStat, WeaponConstant};
-use crate::fixed::Pct;
-use crate::ratio::Ratio;
+use crate::formula;
 use crate::units::{
     AttackPct, AttackPower, CombatPower, Count, CritDamage, DamagePct, Dex, FinalDamage, Int, Luk, MagicAttack,
-    MagicAttackPct, StatAttack, Str, WeaponMastery,
+    MagicAttackPct, Percent, StatAttack, Str, WeaponMastery,
 };
 
 /// Why a formula could not produce a value.
@@ -45,10 +44,6 @@ impl<T> OrOverflow<T> for Option<T> {
     fn or_overflow(self) -> Result<T, CalcError> {
         self.ok_or(CalcError::Overflow)
     }
-}
-
-fn to_u64(n: u128) -> Result<u64, CalcError> {
-    u64::try_from(n).map_err(|_| CalcError::Overflow)
 }
 
 /// The four main-stat totals.
@@ -108,14 +103,10 @@ impl StatValue {
     /// # Ok::<(), msapi_core::calc::CalcError>(())
     /// ```
     pub fn for_class(class: &Class, stats: &MainStats) -> Result<Self, CalcError> {
-        let weighted = |list: &[MainStat], weight: u64| -> Result<u64, CalcError> {
-            list.iter().try_fold(0_u64, |acc, &s| {
-                let v = stats.get(s).ok_or(CalcError::Unsupported("Demon Avenger's HP stat value"))?;
-                acc.checked_add(v.checked_mul(weight).or_overflow()?).or_overflow()
-            })
+        let values = |list: &[MainStat]| -> Result<Vec<u64>, CalcError> {
+            list.iter().map(|&s| stats.get(s).ok_or(CalcError::Unsupported("Demon Avenger's HP stat value"))).collect()
         };
-        let total = weighted(class.primary, 4)?.checked_add(weighted(class.secondary, 1)?).or_overflow()?;
-        Ok(Self(total))
+        formula::stat_value(&values(class.primary)?, &values(class.secondary)?).map(Self).or_overflow()
     }
 }
 
@@ -155,13 +146,11 @@ pub enum ScaledAttack {
 impl ScaledAttack {
     /// `floor(flat × (1 + percent))`.
     pub fn total(self) -> Result<u64, CalcError> {
-        use crate::units::Percent;
         let (flat, pct) = match self {
             Self::Physical(a, p) => (a.get(), p.pct()),
             Self::Magic(m, p) => (m.get(), p.pct()),
         };
-        let scale = Ratio::from_fixed(Pct::from_int(100) + pct, 100);
-        to_u64(Ratio::from_int(flat).checked_mul(scale).or_overflow()?.floor())
+        formula::scaled(flat, pct.raw()).or_overflow()
     }
 }
 
@@ -207,27 +196,16 @@ pub struct RangeInputs {
 /// here would compile (they are one unit) but give the wrong number, so the
 /// field is documented as Damage % alone.
 pub fn displayed_range(inputs: &RangeInputs) -> Result<DamageRange, CalcError> {
-    let base = Ratio::product([
-        Ratio::from_fixed(inputs.weapon_constant, 1),
-        Ratio::from_int(inputs.stat_value.get()),
-        Ratio::from_int(inputs.attack.get()),
-        Ratio::new(1, 100).or_overflow()?,
-    ])
+    let (min, max) = formula::displayed_range(
+        inputs.weapon_constant.raw(),
+        inputs.mastery.pct().raw(),
+        inputs.stat_value.get(),
+        inputs.attack.get(),
+        inputs.damage.pct().raw(),
+        inputs.final_damage.pct().raw(),
+    )
     .or_overflow()?;
-    let upper_actual = base.round_half_up();
-    let lower_actual = Ratio::from_int(to_u64(upper_actual)?)
-        .checked_mul(Ratio::from_fixed(crate::units::Percent::pct(inputs.mastery), 100))
-        .or_overflow()?
-        .round_half_up();
-    let shown = inputs.damage.factor().checked_mul(inputs.final_damage.factor()).or_overflow()?;
-    let upper = Ratio::from_int(to_u64(upper_actual)?).checked_mul(shown).or_overflow()?.floor();
-    let lower = Ratio::from_int(to_u64(lower_actual)?)
-        .checked_mul(shown)
-        .or_overflow()?
-        .checked_add(Ratio::ONE)
-        .or_overflow()?
-        .floor();
-    Ok(DamageRange { min: StatAttack::displayed(to_u64(lower)?), max: StatAttack::displayed(to_u64(upper)?) })
+    Ok(DamageRange { min: StatAttack::displayed(min), max: StatAttack::displayed(max) })
 }
 
 /// Converts a weapon's attack to the bow-equivalent attack Combat Power uses.
@@ -243,13 +221,9 @@ pub fn bow_normalised_attack(
     weapon_star_force: AttackPower,
     bow_base: AttackPower,
 ) -> Result<AttackPower, CalcError> {
-    let weapon = i128::from(weapon_base.get());
-    if weapon == 0 {
-        return Ok(flat);
-    }
-    let delta = (i128::from(bow_base.get()) - weapon) * (weapon + i128::from(weapon_star_force.get()));
-    let adjusted = i128::from(flat.get()) + delta.div_euclid(weapon);
-    u64::try_from(adjusted).map(AttackPower::new).map_err(|_| CalcError::Overflow)
+    formula::bow_normalised(flat.get(), weapon_base.get(), weapon_star_force.get(), bow_base.get())
+        .map(AttackPower::new)
+        .or_overflow()
 }
 
 /// Inputs to [`combat_power`].
@@ -288,17 +262,17 @@ pub struct CombatPowerInputs {
 /// `formulas.md` §2.3). CP leaves out IED and crit rate, so it is a checksum on
 /// captured stats, not a measure of damage.
 pub fn combat_power(inputs: &CombatPowerInputs) -> Result<CombatPower, CalcError> {
-    let class_fd = FinalDamage::stack(inputs.class_final_damage.iter().copied()).or_overflow()?;
-    let cp = Ratio::product([
-        Ratio::new(u128::from(inputs.stat_value.get()), 100).or_overflow()?,
-        Ratio::from_int(inputs.attack.total()?),
-        inputs.critical_damage.crit_factor(),
-        inputs.damage.factor(),
-        inputs.final_damage.factor().checked_div(class_fd).or_overflow()?,
-    ])
-    .or_overflow()?
-    .floor();
-    Ok(CombatPower::new(to_u64(cp)?))
+    let class_fd: Vec<i64> = inputs.class_final_damage.iter().map(|f| f.pct().raw()).collect();
+    let cp = formula::combat_power(
+        inputs.stat_value.get(),
+        inputs.attack.total()?,
+        inputs.critical_damage.pct().raw(),
+        inputs.damage.pct().raw(),
+        inputs.final_damage.pct().raw(),
+        &class_fd,
+    )
+    .or_overflow()?;
+    Ok(CombatPower::new(cp))
 }
 
 #[cfg(test)]

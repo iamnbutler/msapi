@@ -1,7 +1,8 @@
-//! Number theory for the Verus proofs: greatest common divisors.
+//! Number theory for the Verus proofs: greatest common divisors, and fraction
+//! equalities.
 //!
 //! Only compiled with the `verus` feature. `vstd` proves facts about `%` and
-//! `/` but has no gcd, so the three facts [`crate::Ratio`] needs live here.
+//! `/` but has no gcd, so the facts [`crate::Ratio`] needs live here.
 
 use vstd::arithmetic::div_mod::{lemma_fundamental_div_mod, lemma_mod_multiples_basic};
 use vstd::prelude::*;
@@ -135,6 +136,67 @@ pub proof fn lemma_gcd_one(n: nat)
 {
     assert(n % 1 == 0);
     reveal_with_fuel(gcd_spec, 2);
+}
+
+/// Two fractions equal to the same positive-denominator fraction are equal:
+/// `rn/rd = n/d` and `n/d = tn/td` give `rn/rd = tn/td`.
+pub proof fn lemma_same_value(rn: int, rd: int, n: int, d: int, tn: int, td: int)
+    requires d > 0, rn * d == n * rd, n * td == tn * d,
+    ensures rn * td == tn * rd,
+{
+    assert(d * (rn * td) == d * (tn * rd)) by (nonlinear_arith)
+        requires rn * d == n * rd, n * td == tn * d;
+    vstd::arithmetic::mul::lemma_mul_equality_converse(d, rn * td, tn * rd);
+}
+
+/// Scaling one side of a fraction equality: `r = (a·f)/(b·g)` and `a/b = p/q`
+/// give `r = (p·f)/(q·g)`.
+pub proof fn lemma_same_value_scaled(rn: int, rd: int, a: int, b: int, f: int, g: int, p: int, q: int)
+    requires b > 0, rn * (b * g) == (a * f) * rd, a * q == p * b,
+    ensures rn * (q * g) == (p * f) * rd,
+{
+    assert(b * (rn * (q * g)) == q * (rn * (b * g))) by (nonlinear_arith);
+    assert(q * ((a * f) * rd) == (a * q) * (f * rd)) by (nonlinear_arith);
+    assert((p * b) * (f * rd) == b * ((p * f) * rd)) by (nonlinear_arith);
+    vstd::arithmetic::mul::lemma_mul_equality_converse(b, rn * (q * g), (p * f) * rd);
+}
+
+/// The quotient is the unique `q` with `q·m <= x < (q + 1)·m`.
+pub proof fn lemma_quotient_unique(q: int, x: int, m: int)
+    requires m > 0, q * m <= x < (q + 1) * m,
+    ensures q == x / m,
+{
+    lemma_fundamental_div_mod(x, m);
+    let t = x / m;
+    assert(0 <= x % m < m) by { vstd::arithmetic::div_mod::lemma_mod_bound(x, m); }
+    assert(t * m <= x < (t + 1) * m) by (nonlinear_arith)
+        requires x == m * t + x % m, 0 <= x % m < m;
+    assert((q - t) * m < m && (t - q) * m < m) by (nonlinear_arith)
+        requires q * m <= x < (q + 1) * m, t * m <= x < (t + 1) * m;
+    assert(q - t < 1 && t - q < 1) by (nonlinear_arith)
+        requires (q - t) * m < m, (t - q) * m < m, m > 0;
+}
+
+/// Rounding `x/y` and `n/d` the same way agrees when the fractions are equal:
+/// if `q·a·y <= b·x + c·y < (q + 1)·a·y` then `q == (b·n + c·d) / (a·d)`.
+///
+/// Floor is `a = b = 1, c = 0`; round half up is `a = b = 2, c = 1`.
+pub proof fn lemma_rounding_agrees(q: int, x: int, y: int, n: int, d: int, a: int, b: int, c: int)
+    requires
+        y > 0, d > 0, a > 0, x * d == n * y,
+        q * (a * y) <= b * x + c * y < (q + 1) * (a * y),
+    ensures q == (b * n + c * d) / (a * d),
+{
+    let (lo, mid, hi) = (q * (a * y), b * x + c * y, (q + 1) * (a * y));
+    assert(lo * d <= mid * d < hi * d) by (nonlinear_arith) requires lo <= mid < hi, d > 0;
+    assert(mid * d == (b * n + c * d) * y) by (nonlinear_arith)
+        requires x * d == n * y, mid == b * x + c * y;
+    assert(lo * d == q * (a * d) * y) by (nonlinear_arith) requires lo == q * (a * y);
+    assert(hi * d == (q + 1) * (a * d) * y) by (nonlinear_arith) requires hi == (q + 1) * (a * y);
+    assert(q * (a * d) <= b * n + c * d < (q + 1) * (a * d)) by (nonlinear_arith)
+        requires q * (a * d) * y <= (b * n + c * d) * y < (q + 1) * (a * d) * y, y > 0;
+    assert(a * d > 0) by (nonlinear_arith) requires a > 0, d > 0;
+    lemma_quotient_unique(q, b * n + c * d, a * d);
 }
 
 } // verus!
