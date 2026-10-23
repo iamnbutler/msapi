@@ -26,7 +26,7 @@ use serde::de::DeserializeOwned;
 use crate::audit::{self, Ctx};
 use crate::auth::{self, Principal};
 use crate::error::ApiError;
-use crate::http::{self, Request, Response};
+use crate::http::{self, Method, Request, Response};
 use crate::ids;
 use msapi_core::api::{self, Route, Routed};
 #[cfg(feature = "verus")]
@@ -144,42 +144,171 @@ pub fn handle(conn: &mut Connection, req: &Request) -> Response {
 
 type Outcome = (Response, Option<String>);
 
-fn dispatch(conn: &mut Connection, req: &Request, request_id: &str) -> Result<Outcome, (ApiError, Option<String>)> {
-    let segments: Vec<&str> = req.path.split('/').filter(|s| !s.is_empty()).collect();
-    let words: Vec<&[u8]> = segments.iter().map(|s| s.as_bytes()).collect();
-    let route = match api::route(req.method, &words) {
+/// Who answers a routed request.
+#[cfg_attr(feature = "verus", verus_verify)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Stage {
+    /// Public reference data, answered without a token.
+    Public,
+    /// A passkey ceremony, answered without a token.
+    Passkey,
+    /// Everything else: authenticate, then [`run`].
+    Authed,
+}
+
+/// Which [`Stage`] answers `route`: [`stage_spec`].
+#[cfg_attr(feature = "verus", verus_verify)]
+#[cfg_attr(feature = "verus", verus_spec(r => ensures r == stage_spec(route)))]
+const fn stage(route: Route) -> Stage {
+    match route {
+        Route::Health | Route::Index | Route::Docs | Route::RefRegions | Route::RefWorlds | Route::RefClasses => {
+            Stage::Public
+        }
+        Route::RegisterStart | Route::RegisterFinish | Route::LoginStart | Route::LoginFinish => Stage::Passkey,
+        _ => Stage::Authed,
+    }
+}
+
+/// A request's route, its path parameter (segment 2, or `""`) and who
+/// answers it.
+#[cfg_attr(feature = "verus", verus_verify)]
+struct Plan<'a> {
+    route: Route,
+    id: &'a str,
+    stage: Stage,
+}
+
+/// Routes `method` and `path`: the proven [`api::route`] on the path's
+/// [`http::segments`], or the 405 or 404 it gives.
+#[cfg_attr(feature = "verus", verus_verify)]
+#[cfg_attr(feature = "verus", verus_spec(r =>
+    ensures ({
+        let segs = http::segments_spec(path.spec_bytes(), seq![]);
+        match r {
+            Ok(p) => (exists|w: Seq<&[u8]>| #[trigger] http::views(w) == segs
+                        && api::route_spec(method, w) == Routed::Found(p.route))
+                && p.stage == stage_spec(p.route)
+                && p.id.spec_bytes() == (if segs.len() > 2 { segs[2] } else { Seq::<u8>::empty() }),
+            Err(e) => (exists|w: Seq<&[u8]>| #[trigger] http::views(w) == segs && match api::route_spec(method, w) {
+                Routed::NotAllowed => e.status == 405,
+                Routed::NotFound => e.status == 404 && e.message@ == "route "@ + path@ + " not found"@,
+                Routed::Found(_) => false,
+            }),
+        }
+    }),
+))]
+fn plan(method: Method, path: &str) -> Result<Plan<'_>, ApiError> {
+    let segments = http::segments(path);
+    let words = http::words(&segments);
+    proof! {
+        assert(http::views(words@) =~= segments@.map_values(|x: &str| x.spec_bytes()));
+    }
+    let route = match api::route(method, &words) {
         Routed::Found(route) => route,
-        Routed::NotAllowed => return Err((ApiError::method_not_allowed(), None)),
-        Routed::NotFound => return Err((ApiError::not_found_route(&req.path), None)),
+        Routed::NotAllowed => return Err(ApiError::method_not_allowed()),
+        Routed::NotFound => return Err(ApiError::not_found_route(path)),
     };
-    if let Some(response) = meta::public(route) {
-        return Ok((response, None));
-    }
-    if let Some(result) = crate::passkey::handle(conn, req, request_id, route) {
-        return result.map(|response| (response, None)).map_err(|e| (e, None));
-    }
-    let id = segments.get(2).copied().unwrap_or("");
-    let principal = auth::authenticate(conn, req.header("authorization")).map_err(|e| (e, None))?;
-    let token = Some(principal.token_id.clone());
-    let ctx = Ctx {
+    let id = if segments.len() > 2 {
+        segments[2]
+    } else {
+        proof! { reveal_strlit(""); }
+        ""
+    };
+    Ok(Plan { route, id, stage: stage(route) })
+}
+
+/// The audit context of an authenticated request to `route`.
+#[cfg_attr(feature = "verus", verus_verify)]
+#[cfg_attr(feature = "verus", verus_spec(r =>
+    ensures
+        r.principal == principal,
+        r.request_id@ == request_id@,
+        r.method == req.method,
+        r.path@ == req.path@,
+        r.action@ == match api::action_spec(route) {
+            Some(w) => msapi_core::msg::chars(api::word(w)),
+            None => Seq::<char>::empty(),
+        },
+))]
+fn context(principal: Principal, request_id: &str, req: &Request, route: Route) -> Ctx {
+    let client = match &req.client {
+        Some(c) => Some(c.clone()),
+        None => None,
+    };
+    let user_agent = match req.header("user-agent") {
+        Some(u) => Some(u.to_owned()),
+        None => None,
+    };
+    let action = match api::action(route) {
+        Some(w) => http::word(w),
+        None => {
+            proof! { reveal_strlit(""); }
+            ""
+        }
+    };
+    Ctx {
         principal,
         request_id: request_id.to_owned(),
         method: req.method,
         path: req.path.clone(),
-        client: req.client.clone(),
-        user_agent: req.header("user-agent").map(str::to_owned),
-        action: api::action(route).map_or("", http::word),
-    };
-    match run(route, id, conn, &ctx, req) {
-        Ok(response) => Ok((response, token)),
-        Err(err) => {
-            if err.status == 403 && req.method.is_write() {
-                audit::record_refused(conn, &ctx, err.status);
+        client,
+        user_agent,
+        action,
+    }
+}
+
+/// Whether a refusal is recorded in the audit trail: a 403 to a write.
+#[cfg_attr(feature = "verus", verus_verify)]
+#[cfg_attr(feature = "verus", verus_spec(r => ensures r == (status == 403 && api::writes(method))))]
+const fn audits_refusal(status: u16, method: Method) -> bool {
+    status == 403 && method.is_write()
+}
+
+/// Answers a request along its proven [`plan`]: the public and passkey
+/// handlers, or authentication and then [`run`], auditing a refused write.
+fn dispatch(conn: &mut Connection, req: &Request, request_id: &str) -> Result<Outcome, (ApiError, Option<String>)> {
+    let plan = plan(req.method, &req.path).map_err(|e| (e, None))?;
+    match plan.stage {
+        Stage::Public => match meta::public(plan.route) {
+            Some(response) => Ok((response, None)),
+            None => Err((ApiError::not_found_route(&req.path), None)),
+        },
+        Stage::Passkey => match crate::passkey::handle(conn, req, request_id, plan.route) {
+            Some(Ok(response)) => Ok((response, None)),
+            Some(Err(e)) => Err((e, None)),
+            None => Err((ApiError::not_found_route(&req.path), None)),
+        },
+        Stage::Authed => {
+            let principal = auth::authenticate(conn, req.header("authorization")).map_err(|e| (e, None))?;
+            let token = Some(principal.token_id.clone());
+            let ctx = context(principal, request_id, req, plan.route);
+            match run(plan.route, plan.id, conn, &ctx, req) {
+                Ok(response) => Ok((response, token)),
+                Err(err) => {
+                    if audits_refusal(err.status, req.method) {
+                        audit::record_refused(conn, &ctx, err.status);
+                    }
+                    Err((err, token))
+                }
             }
-            Err((err, token))
         }
     }
 }
+
+#[cfg(feature = "verus")]
+verus! {
+
+/// The public routes are answered without a token, as are the passkey
+/// ceremonies; every other route authenticates first.
+spec fn stage_spec(route: Route) -> Stage {
+    match route {
+        Route::Health | Route::Index | Route::Docs | Route::RefRegions | Route::RefWorlds | Route::RefClasses => Stage::Public,
+        Route::RegisterStart | Route::RegisterFinish | Route::LoginStart | Route::LoginFinish => Stage::Passkey,
+        _ => Stage::Authed,
+    }
+}
+
+} // verus!
 
 /// `limit` (1-200, default 50) and `before` (an ID cursor) query parameters.
 #[cfg_attr(feature = "verus", verus_verify)]

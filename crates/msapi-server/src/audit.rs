@@ -15,8 +15,11 @@ use crate::auth::Principal;
 use crate::durable::Logged;
 use crate::http::Method;
 use crate::ids;
+#[cfg(feature = "verus")]
+use vstd::prelude::*;
 
 /// Everything about a request that an audit event records.
+#[cfg_attr(feature = "verus", verus_verify)]
 #[derive(Clone, Debug)]
 pub struct Ctx {
     /// Who is calling.

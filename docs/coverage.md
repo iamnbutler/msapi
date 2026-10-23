@@ -12,15 +12,15 @@ whether Verus checks it:
 
 | crate | spec | checked | unverified |
 |---|---:|---:|---:|
-| `msapi-core` | 305 | 2 | 37 |
-| `msapi-server` | 61 | 2 | 126 |
+| `msapi-core` | 305 | 2 | 41 |
+| `msapi-server` | 68 | 5 | 128 |
 
 ## Unverified functions by reason
 
 | reason | functions |
 |---|---:|
-| I/O: SQL, HTTP, clock, randomness, process | 89 |
-| hands data to or from an outside library (serde, rusqlite, ring, tiny_http) | 74 |
+| I/O: SQL, HTTP, clock, randomness, process | 88 |
+| hands data to or from an outside library (serde, rusqlite, ring, tiny_http) | 81 |
 
 ## Every function
 
@@ -109,6 +109,10 @@ whether Verus checks it:
 | `From for i64::from` | `crates/msapi-core/src/character.rs:365` | spec |  |
 | `Serialize for $name::serialize` | `crates/msapi-core/src/character.rs:372` | unverified | hands serde the proven wide value, as the derive with into = "i64" did |
 | `Deserialize for $name::deserialize` | `crates/msapi-core/src/character.rs:380` | unverified | takes serde's integer to the proven new, as the derive with try_from = "i64" did |
+| `Serialize for Gender::serialize` | `crates/msapi-core/src/character.rs:433` | unverified | hands serde the lowercase wire name |
+| `Deserialize for Gender::deserialize` | `crates/msapi-core/src/character.rs:442` | unverified | parses through a derived twin, so the wire format and error messages stay those of the derive Verus cannot take on a checked type |
+| `Serialize for Liberation::serialize` | `crates/msapi-core/src/character.rs:457` | unverified | hands serde the lowercase wire name |
+| `Deserialize for Liberation::deserialize` | `crates/msapi-core/src/character.rs:467` | unverified | parses through a derived twin, so the wire format and error messages stay those of the derive Verus cannot take on a checked type |
 | `Serialize for JobType::serialize` | `crates/msapi-core/src/class.rs:91` | unverified | hands serde the wire name |
 | `Serialize for MainStat::serialize` | `crates/msapi-core/src/class.rs:104` | unverified | hands serde the wire name |
 | `Serialize for Class::serialize` | `crates/msapi-core/src/class.rs:116` | unverified | hands serde the class's fields |
@@ -370,15 +374,15 @@ whether Verus checks it:
 | `key_index` | `crates/msapi-core/src/world.rs:334` | spec |  |
 | `with_tag` | `crates/msapi-core/src/world.rs:362` | spec |  |
 | `has_tag` | `crates/msapi-core/src/world.rs:384` | spec |  |
-| `Write::begin` | `crates/msapi-server/src/audit.rs:56` | unverified | SQLite writes for the audit log |
-| `Write::tx` | `crates/msapi-server/src/audit.rs:62` | unverified | SQLite writes for the audit log |
-| `Write::execute` | `crates/msapi-server/src/audit.rs:68` | unverified | SQLite writes for the audit log |
-| `Write::query_map` | `crates/msapi-server/src/audit.rs:73` | unverified | SQLite writes for the audit log |
-| `Write::reserve_event_id` | `crates/msapi-server/src/audit.rs:84` | unverified | SQLite writes for the audit log |
-| `Write::commit` | `crates/msapi-server/src/audit.rs:90` | unverified | SQLite writes for the audit log |
-| `to_json` | `crates/msapi-server/src/audit.rs:112` | unverified | turns a serde_json value into the stored text |
-| `insert` | `crates/msapi-server/src/audit.rs:116` | unverified | SQLite writes for the audit log |
-| `record_refused` | `crates/msapi-server/src/audit.rs:155` | unverified | SQLite writes for the audit log |
+| `Write::begin` | `crates/msapi-server/src/audit.rs:59` | unverified | SQLite writes for the audit log |
+| `Write::tx` | `crates/msapi-server/src/audit.rs:65` | unverified | SQLite writes for the audit log |
+| `Write::execute` | `crates/msapi-server/src/audit.rs:71` | unverified | SQLite writes for the audit log |
+| `Write::query_map` | `crates/msapi-server/src/audit.rs:76` | unverified | SQLite writes for the audit log |
+| `Write::reserve_event_id` | `crates/msapi-server/src/audit.rs:87` | unverified | SQLite writes for the audit log |
+| `Write::commit` | `crates/msapi-server/src/audit.rs:93` | unverified | SQLite writes for the audit log |
+| `to_json` | `crates/msapi-server/src/audit.rs:115` | unverified | turns a serde_json value into the stored text |
+| `insert` | `crates/msapi-server/src/audit.rs:119` | unverified | SQLite writes for the audit log |
+| `record_refused` | `crates/msapi-server/src/audit.rs:158` | unverified | SQLite writes for the audit log |
 | `Scope::as_str` | `crates/msapi-server/src/auth.rs:134` | spec |  |
 | `Scope::from_index` | `crates/msapi-server/src/auth.rs:150` | spec |  |
 | `Scope::parse` | `crates/msapi-server/src/auth.rs:171` | spec |  |
@@ -405,10 +409,11 @@ whether Verus checks it:
 | `as_bytes` | `crates/msapi-server/src/auth.rs:627` | spec |  |
 | `authenticate` | `crates/msapi-server/src/auth.rs:653` | unverified | after the proven api::bearer parse, looks the token hash and its chain up in SQLite; the proven policy::chain_expiry decides |
 | `create_user` | `crates/msapi-server/src/auth.rs:724` | unverified | inserts the user and root token rows |
-| `MintRequest::validate` | `crates/msapi-server/src/auth.rs:803` | unverified | reads the system clock for the proven check_mint |
-| `check_mint` | `crates/msapi-server/src/auth.rs:837` | spec |  |
-| `refusal_error` | `crates/msapi-server/src/auth.rs:945` | checked |  |
-| `account_at` | `crates/msapi-server/src/auth.rs:1000` | checked |  |
+| `Deserialize for MintRequest::deserialize` | `crates/msapi-server/src/auth.rs:771` | unverified | parses through a derived twin, so the wire format and error messages stay those of the derive Verus cannot take on a checked type |
+| `MintRequest::validate` | `crates/msapi-server/src/auth.rs:821` | spec |  |
+| `check_mint` | `crates/msapi-server/src/auth.rs:863` | spec |  |
+| `refusal_error` | `crates/msapi-server/src/auth.rs:971` | checked |  |
+| `account_at` | `crates/msapi-server/src/auth.rs:1026` | checked |  |
 | `open` | `crates/msapi-server/src/db.rs:16` | unverified | opens and migrates SQLite |
 | `open_in_memory` | `crates/msapi-server/src/db.rs:25` | unverified | opens and migrates SQLite |
 | `configure` | `crates/msapi-server/src/db.rs:32` | unverified | opens and migrates SQLite |
@@ -464,12 +469,14 @@ whether Verus checks it:
 | `lookup` | `crates/msapi-server/src/http.rs:590` | spec |  |
 | `latin1` | `crates/msapi-server/src/http.rs:615` | spec |  |
 | `split_target` | `crates/msapi-server/src/http.rs:641` | spec |  |
-| `parse_query` | `crates/msapi-server/src/http.rs:716` | unverified | std's String::from_utf8_lossy over the proven query::parse_query output, which vstd does not specify |
-| `Response::text` | `crates/msapi-server/src/http.rs:739` | spec |  |
-| `Response::no_content` | `crates/msapi-server/src/http.rs:748` | spec |  |
-| `Response::with_header` | `crates/msapi-server/src/http.rs:757` | spec |  |
-| `Response::json` | `crates/msapi-server/src/http.rs:775` | unverified | serializes the body with serde_json |
-| `Response::json_body` | `crates/msapi-server/src/http.rs:784` | unverified | parses the body with serde_json (tests) |
+| `segments` | `crates/msapi-server/src/http.rs:684` | spec |  |
+| `words` | `crates/msapi-server/src/http.rs:780` | spec |  |
+| `parse_query` | `crates/msapi-server/src/http.rs:858` | unverified | std's String::from_utf8_lossy over the proven query::parse_query output, which vstd does not specify |
+| `Response::text` | `crates/msapi-server/src/http.rs:881` | spec |  |
+| `Response::no_content` | `crates/msapi-server/src/http.rs:890` | spec |  |
+| `Response::with_header` | `crates/msapi-server/src/http.rs:899` | spec |  |
+| `Response::json` | `crates/msapi-server/src/http.rs:917` | unverified | serializes the body with serde_json |
+| `Response::json_body` | `crates/msapi-server/src/http.rs:926` | unverified | parses the body with serde_json (tests) |
 | `base32` | `crates/msapi-server/src/ids.rs:29` | spec |  |
 | `new_id` | `crates/msapi-server/src/ids.rs:49` | unverified | reads the clock and OS randomness; the order rule is the proven policy::next_id and encode_u128 |
 | `new_token_secret` | `crates/msapi-server/src/ids.rs:65` | unverified | OS randomness through the proven base32::encode |
@@ -502,44 +509,53 @@ whether Verus checks it:
 | `is_primary_key_violation` | `crates/msapi-server/src/passkey.rs:434` | unverified | matches a rusqlite error code |
 | `b64url` | `crates/msapi-server/src/passkey.rs:439` | spec |  |
 | `b64url_decode` | `crates/msapi-server/src/passkey.rs:451` | spec |  |
-| `AccountInput::validate` | `crates/msapi-server/src/routes/accounts.rs:43` | unverified | reads the fields of a serde-derived input for the proven check_account; Verus panics on serde's Deserialize derive |
-| `check_account` | `crates/msapi-server/src/routes/accounts.rs:50` | spec |  |
-| `load` | `crates/msapi-server/src/routes/accounts.rs:100` | unverified | route handler: SQL against SQLite around the proven checks, then the audit row |
-| `list` | `crates/msapi-server/src/routes/accounts.rs:168` | unverified | route handler: SQL against SQLite around the proven checks, then the audit row |
-| `get` | `crates/msapi-server/src/routes/accounts.rs:183` | unverified | route handler: SQL against SQLite around the proven checks, then the audit row |
-| `create` | `crates/msapi-server/src/routes/accounts.rs:189` | unverified | route handler: SQL against SQLite around the proven checks, then the audit row |
-| `update` | `crates/msapi-server/src/routes/accounts.rs:209` | unverified | route handler: SQL against SQLite around the proven checks, then the audit row |
-| `delete` | `crates/msapi-server/src/routes/accounts.rs:232` | unverified | route handler: SQL against SQLite around the proven checks, then the audit row |
+| `AccountInput::validate` | `crates/msapi-server/src/routes/accounts.rs:41` | checked |  |
+| `Serialize for AccountInput::serialize` | `crates/msapi-server/src/routes/accounts.rs:52` | unverified | writes through a derived twin, so the wire format and error messages stay those of the derive Verus cannot take on a checked type |
+| `Deserialize for AccountInput::deserialize` | `crates/msapi-server/src/routes/accounts.rs:64` | unverified | parses through a derived twin, so the wire format and error messages stay those of the derive Verus cannot take on a checked type |
+| `check_account` | `crates/msapi-server/src/routes/accounts.rs:81` | spec |  |
+| `load` | `crates/msapi-server/src/routes/accounts.rs:131` | unverified | route handler: SQL against SQLite around the proven checks, then the audit row |
+| `list` | `crates/msapi-server/src/routes/accounts.rs:199` | unverified | route handler: SQL against SQLite around the proven checks, then the audit row |
+| `get` | `crates/msapi-server/src/routes/accounts.rs:214` | unverified | route handler: SQL against SQLite around the proven checks, then the audit row |
+| `create` | `crates/msapi-server/src/routes/accounts.rs:220` | unverified | route handler: SQL against SQLite around the proven checks, then the audit row |
+| `update` | `crates/msapi-server/src/routes/accounts.rs:240` | unverified | route handler: SQL against SQLite around the proven checks, then the audit row |
+| `delete` | `crates/msapi-server/src/routes/accounts.rs:263` | unverified | route handler: SQL against SQLite around the proven checks, then the audit row |
 | `parse_json` | `crates/msapi-server/src/routes/audit_log.rs:38` | unverified | parses a stored JSON column with serde_json |
 | `from_row` | `crates/msapi-server/src/routes/audit_log.rs:44` | unverified | reads a rusqlite row into the view |
 | `list` | `crates/msapi-server/src/routes/audit_log.rs:68` | unverified | route handler: SQL against SQLite around the proven checks, then the audit row |
-| `CharacterInput::validate` | `crates/msapi-server/src/routes/characters.rs:76` | unverified | reads the fields of a serde-derived input for the proven check_character; Verus panics on serde's Deserialize derive |
-| `check_character` | `crates/msapi-server/src/routes/characters.rs:94` | spec |  |
-| `CharacterView::to_input` | `crates/msapi-server/src/routes/characters.rs:196` | unverified | copies fields between serde-derived types; Verus panics on serde's Deserialize derive |
-| `from_row` | `crates/msapi-server/src/routes/characters.rs:221` | unverified | reads a rusqlite row into the view |
-| `find` | `crates/msapi-server/src/routes/characters.rs:260` | unverified | route handler: SQL against SQLite around the proven checks, then the audit row |
-| `account_region` | `crates/msapi-server/src/routes/characters.rs:269` | unverified | route handler: SQL against SQLite around the proven checks, then the audit row |
-| `duplicate` | `crates/msapi-server/src/routes/characters.rs:283` | spec |  |
-| `list` | `crates/msapi-server/src/routes/characters.rs:295` | unverified | route handler: SQL against SQLite around the proven checks, then the audit row |
-| `get` | `crates/msapi-server/src/routes/characters.rs:326` | unverified | route handler: SQL against SQLite around the proven checks, then the audit row |
-| `create` | `crates/msapi-server/src/routes/characters.rs:332` | unverified | route handler: SQL against SQLite around the proven checks, then the audit row |
-| `update` | `crates/msapi-server/src/routes/characters.rs:375` | unverified | route handler: SQL against SQLite around the proven checks, then the audit row |
-| `delete` | `crates/msapi-server/src/routes/characters.rs:419` | unverified | route handler: SQL against SQLite around the proven checks, then the audit row |
+| `CharacterInput::validate` | `crates/msapi-server/src/routes/characters.rs:68` | checked |  |
+| `Serialize for CharacterInput::serialize` | `crates/msapi-server/src/routes/characters.rs:90` | unverified | writes through a derived twin, so the wire format and error messages stay those of the derive Verus cannot take on a checked type |
+| `Deserialize for CharacterInput::deserialize` | `crates/msapi-server/src/routes/characters.rs:127` | unverified | parses through a derived twin, so the wire format and error messages stay those of the derive Verus cannot take on a checked type |
+| `check_character` | `crates/msapi-server/src/routes/characters.rs:189` | spec |  |
+| `CharacterView::to_input` | `crates/msapi-server/src/routes/characters.rs:292` | checked |  |
+| `Serialize for CharacterView::serialize` | `crates/msapi-server/src/routes/characters.rs:316` | unverified | writes through a derived twin, so the wire format and error messages stay those of the derive Verus cannot take on a checked type |
+| `from_row` | `crates/msapi-server/src/routes/characters.rs:378` | unverified | reads a rusqlite row into the view |
+| `find` | `crates/msapi-server/src/routes/characters.rs:417` | unverified | route handler: SQL against SQLite around the proven checks, then the audit row |
+| `account_region` | `crates/msapi-server/src/routes/characters.rs:426` | unverified | route handler: SQL against SQLite around the proven checks, then the audit row |
+| `duplicate` | `crates/msapi-server/src/routes/characters.rs:440` | spec |  |
+| `list` | `crates/msapi-server/src/routes/characters.rs:452` | unverified | route handler: SQL against SQLite around the proven checks, then the audit row |
+| `get` | `crates/msapi-server/src/routes/characters.rs:483` | unverified | route handler: SQL against SQLite around the proven checks, then the audit row |
+| `create` | `crates/msapi-server/src/routes/characters.rs:489` | unverified | route handler: SQL against SQLite around the proven checks, then the audit row |
+| `update` | `crates/msapi-server/src/routes/characters.rs:532` | unverified | route handler: SQL against SQLite around the proven checks, then the audit row |
+| `delete` | `crates/msapi-server/src/routes/characters.rs:576` | unverified | route handler: SQL against SQLite around the proven checks, then the audit row |
 | `public` | `crates/msapi-server/src/routes/meta.rs:23` | unverified | builds serde_json responses (json!) for the public routes |
 | `index` | `crates/msapi-server/src/routes/meta.rs:41` | unverified | a serde_json (json!) index of the routes |
 | `planned_at` | `crates/msapi-server/src/routes/mod.rs:53` | spec |  |
 | `planned_error` | `crates/msapi-server/src/routes/mod.rs:64` | spec |  |
-| `run` | `crates/msapi-server/src/routes/mod.rs:84` | unverified | one match from the proven route to its database handler |
-| `handle` | `crates/msapi-server/src/routes/mod.rs:127` | unverified | makes the request ID, calls dispatch and logs the request |
-| `dispatch` | `crates/msapi-server/src/routes/mod.rs:147` | unverified | authenticates against the database and calls the handlers for the proven api::route result |
-| `page` | `crates/msapi-server/src/routes/mod.rs:185` | spec |  |
-| `opt_bytes` | `crates/msapi-server/src/routes/mod.rs:212` | spec |  |
-| `enum_to_sql` | `crates/msapi-server/src/routes/mod.rs:230` | unverified | serde_json wire string of an enum |
-| `enum_from_sql` | `crates/msapi-server/src/routes/mod.rs:235` | unverified | serde_json parse of a stored enum |
-| `corrupt` | `crates/msapi-server/src/routes/mod.rs:244` | unverified | builds a rusqlite error |
-| `is_unique_violation` | `crates/msapi-server/src/routes/mod.rs:249` | unverified | matches a rusqlite error code |
-| `token_subtree` | `crates/msapi-server/src/routes/mod.rs:254` | unverified | route handler: SQL against SQLite around the proven checks, then the audit row |
-| `in_list` | `crates/msapi-server/src/routes/mod.rs:267` | unverified | builds SQL placeholders |
+| `run` | `crates/msapi-server/src/routes/mod.rs:84` | unverified | one match from the proven route to its handler; every handler runs SQL against SQLite |
+| `handle` | `crates/msapi-server/src/routes/mod.rs:127` | unverified | reads the clock and the random request ID, calls dispatch and writes the log line |
+| `stage` | `crates/msapi-server/src/routes/mod.rs:160` | spec |  |
+| `plan` | `crates/msapi-server/src/routes/mod.rs:183` | spec |  |
+| `context` | `crates/msapi-server/src/routes/mod.rs:221` | spec |  |
+| `audits_refusal` | `crates/msapi-server/src/routes/mod.rs:261` | spec |  |
+| `dispatch` | `crates/msapi-server/src/routes/mod.rs:269` | unverified | sequences the proven plan, context and audits_refusal with the database calls: meta::public (serde_json), passkey::handle, auth::authenticate, run and audit::record_refused |
+| `page` | `crates/msapi-server/src/routes/mod.rs:314` | spec |  |
+| `opt_bytes` | `crates/msapi-server/src/routes/mod.rs:341` | spec |  |
+| `enum_to_sql` | `crates/msapi-server/src/routes/mod.rs:359` | unverified | serde_json wire string of an enum |
+| `enum_from_sql` | `crates/msapi-server/src/routes/mod.rs:364` | unverified | serde_json parse of a stored enum |
+| `corrupt` | `crates/msapi-server/src/routes/mod.rs:373` | unverified | builds a rusqlite error |
+| `is_unique_violation` | `crates/msapi-server/src/routes/mod.rs:378` | unverified | matches a rusqlite error code |
+| `token_subtree` | `crates/msapi-server/src/routes/mod.rs:383` | unverified | route handler: SQL against SQLite around the proven checks, then the audit row |
+| `in_list` | `crates/msapi-server/src/routes/mod.rs:396` | unverified | builds SQL placeholders |
 | `from_row` | `crates/msapi-server/src/routes/stats.rs:33` | unverified | reads a rusqlite row into the view |
 | `latest` | `crates/msapi-server/src/routes/stats.rs:44` | unverified | route handler: SQL against SQLite around the proven checks, then the audit row |
 | `get` | `crates/msapi-server/src/routes/stats.rs:50` | unverified | route handler: SQL against SQLite around the proven checks, then the audit row |

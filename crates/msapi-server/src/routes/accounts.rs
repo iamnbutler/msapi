@@ -28,20 +28,51 @@ use crate::json::merge_patch;
 use vstd::prelude::*;
 
 /// The editable fields of an account.
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
-#[serde(deny_unknown_fields)]
+#[cfg_attr(feature = "verus", verus_verify)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 struct AccountInput {
     region: Region,
-    #[serde(default)]
     label: Option<String>,
-    #[serde(default)]
     notes: Option<String>,
 }
 
 impl AccountInput {
     /// The proven [`check_account`] on this input's fields.
+    #[cfg_attr(feature = "verus", verus_verify)]
     fn validate(&self) -> Result<(), ApiError> {
         check_account(self.region, self.label.as_ref(), self.notes.as_ref())
+    }
+}
+
+// Verus checks `AccountInput` and cannot take serde's derives on a checked
+// type, so it goes through derived twins with the same wire format and the
+// same error messages.
+
+impl Serialize for AccountInput {
+    fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        #[derive(Serialize)]
+        struct Wire<'a> {
+            region: Region,
+            label: &'a Option<String>,
+            notes: &'a Option<String>,
+        }
+        Wire { region: self.region, label: &self.label, notes: &self.notes }.serialize(s)
+    }
+}
+
+impl<'de> Deserialize<'de> for AccountInput {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        #[derive(Deserialize)]
+        #[serde(deny_unknown_fields)]
+        struct AccountInput {
+            region: Region,
+            #[serde(default)]
+            label: Option<String>,
+            #[serde(default)]
+            notes: Option<String>,
+        }
+        let AccountInput { region, label, notes } = AccountInput::deserialize(d)?;
+        Ok(Self { region, label, notes })
     }
 }
 
@@ -236,4 +267,40 @@ pub fn delete(conn: &mut Connection, ctx: &Ctx, id: &str) -> Result<Response, Ap
     write.execute("DELETE FROM accounts WHERE id = ?1", params![id])?;
     write.commit(None, Target { kind: "account", id }, Some(&before), None::<&()>)?;
     Ok(Response::no_content())
+}
+
+/// The JSON contract of the hand-written serde impls, captured from the
+/// derived ones they replaced: every message must stay word for word.
+#[cfg(test)]
+mod wire {
+    use super::AccountInput;
+
+    #[test]
+    fn errors_match_the_derived_impl() {
+        for (json, err) in [
+            (
+                r#"{"region":"gms","x":1}"#,
+                r"unknown field `x`, expected one of `region`, `label`, `notes` at line 1 column 19",
+            ),
+            (r#"{"label":"a"}"#, r"missing field `region` at line 1 column 13"),
+            (
+                r#"{"region":"zzz"}"#,
+                r"unknown variant `zzz`, expected one of `gms`, `kms`, `msea`, `tms`, `jms` at line 1 column 15",
+            ),
+            (r#"{"region":5}"#, r"expected value at line 1 column 11"),
+            (r"[]", r"invalid length 0, expected struct AccountInput with 3 elements at line 1 column 2"),
+            (r#"{"region":"gms","label":3}"#, r"invalid type: integer `3`, expected a string at line 1 column 25"),
+            (r#"{"region":"gms","region":"kms"}"#, r"duplicate field `region` at line 1 column 24"),
+        ] {
+            assert_eq!(serde_json::from_str::<AccountInput>(json).unwrap_err().to_string(), err, "{json}");
+        }
+    }
+
+    #[test]
+    fn round_trips() {
+        let input: AccountInput = serde_json::from_str(r#"{"region":"gms","label":"x"}"#).unwrap();
+        let out = serde_json::to_string(&input).unwrap();
+        assert_eq!(out, r#"{"region":"gms","label":"x","notes":null}"#);
+        assert_eq!(serde_json::to_string(&serde_json::from_str::<AccountInput>(&out).unwrap()).unwrap(), out);
+    }
 }

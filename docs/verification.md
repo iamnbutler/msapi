@@ -291,7 +291,20 @@ proven functions and the handlers call them:
 | `passkey::b64url_decode` | `Ok` bytes encode back to the unpadded text; `Err` (a 400) exactly when no byte string does |
 | `routes::page` | the limit is `api::page_limit_spec` of the first `limit` parameter (a 400 when that is `None`), and `before` is the first `before` parameter |
 | `routes::opt_bytes` | the UTF-8 of the field, or `None` |
+| `http::segments`, `http::words` | the path's segments equal `segments_spec`, which reads the bytes left to right and ends a segment at each `/`, dropping empty ones (what `split('/').filter(..)` gave); `words` is each segment's bytes |
+| `routes::plan` | for the path's segments, `Ok` carries the route `api::route_spec` finds, its `Stage`, and segment 2 (or `""`) as the ID; `Err` is the 405 for `NotAllowed` and the 404 naming the path for `NotFound` |
+| `routes::stage` | the six public routes and the four passkey steps are answered without a token, and every other route authenticates first (`stage_spec`) |
+| `routes::context` | the audit context carries the principal, request ID, method and path as given, and the route's `api::action_spec` name (`""` when it has none) |
+| `routes::audits_refusal` | a refusal is audited exactly when it is a 403 to a writing method |
+| `AccountInput::validate`, `CharacterInput::validate`, `MintRequest::validate`, `CharacterView::to_input` | the proven `check_account`, `check_character` and `check_mint` on the request's fields (`MintRequest::validate` takes the clock reading from its caller); `to_input` copies a stored character's fields back into an input for `PATCH` |
 | `ApiError::new` and the fixed-message constructors (`bad_request`, `unauthorized`, `forbidden`, `method_not_allowed`, `conflict`, `invalid`, `not_implemented`, `internal`, `unavailable`), `with_details` | the status code and error name each response carries, and that only `with_details` attaches issues |
+
+Three route-level functions stay unverified because each calls I/O: `run` is
+one `match` from the proven route to its handler, and every handler runs SQL;
+`dispatch` only sequences the proven `plan`, `context` and `audits_refusal`
+with the public and passkey handlers, `auth::authenticate`, `run` and
+`audit::record_refused`; `handle` reads the clock and a random request ID and
+writes the log line.
 
 ## What is trusted
 
@@ -307,16 +320,20 @@ These parts are not proven. They are covered by tests instead.
   logging, `io::Error`) or a hand-off to an outside library Verus has no spec
   for (`lib`): `Formatter::write_str` in the `Display`/`Debug` impls (each
   writes the text of a proven function), serde and `serde_json` (hand-written
-  impls around proven parsers, `json!` responses, and reading the fields of
-  serde-derived request types, since Verus panics on the `Deserialize`
-  derive), rusqlite values, `String::from_utf8_lossy` for query strings,
+  impls around proven parsers, `json!` responses, and the request types'
+  serde impls: Verus panics on serde's `Deserialize` derive on a checked
+  type, so `AccountInput`, `CharacterInput`, `MintRequest`, `CharacterView`,
+  `Gender` and `Liberation` go through a derived twin of the same name and
+  fields, which keeps the wire format and every error message; the `wire`
+  tests pin those messages), rusqlite values, `String::from_utf8_lossy` for query strings,
   `ring`'s SHA-256, and std's Unicode tables. `coverage.md` gives the reason
   for each. There is no remaining glue: error wording (scope, account, token,
   character and planned-resource refusals, `not_found`, `too_large`,
   `unsupported_media_type`), the API's word table, `&str` cuts at proven
   ranges (`msg::cut`, over vstd's `str::split_at`, with the character-boundary
   proofs), splitting a request target at `?`, log frames, the token-mint
-  checks (`check_mint`, given the clock reading), and the class and world
+  checks (`check_mint`, given the clock reading), routing a request (path
+  segments, route, stage, ID, audit context), and the class and world
   lookups are all proven, most with the exact text of their messages in the
   spec. Where a range comes from a proven trim that would need a long
   boundary proof (`name_in` for token labels), the code checks

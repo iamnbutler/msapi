@@ -750,20 +750,38 @@ pub const MAX_TTL_SECONDS: u64 = policy::MAX_TTL_SECONDS;
 pub const MAX_DEPTH: u64 = policy::MAX_DEPTH;
 
 /// `POST /v1/tokens` body.
-#[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
+#[cfg_attr(feature = "verus", verus_verify)]
+#[derive(Debug)]
 pub struct MintRequest {
     /// Shown in listings and copied into every audit event, e.g. `"ChatGPT import"`.
     pub label: String,
     /// The scopes to grant; must be a subset of the caller's.
     pub scopes: Scopes,
     /// Accounts to limit the token to. Required if the caller is itself limited.
-    #[serde(default)]
     pub account_ids: Option<Vec<String>>,
     /// Lifetime in seconds: at most thirty days, and never past the caller's own
     /// expiry. Defaults to a day, or to the caller's expiry if that is sooner.
-    #[serde(default)]
     pub expires_in_seconds: Option<u64>,
+}
+
+// Verus checks `MintRequest` and cannot take serde's derive on a checked
+// type, so it deserializes through a derived twin with the same wire format
+// and the same error messages.
+impl<'de> Deserialize<'de> for MintRequest {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        #[derive(Deserialize)]
+        #[serde(deny_unknown_fields)]
+        struct MintRequest {
+            label: String,
+            scopes: Scopes,
+            #[serde(default)]
+            account_ids: Option<Vec<String>>,
+            #[serde(default)]
+            expires_in_seconds: Option<u64>,
+        }
+        let MintRequest { label, scopes, account_ids, expires_in_seconds } = MintRequest::deserialize(d)?;
+        Ok(Self { label, scopes, account_ids, expires_in_seconds })
+    }
 }
 
 /// A validated mint, ready to insert.
@@ -791,8 +809,8 @@ pub open spec fn listed(id: Seq<u8>, list: Seq<String>) -> bool {
 } // verus!
 
 impl MintRequest {
-    /// Checks the request against what `parent` may delegate, as of now:
-    /// [`check_mint`] with the system clock.
+    /// Checks the request against what `parent` may delegate at `now_ms`:
+    /// [`check_mint`] on this request's fields.
     ///
     /// `depth` is how many delegations already sit above `parent`
     /// (0 for a root token). `owned_accounts` are the user's account IDs.
@@ -800,7 +818,15 @@ impl MintRequest {
     /// # Errors
     ///
     /// The refusal [`check_mint`] gives.
-    pub fn validate(self, parent: &Principal, depth: u64, owned_accounts: &[String]) -> Result<Mint, ApiError> {
+    #[cfg_attr(feature = "verus", verus_verify)]
+    #[cfg_attr(feature = "verus", verus_spec(requires 0 <= now_ms))]
+    pub fn validate(
+        self,
+        parent: &Principal,
+        depth: u64,
+        owned_accounts: &[String],
+        now_ms: i64,
+    ) -> Result<Mint, ApiError> {
         check_mint(
             &self.label,
             self.scopes,
@@ -809,7 +835,7 @@ impl MintRequest {
             parent,
             depth,
             owned_accounts,
-            Timestamp::now().millis(),
+            now_ms,
         )
     }
 }
@@ -1009,6 +1035,10 @@ fn account_at(account_ids: Option<&Vec<String>>, i: usize) -> &str {
 mod tests {
     use super::*;
 
+    fn now() -> i64 {
+        Timestamp::now().millis()
+    }
+
     fn principal(scopes: &str, accounts: Option<&[&str]>) -> Principal {
         Principal {
             user_id: "usr_1".into(),
@@ -1078,28 +1108,28 @@ mod tests {
         let owned = vec!["acc_a".to_owned(), "acc_b".to_owned()];
         let msg = |r: Result<Mint, ApiError>| r.unwrap_err().message;
         assert_eq!(
-            msg(request("delete", Some(&["acc_a"])).validate(&parent, 0, &owned)),
+            msg(request("delete", Some(&["acc_a"])).validate(&parent, 0, &owned, now())),
             "cannot grant scopes this token does not have: delete"
         );
         assert_eq!(
-            msg(request("characters:read", Some(&["acc_a"])).validate(&parent, MAX_DEPTH, &owned)),
+            msg(request("characters:read", Some(&["acc_a"])).validate(&parent, MAX_DEPTH, &owned, now())),
             "delegation chains are limited to 4 levels"
         );
         assert_eq!(
-            msg(request("characters:read", Some(&["acc_z"])).validate(&parent, 0, &owned)),
+            msg(request("characters:read", Some(&["acc_z"])).validate(&parent, 0, &owned, now())),
             "account `acc_z` not found"
         );
         assert_eq!(
-            msg(request("characters:read", Some(&["acc_b"])).validate(&parent, 0, &owned)),
+            msg(request("characters:read", Some(&["acc_b"])).validate(&parent, 0, &owned, now())),
             "this token cannot reach account `acc_b`"
         );
         let ttl = MintRequest { expires_in_seconds: Some(1), ..request("characters:read", Some(&["acc_a"])) };
-        assert_eq!(msg(ttl.validate(&parent, 0, &owned)), "expires_in_seconds must be between 60 and 2592000");
+        assert_eq!(msg(ttl.validate(&parent, 0, &owned, now())), "expires_in_seconds must be between 60 and 2592000");
         let blank = MintRequest { label: " \u{3000} ".into(), ..request("characters:read", Some(&["acc_a"])) };
-        assert_eq!(msg(blank.validate(&parent, 0, &owned)), "label must be 1-100 characters");
+        assert_eq!(msg(blank.validate(&parent, 0, &owned, now())), "label must be 1-100 characters");
         let padded =
             MintRequest { label: "\u{a0} agent é \u{3000}".into(), ..request("characters:read", Some(&["acc_a"])) };
-        assert_eq!(padded.validate(&parent, 0, &owned).unwrap().label, "agent é");
+        assert_eq!(padded.validate(&parent, 0, &owned, now()).unwrap().label, "agent é");
         parent.expires_at = Some(Timestamp::from_millis(1_800_000_000_000));
         let long = MintRequest {
             expires_in_seconds: Some(DEFAULT_TTL_SECONDS),
@@ -1126,7 +1156,7 @@ mod tests {
     #[test]
     fn children_cannot_gain_scopes() {
         let parent = principal("characters:read tokens:write", None);
-        let err = request("characters:read delete", None).validate(&parent, 0, &[]).unwrap_err();
+        let err = request("characters:read delete", None).validate(&parent, 0, &[], now()).unwrap_err();
         assert_eq!(err.status, 403);
         assert!(err.message.contains("delete"), "{}", err.message);
     }
@@ -1135,26 +1165,69 @@ mod tests {
     fn children_of_limited_tokens_stay_limited() {
         let owned = vec!["acc_a".to_owned(), "acc_b".to_owned()];
         let parent = principal("characters:read tokens:write", Some(&["acc_a"]));
-        assert_eq!(request("characters:read", None).validate(&parent, 1, &owned).unwrap_err().status, 422);
-        assert_eq!(request("characters:read", Some(&["acc_b"])).validate(&parent, 1, &owned).unwrap_err().status, 403);
-        assert!(request("characters:read", Some(&["acc_a"])).validate(&parent, 1, &owned).is_ok());
+        assert_eq!(request("characters:read", None).validate(&parent, 1, &owned, now()).unwrap_err().status, 422);
+        assert_eq!(
+            request("characters:read", Some(&["acc_b"])).validate(&parent, 1, &owned, now()).unwrap_err().status,
+            403
+        );
+        assert!(request("characters:read", Some(&["acc_a"])).validate(&parent, 1, &owned, now()).is_ok());
     }
 
     #[test]
     fn children_cannot_outlive_parents() {
         let mut parent = principal("characters:read tokens:write", None);
         parent.expires_at = Some(Timestamp::now().plus_millis(60 * 60 * 1000));
-        let defaulted = request("characters:read", None).validate(&parent, 1, &[]).unwrap();
+        let defaulted = request("characters:read", None).validate(&parent, 1, &[], now()).unwrap();
         assert_eq!(Some(defaulted.expires_at), parent.expires_at, "the default shortens to the parent's expiry");
         let explicit =
             MintRequest { expires_in_seconds: Some(DEFAULT_TTL_SECONDS), ..request("characters:read", None) };
-        let err = explicit.validate(&parent, 1, &[]).unwrap_err();
+        let err = explicit.validate(&parent, 1, &[], now()).unwrap_err();
         assert!(err.message.contains("outlive"), "{}", err.message);
     }
 
     #[test]
     fn depth_is_capped() {
         let parent = principal("characters:read tokens:write", None);
-        assert!(request("characters:read", None).validate(&parent, MAX_DEPTH, &[]).is_err());
+        assert!(request("characters:read", None).validate(&parent, MAX_DEPTH, &[], now()).is_err());
+    }
+}
+
+/// The JSON contract of the hand-written serde impls, captured from the
+/// derived ones they replaced: every message must stay word for word.
+#[cfg(test)]
+mod wire {
+    use super::MintRequest;
+
+    #[test]
+    fn errors_match_the_derived_impl() {
+        for (json, err) in [
+            (
+                r#"{"label":"a","scopes":["delete"],"x":1}"#,
+                r"unknown field `x`, expected one of `label`, `scopes`, `account_ids`, `expires_in_seconds` at line 1 column 36",
+            ),
+            (r#"{"scopes":["delete"]}"#, r"missing field `label` at line 1 column 21"),
+            (
+                r#"{"label":"a","scopes":["nope"]}"#,
+                r"unknown scope `nope`; known scopes: accounts:read, accounts:write, characters:read, characters:write, delete, tokens:read, tokens:write, audit:read at line 1 column 31",
+            ),
+            (
+                r#"{"label":"a","scopes":["delete"],"expires_in_seconds":-1}"#,
+                r"invalid value: integer `-1`, expected u64 at line 1 column 56",
+            ),
+            (
+                r#"{"label":"a","scopes":["delete"],"account_ids":"x"}"#,
+                r#"invalid type: string "x", expected a sequence at line 1 column 50"#,
+            ),
+            (r"7", r"invalid type: integer `7`, expected struct MintRequest at line 1 column 1"),
+            (r#"{"label":"a","scopes":["delete"],"label":"b"}"#, r"duplicate field `label` at line 1 column 40"),
+        ] {
+            assert_eq!(serde_json::from_str::<MintRequest>(json).unwrap_err().to_string(), err, "{json}");
+        }
+        assert!(
+            serde_json::from_str::<MintRequest>(
+                r#"{"label":"a","scopes":["delete"],"account_ids":null,"expires_in_seconds":null}"#
+            )
+            .is_ok()
+        );
     }
 }
