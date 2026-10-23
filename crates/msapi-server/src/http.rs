@@ -128,34 +128,8 @@ pub fn parse_query(query: &str) -> Vec<(String, String)> {
         .collect()
 }
 
-fn hex(b: u8) -> Option<u8> {
-    match b {
-        b'0'..=b'9' => Some(b - b'0'),
-        b'a'..=b'f' => Some(b - b'a' + 10),
-        b'A'..=b'F' => Some(b - b'A' + 10),
-        _ => None,
-    }
-}
-
 fn percent_decode(s: &str) -> String {
-    let bytes = s.as_bytes();
-    let mut out = Vec::with_capacity(bytes.len());
-    let mut i = 0;
-    while i < bytes.len() {
-        match bytes[i] {
-            b'+' => out.push(b' '),
-            b'%' => match (bytes.get(i + 1).copied().and_then(hex), bytes.get(i + 2).copied().and_then(hex)) {
-                (Some(hi), Some(lo)) => {
-                    out.push(hi << 4 | lo);
-                    i += 2;
-                }
-                _ => out.push(b'%'),
-            },
-            b => out.push(b),
-        }
-        i += 1;
-    }
-    String::from_utf8_lossy(&out).into_owned()
+    String::from_utf8_lossy(&msapi_core::query::percent_decode(s.as_bytes())).into_owned()
 }
 
 /// An outgoing response.
