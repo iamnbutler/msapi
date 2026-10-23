@@ -250,6 +250,17 @@ fn scope_at(t: &[u8], start: usize, end: usize) -> Option<u16> {
     None
 }
 
+/// The scope `name` names, if any.
+#[cfg_attr(feature = "verus", verus_verify)]
+#[cfg_attr(feature = "verus", verus_spec(r => ensures r == index_of(name@)))]
+#[must_use]
+pub fn scope_index(name: &[u8]) -> Option<u16> {
+    proof! {
+        assert(name@.subrange(0, name@.len() as int) =~= name@);
+    }
+    scope_at(name, 0, name.len())
+}
+
 /// The scope set `text` lists, or the byte range of the first token that names
 /// no scope. Tokens are separated by runs of ASCII whitespace.
 ///

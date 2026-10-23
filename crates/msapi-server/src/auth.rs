@@ -56,19 +56,11 @@ impl Scope {
         Self::AuditRead,
     ];
 
-    /// The wire name, e.g. `"characters:write"`.
+    /// The wire name, e.g. `"characters:write"`, from the proven table in
+    /// [`scope::scope_name`] (whose names are ASCII).
     #[must_use]
-    pub const fn as_str(self) -> &'static str {
-        match self {
-            Self::AccountsRead => "accounts:read",
-            Self::AccountsWrite => "accounts:write",
-            Self::CharactersRead => "characters:read",
-            Self::CharactersWrite => "characters:write",
-            Self::Delete => "delete",
-            Self::TokensRead => "tokens:read",
-            Self::TokensWrite => "tokens:write",
-            Self::AuditRead => "audit:read",
-        }
+    pub fn as_str(self) -> &'static str {
+        std::str::from_utf8(scope::scope_name(self as u16)).unwrap_or_default()
     }
 
     const fn bit(self) -> u16 {
@@ -79,7 +71,7 @@ impl Scope {
 impl FromStr for Scope {
     type Err = String;
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        Self::ALL.into_iter().find(|scope| scope.as_str() == s).ok_or_else(|| unknown_scope(s))
+        scope::scope_index(s.as_bytes()).map(|k| Self::ALL[usize::from(k)]).ok_or_else(|| unknown_scope(s))
     }
 }
 
@@ -443,7 +435,7 @@ mod tests {
             "characters:admin".parse::<Scope>().unwrap_err()
         );
         for (k, s) in Scope::ALL.into_iter().enumerate() {
-            assert_eq!(s.as_str().as_bytes(), scope::scope_name(s as u16), "core and server name scope {k} alike");
+            assert_eq!(s.as_str().parse::<Scope>().unwrap(), s, "scope {k} round-trips by name");
             assert_eq!(s as usize, k);
         }
         assert_eq!(Scopes::all().iter().count(), Scope::ALL.len());
