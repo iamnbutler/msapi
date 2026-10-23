@@ -404,8 +404,8 @@ bounded_int!(
 );
 
 /// Character gender as the game records it.
-#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
+#[cfg_attr(feature = "verus", verus_verify)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub enum Gender {
     /// Male.
     Male,
@@ -414,8 +414,8 @@ pub enum Gender {
 }
 
 /// How far the character has taken the weapon liberation questlines.
-#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
+#[cfg_attr(feature = "verus", verus_verify)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub enum Liberation {
     /// Not liberated.
     None,
@@ -423,6 +423,61 @@ pub enum Liberation {
     Genesis,
     /// Destiny weapon liberated.
     Destiny,
+}
+
+// Verus checks `Gender` and `Liberation` and cannot take serde's derives on a
+// checked type, so they serialize by hand and deserialize through derived
+// twins: the same wire names and the same error messages.
+
+impl Serialize for Gender {
+    fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        s.serialize_str(match self {
+            Self::Male => "male",
+            Self::Female => "female",
+        })
+    }
+}
+
+impl<'de> Deserialize<'de> for Gender {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        #[derive(Deserialize)]
+        #[serde(rename_all = "lowercase")]
+        enum Gender {
+            Male,
+            Female,
+        }
+        Ok(match Gender::deserialize(d)? {
+            Gender::Male => Self::Male,
+            Gender::Female => Self::Female,
+        })
+    }
+}
+
+impl Serialize for Liberation {
+    fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        s.serialize_str(match self {
+            Self::None => "none",
+            Self::Genesis => "genesis",
+            Self::Destiny => "destiny",
+        })
+    }
+}
+
+impl<'de> Deserialize<'de> for Liberation {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        #[derive(Deserialize)]
+        #[serde(rename_all = "lowercase")]
+        enum Liberation {
+            None,
+            Genesis,
+            Destiny,
+        }
+        Ok(match Liberation::deserialize(d)? {
+            Liberation::None => Self::None,
+            Liberation::Genesis => Self::Genesis,
+            Liberation::Destiny => Self::Destiny,
+        })
+    }
 }
 
 #[cfg(test)]

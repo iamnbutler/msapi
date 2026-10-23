@@ -17,8 +17,8 @@ use vstd::prelude::*;
 use vstd::string::StringSliceAdditionalSpecFns;
 #[cfg(feature = "verus")]
 use vstd::utf8::{
-    encode_utf8, encode_utf8_valid_utf8, is_char_boundary_iff_not_is_continuation_byte,
-    is_char_boundary_start_end_of_seq,
+    encode_utf8, encode_utf8_valid_utf8, is_char_boundary, is_char_boundary_iff_not_is_continuation_byte,
+    is_char_boundary_start_end_of_seq, valid_utf8,
 };
 
 /// A word of the API's vocabulary (a method, an action name) as text: the
@@ -679,8 +679,150 @@ pub fn split_target(target: &str) -> (&str, &str) {
     (target, "")
 }
 
+/// The non-empty `/`-separated segments of `path`, as
+/// `path.split('/').filter(|s| !s.is_empty())` gives.
+#[cfg_attr(feature = "verus", verus_verify)]
+#[cfg_attr(feature = "verus", verus_spec(r =>
+    ensures r@.map_values(|x: &str| x.spec_bytes()) == segments_spec(path.spec_bytes(), seq![]),
+))]
+#[allow(clippy::needless_else, reason = "the `else` branches hold proof blocks, which compile away")]
+#[must_use]
+pub fn segments(path: &str) -> Vec<&str> {
+    let b = path.as_bytes();
+    let mut out: Vec<&str> = Vec::new();
+    let mut start: usize = 0;
+    let mut i: usize = 0;
+    proof! {
+        encode_utf8_valid_utf8(path@);
+        is_char_boundary_start_end_of_seq(path.spec_bytes());
+        assert(b@.skip(0) =~= b@);
+        assert(b@.subrange(0, 0) =~= seq![]);
+        assert(out@.map_values(|x: &str| x.spec_bytes()) + segments_spec(b@, seq![]) =~= segments_spec(b@, seq![]));
+    }
+    #[cfg_attr(feature = "verus", verus_spec(
+        invariant
+            start <= i <= b@.len(),
+            b@ == path.spec_bytes(),
+            valid_utf8(b@),
+            is_char_boundary(b@, start as int),
+            forall|j: int| start <= j < i ==> b@[j] != 47u8,
+            segments_spec(b@, seq![]) == out@.map_values(|x: &str| x.spec_bytes())
+                + segments_spec(b@.skip(i as int), b@.subrange(start as int, i as int)),
+        decreases b@.len() - i
+    ))]
+    while i < b.len() {
+        proof! {
+            assert(b@.skip(i as int).drop_first() =~= b@.skip(i + 1));
+            assert(b@.skip(i as int)[0] == b@[i as int]);
+            assert(b@.skip(i as int).len() > 0);
+        }
+        if b[i] == b'/' {
+            proof! {
+                is_char_boundary_iff_not_is_continuation_byte(b@, i as int);
+                lemma_boundary_after_ascii(b@, i as int);
+            }
+            if start < i {
+                let seg = msg::cut(path, start, i);
+                proof_decl! {
+                    let ghost before = out@;
+                }
+                out.push(seg);
+                proof! {
+                    let o = before.map_values(|x: &str| x.spec_bytes());
+                    let rest = segments_spec(b@.skip(i + 1), seq![]);
+                    assert(out@.map_values(|x: &str| x.spec_bytes()) =~= o.push(seg.spec_bytes()));
+                    assert(o + (seq![seg.spec_bytes()] + rest) =~= o.push(seg.spec_bytes()) + rest);
+                }
+            } else {
+                proof! {
+                    assert(Seq::<Seq<u8>>::empty() + segments_spec(b@.skip(i + 1), seq![])
+                        =~= segments_spec(b@.skip(i + 1), seq![]));
+                }
+            }
+            start = i + 1;
+            proof! {
+                assert(b@.subrange(start as int, start as int) =~= seq![]);
+            }
+        } else {
+            proof! {
+                assert(b@.subrange(start as int, i as int).push(b@[i as int]) =~= b@.subrange(start as int, i + 1));
+            }
+        }
+        i += 1;
+    }
+    proof! {
+        assert(b@.skip(i as int) =~= seq![]);
+    }
+    if start < i {
+        let seg = msg::cut(path, start, i);
+        proof_decl! {
+            let ghost before = out@;
+        }
+        out.push(seg);
+        proof! {
+            let o = before.map_values(|x: &str| x.spec_bytes());
+            assert(out@.map_values(|x: &str| x.spec_bytes()) =~= o.push(seg.spec_bytes()));
+            assert(o + seq![seg.spec_bytes()] =~= o.push(seg.spec_bytes()));
+        }
+    } else {
+        proof! {
+            let o = out@.map_values(|x: &str| x.spec_bytes());
+            assert(o + Seq::<Seq<u8>>::empty() =~= o);
+        }
+    }
+    proof! {
+        assert(out@.map_values(|x: &str| x.spec_bytes()) =~= segments_spec(b@, seq![]));
+    }
+    out
+}
+
+/// The bytes of each of `segments`.
+#[cfg_attr(feature = "verus", verus_verify)]
+#[cfg_attr(feature = "verus", verus_spec(r =>
+    ensures
+        r@.len() == segments@.len(),
+        forall|i: int| 0 <= i < r@.len() ==> #[trigger] r@[i]@ == segments@[i].spec_bytes(),
+))]
+#[must_use]
+pub fn words<'a>(segments: &[&'a str]) -> Vec<&'a [u8]> {
+    let mut out: Vec<&'a [u8]> = Vec::new();
+    let mut i: usize = 0;
+    #[cfg_attr(feature = "verus", verus_spec(
+        invariant
+            i <= segments@.len(),
+            out@.len() == i,
+            forall|j: int| 0 <= j < i ==> #[trigger] out@[j]@ == segments@[j].spec_bytes(),
+        decreases segments@.len() - i
+    ))]
+    while i < segments.len() {
+        out.push(segments[i].as_bytes());
+        i += 1;
+    }
+    out
+}
+
 #[cfg(feature = "verus")]
 verus! {
+
+/// The bytes of each of `w`.
+pub open spec fn views(w: Seq<&[u8]>) -> Seq<Seq<u8>> {
+    w.map_values(|x: &[u8]| x@)
+}
+
+/// What is left of the segments of a path once `t` remains and the segment
+/// being read so far is `cur`: each `/` ends a segment, and empty ones drop.
+pub open spec fn segments_spec(t: Seq<u8>, cur: Seq<u8>) -> Seq<Seq<u8>>
+    decreases t.len(),
+{
+    let done = if cur.len() == 0 { Seq::<Seq<u8>>::empty() } else { seq![cur] };
+    if t.len() == 0 {
+        done
+    } else if t[0] == 47u8 {
+        done + segments_spec(t.drop_first(), seq![])
+    } else {
+        segments_spec(t.drop_first(), cur.push(t[0]))
+    }
+}
 
 /// The index of the first `?` in `t`, if any.
 pub open spec fn first_question(t: Seq<u8>) -> Option<int> {
@@ -788,6 +930,16 @@ impl Response {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn segments_match_split_and_filter() {
+        for path in ["", "/", "//", "/v1", "/v1/", "v1/characters", "/v1//characters///chr_1/stat", "/é/ü//ß", "a"] {
+            let std: Vec<&str> = path.split('/').filter(|s| !s.is_empty()).collect();
+            assert_eq!(super::segments(path), std, "{path}");
+            let bytes: Vec<&[u8]> = std.iter().map(|s| s.as_bytes()).collect();
+            assert_eq!(super::words(&std), bytes);
+        }
+    }
+
     #[test]
     fn words_and_targets_match_std() {
         use msapi_core::api::{Word, word_bytes};

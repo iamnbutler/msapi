@@ -34,6 +34,10 @@ crates/msapi-core/src/character.rs::Serialize for CharacterName::serialize | lib
 crates/msapi-core/src/character.rs::Deserialize for CharacterName::deserialize | lib | takes serde's string to the proven from_string, as the derive with try_from = "String" did
 crates/msapi-core/src/character.rs::Serialize for $name::serialize | lib | hands serde the proven wide value, as the derive with into = "i64" did
 crates/msapi-core/src/character.rs::Deserialize for $name::deserialize | lib | takes serde's integer to the proven new, as the derive with try_from = "i64" did
+crates/msapi-core/src/character.rs::Serialize for Gender::serialize | lib | hands serde the lowercase wire name
+crates/msapi-core/src/character.rs::Deserialize for Gender::deserialize | lib | parses through a derived twin, so the wire format and error messages stay those of the derive Verus cannot take on a checked type
+crates/msapi-core/src/character.rs::Serialize for Liberation::serialize | lib | hands serde the lowercase wire name
+crates/msapi-core/src/character.rs::Deserialize for Liberation::deserialize | lib | parses through a derived twin, so the wire format and error messages stay those of the derive Verus cannot take on a checked type
 crates/msapi-core/src/wire.rs::serde::Serialize for $ty::serialize | lib | hands serde the proven wire name as a unit variant, as the derive did
 crates/msapi-core/src/wire.rs::serde::Deserialize for $ty::deserialize | lib | serde's enum protocol with the derive's messages, over the proven from_index and as_str
 crates/msapi-core/src/world.rs::Serialize for World::serialize | lib | hands serde the world's fields, as the derive did
@@ -54,7 +58,7 @@ crates/msapi-server/src/auth.rs::Serialize for Scopes::serialize | lib | hands s
 crates/msapi-server/src/auth.rs::Deserialize for Scopes::deserialize | lib | takes serde's string to from_str
 crates/msapi-server/src/auth.rs::authenticate | io | after the proven api::bearer parse, looks the token hash and its chain up in SQLite; the proven policy::chain_expiry decides
 crates/msapi-server/src/auth.rs::create_user | io | inserts the user and root token rows
-crates/msapi-server/src/auth.rs::MintRequest::validate | io | reads the system clock for the proven check_mint
+crates/msapi-server/src/auth.rs::Deserialize for MintRequest::deserialize | lib | parses through a derived twin, so the wire format and error messages stay those of the derive Verus cannot take on a checked type
 crates/msapi-server/src/db.rs::open | io | opens and migrates SQLite
 crates/msapi-server/src/db.rs::open_in_memory | io | opens and migrates SQLite
 crates/msapi-server/src/db.rs::configure | io | opens and migrates SQLite
@@ -115,18 +119,17 @@ crates/msapi-server/src/passkey.rs::Session::ctx | io | a passkey ceremony step:
 crates/msapi-server/src/passkey.rs::Session::insert | io | a passkey ceremony step: SQLite reads and writes around the proven WebAuthn checks
 crates/msapi-server/src/passkey.rs::Session::response | io | a passkey ceremony step: SQLite reads and writes around the proven WebAuthn checks
 crates/msapi-server/src/passkey.rs::is_primary_key_violation | lib | matches a rusqlite error code
-crates/msapi-server/src/routes/accounts.rs::AccountInput::validate | lib | reads the fields of a serde-derived input for the proven check_account; Verus panics on serde's Deserialize derive
 crates/msapi-server/src/routes/accounts.rs::load | io | route handler: SQL against SQLite around the proven checks, then the audit row
 crates/msapi-server/src/routes/accounts.rs::list | io | route handler: SQL against SQLite around the proven checks, then the audit row
 crates/msapi-server/src/routes/accounts.rs::get | io | route handler: SQL against SQLite around the proven checks, then the audit row
 crates/msapi-server/src/routes/accounts.rs::create | io | route handler: SQL against SQLite around the proven checks, then the audit row
 crates/msapi-server/src/routes/accounts.rs::update | io | route handler: SQL against SQLite around the proven checks, then the audit row
 crates/msapi-server/src/routes/accounts.rs::delete | io | route handler: SQL against SQLite around the proven checks, then the audit row
+crates/msapi-server/src/routes/accounts.rs::Serialize for AccountInput::serialize | lib | writes through a derived twin, so the wire format and error messages stay those of the derive Verus cannot take on a checked type
+crates/msapi-server/src/routes/accounts.rs::Deserialize for AccountInput::deserialize | lib | parses through a derived twin, so the wire format and error messages stay those of the derive Verus cannot take on a checked type
 crates/msapi-server/src/routes/audit_log.rs::parse_json | lib | parses a stored JSON column with serde_json
 crates/msapi-server/src/routes/audit_log.rs::from_row | lib | reads a rusqlite row into the view
 crates/msapi-server/src/routes/audit_log.rs::list | io | route handler: SQL against SQLite around the proven checks, then the audit row
-crates/msapi-server/src/routes/characters.rs::CharacterInput::validate | lib | reads the fields of a serde-derived input for the proven check_character; Verus panics on serde's Deserialize derive
-crates/msapi-server/src/routes/characters.rs::CharacterView::to_input | lib | copies fields between serde-derived types; Verus panics on serde's Deserialize derive
 crates/msapi-server/src/routes/characters.rs::from_row | lib | reads a rusqlite row into the view
 crates/msapi-server/src/routes/characters.rs::find | io | route handler: SQL against SQLite around the proven checks, then the audit row
 crates/msapi-server/src/routes/characters.rs::account_region | io | route handler: SQL against SQLite around the proven checks, then the audit row
@@ -135,11 +138,14 @@ crates/msapi-server/src/routes/characters.rs::get | io | route handler: SQL agai
 crates/msapi-server/src/routes/characters.rs::create | io | route handler: SQL against SQLite around the proven checks, then the audit row
 crates/msapi-server/src/routes/characters.rs::update | io | route handler: SQL against SQLite around the proven checks, then the audit row
 crates/msapi-server/src/routes/characters.rs::delete | io | route handler: SQL against SQLite around the proven checks, then the audit row
+crates/msapi-server/src/routes/characters.rs::Serialize for CharacterInput::serialize | lib | writes through a derived twin, so the wire format and error messages stay those of the derive Verus cannot take on a checked type
+crates/msapi-server/src/routes/characters.rs::Deserialize for CharacterInput::deserialize | lib | parses through a derived twin, so the wire format and error messages stay those of the derive Verus cannot take on a checked type
+crates/msapi-server/src/routes/characters.rs::Serialize for CharacterView::serialize | lib | writes through a derived twin, so the wire format and error messages stay those of the derive Verus cannot take on a checked type
 crates/msapi-server/src/routes/meta.rs::public | lib | builds serde_json responses (json!) for the public routes
 crates/msapi-server/src/routes/meta.rs::index | lib | a serde_json (json!) index of the routes
-crates/msapi-server/src/routes/mod.rs::run | io | one match from the proven route to its database handler
-crates/msapi-server/src/routes/mod.rs::handle | io | makes the request ID, calls dispatch and logs the request
-crates/msapi-server/src/routes/mod.rs::dispatch | io | authenticates against the database and calls the handlers for the proven api::route result
+crates/msapi-server/src/routes/mod.rs::run | io | one match from the proven route to its handler; every handler runs SQL against SQLite
+crates/msapi-server/src/routes/mod.rs::handle | io | reads the clock and the random request ID, calls dispatch and writes the log line
+crates/msapi-server/src/routes/mod.rs::dispatch | io | sequences the proven plan, context and audits_refusal with the database calls: meta::public (serde_json), passkey::handle, auth::authenticate, run and audit::record_refused
 crates/msapi-server/src/routes/mod.rs::enum_to_sql | lib | serde_json wire string of an enum
 crates/msapi-server/src/routes/mod.rs::enum_from_sql | lib | serde_json parse of a stored enum
 crates/msapi-server/src/routes/mod.rs::corrupt | lib | builds a rusqlite error

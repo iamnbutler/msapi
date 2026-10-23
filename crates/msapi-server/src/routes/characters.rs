@@ -36,34 +36,26 @@ use vstd::prelude::*;
 
 /// The fields a client sets. `world_name` and `character_class` accept any
 /// spelling the reference data resolves (`"Night Walker"`, `"night-walker"`).
-#[derive(Serialize, Deserialize, Debug, Clone)]
-#[serde(deny_unknown_fields)]
+#[cfg_attr(feature = "verus", verus_verify)]
+#[derive(Debug, Clone)]
 struct CharacterInput {
     character_name: CharacterName,
     world_name: String,
     character_class: String,
     character_level: Level,
-    #[serde(default)]
     character_class_level: Option<ClassLevel>,
-    #[serde(default)]
     character_exp: Option<u64>,
-    #[serde(default)]
     character_exp_rate: Option<ExpRate>,
-    #[serde(default)]
     character_gender: Option<Gender>,
-    #[serde(default)]
     character_guild_name: Option<String>,
-    #[serde(default)]
     popularity: Option<i32>,
-    #[serde(default)]
     liberation: Option<Liberation>,
-    #[serde(default)]
     character_image: Option<String>,
-    #[serde(default)]
     notes: Option<String>,
 }
 
 /// A [`CharacterInput`] whose references resolved and whose values are in range.
+#[cfg_attr(feature = "verus", verus_verify)]
 struct Valid {
     input: CharacterInput,
     world: &'static World,
@@ -73,6 +65,7 @@ struct Valid {
 
 impl CharacterInput {
     /// The proven [`check_character`] on this input's fields.
+    #[cfg_attr(feature = "verus", verus_verify)]
     fn validate(self, region: Region) -> Result<Valid, ApiError> {
         let (world, class, exp) = check_character(
             region,
@@ -86,6 +79,108 @@ impl CharacterInput {
             self.notes.as_ref(),
         )?;
         Ok(Valid { input: self, world, class, exp })
+    }
+}
+
+// Verus checks `CharacterInput` and cannot take serde's derives on a checked
+// type, so it goes through derived twins with the same wire format and the
+// same error messages.
+
+impl Serialize for CharacterInput {
+    fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        #[derive(Serialize)]
+        struct Wire<'a> {
+            character_name: &'a CharacterName,
+            world_name: &'a String,
+            character_class: &'a String,
+            character_level: &'a Level,
+            character_class_level: &'a Option<ClassLevel>,
+            character_exp: &'a Option<u64>,
+            character_exp_rate: &'a Option<ExpRate>,
+            character_gender: &'a Option<Gender>,
+            character_guild_name: &'a Option<String>,
+            popularity: &'a Option<i32>,
+            liberation: &'a Option<Liberation>,
+            character_image: &'a Option<String>,
+            notes: &'a Option<String>,
+        }
+        Wire {
+            character_name: &self.character_name,
+            world_name: &self.world_name,
+            character_class: &self.character_class,
+            character_level: &self.character_level,
+            character_class_level: &self.character_class_level,
+            character_exp: &self.character_exp,
+            character_exp_rate: &self.character_exp_rate,
+            character_gender: &self.character_gender,
+            character_guild_name: &self.character_guild_name,
+            popularity: &self.popularity,
+            liberation: &self.liberation,
+            character_image: &self.character_image,
+            notes: &self.notes,
+        }
+        .serialize(s)
+    }
+}
+
+impl<'de> Deserialize<'de> for CharacterInput {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        #[derive(Deserialize)]
+        #[serde(deny_unknown_fields)]
+        struct CharacterInput {
+            character_name: CharacterName,
+            world_name: String,
+            character_class: String,
+            character_level: Level,
+            #[serde(default)]
+            character_class_level: Option<ClassLevel>,
+            #[serde(default)]
+            character_exp: Option<u64>,
+            #[serde(default)]
+            character_exp_rate: Option<ExpRate>,
+            #[serde(default)]
+            character_gender: Option<Gender>,
+            #[serde(default)]
+            character_guild_name: Option<String>,
+            #[serde(default)]
+            popularity: Option<i32>,
+            #[serde(default)]
+            liberation: Option<Liberation>,
+            #[serde(default)]
+            character_image: Option<String>,
+            #[serde(default)]
+            notes: Option<String>,
+        }
+        let CharacterInput {
+            character_name,
+            world_name,
+            character_class,
+            character_level,
+            character_class_level,
+            character_exp,
+            character_exp_rate,
+            character_gender,
+            character_guild_name,
+            popularity,
+            liberation,
+            character_image,
+            notes,
+        } = CharacterInput::deserialize(d)?;
+        Ok(Self {
+            character_name,
+            world_name,
+            character_class,
+            character_level,
+            character_class_level,
+            character_exp,
+            character_exp_rate,
+            character_gender,
+            character_guild_name,
+            popularity,
+            liberation,
+            character_image,
+            notes,
+        })
     }
 }
 
@@ -164,7 +259,8 @@ fn check_character(
 }
 
 /// A character as the API returns it.
-#[derive(Serialize, Debug)]
+#[cfg_attr(feature = "verus", verus_verify)]
+#[derive(Debug)]
 pub struct CharacterView {
     id: String,
     account_id: String,
@@ -193,6 +289,7 @@ pub struct CharacterView {
 }
 
 impl CharacterView {
+    #[cfg_attr(feature = "verus", verus_verify)]
     fn to_input(&self) -> CharacterInput {
         CharacterInput {
             character_name: self.character_name.clone(),
@@ -209,6 +306,66 @@ impl CharacterView {
             character_image: self.character_image.clone(),
             notes: self.notes.clone(),
         }
+    }
+}
+
+// Verus checks `CharacterView` and cannot take serde's derive on a checked
+// type, so it serializes through a derived twin with the same fields in the
+// same order.
+impl Serialize for CharacterView {
+    fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        #[derive(Serialize)]
+        struct Wire<'a> {
+            id: &'a String,
+            account_id: &'a String,
+            region: &'a Region,
+            character_name: &'a CharacterName,
+            world_name: &'a &'static str,
+            world_type: &'a WorldType,
+            data_center: &'a DataCenter,
+            character_class: &'a &'static str,
+            character_class_id: &'a &'static str,
+            job_type: &'a JobType,
+            character_class_level: &'a Option<ClassLevel>,
+            character_level: &'a Level,
+            character_exp: &'a Option<u64>,
+            character_exp_rate: &'a Option<ExpRate>,
+            character_gender: &'a Option<Gender>,
+            character_guild_name: &'a Option<String>,
+            popularity: &'a Option<i32>,
+            liberation: &'a Option<Liberation>,
+            character_image: &'a Option<String>,
+            notes: &'a Option<String>,
+            stat_captured_at: &'a Option<Timestamp>,
+            created_at: &'a Timestamp,
+            updated_at: &'a Timestamp,
+        }
+        Wire {
+            id: &self.id,
+            account_id: &self.account_id,
+            region: &self.region,
+            character_name: &self.character_name,
+            world_name: &self.world_name,
+            world_type: &self.world_type,
+            data_center: &self.data_center,
+            character_class: &self.character_class,
+            character_class_id: &self.character_class_id,
+            job_type: &self.job_type,
+            character_class_level: &self.character_class_level,
+            character_level: &self.character_level,
+            character_exp: &self.character_exp,
+            character_exp_rate: &self.character_exp_rate,
+            character_gender: &self.character_gender,
+            character_guild_name: &self.character_guild_name,
+            popularity: &self.popularity,
+            liberation: &self.liberation,
+            character_image: &self.character_image,
+            notes: &self.notes,
+            stat_captured_at: &self.stat_captured_at,
+            created_at: &self.created_at,
+            updated_at: &self.updated_at,
+        }
+        .serialize(s)
     }
 }
 
@@ -423,4 +580,68 @@ pub fn delete(conn: &mut Connection, ctx: &Ctx, id: &str) -> Result<Response, Ap
     write.execute("DELETE FROM characters WHERE id = ?1", params![id])?;
     write.commit(None, Target { kind: "character", id }, Some(&before), None::<&()>)?;
     Ok(Response::no_content())
+}
+
+/// The JSON contract of the hand-written serde impls, captured from the
+/// derived ones they replaced: every message must stay word for word.
+#[cfg(test)]
+mod wire {
+    use super::CharacterInput;
+
+    #[test]
+    fn errors_match_the_derived_impl() {
+        for (json, err) in [
+            (
+                r#"{"character_name":"Abc","world_name":"Bera","character_class":"Hero","character_level":200,"bogus":1}"#,
+                r"unknown field `bogus`, expected one of `character_name`, `world_name`, `character_class`, `character_level`, `character_class_level`, `character_exp`, `character_exp_rate`, `character_gender`, `character_guild_name`, `popularity`, `liberation`, `character_image`, `notes` at line 1 column 98",
+            ),
+            (
+                r#"{"world_name":"Bera","character_class":"Hero","character_level":200}"#,
+                r"missing field `character_name` at line 1 column 68",
+            ),
+            (
+                r#"{"character_name":"Abc","world_name":"Bera","character_class":"Hero","character_level":"x"}"#,
+                r#"invalid type: string "x", expected i64 at line 1 column 90"#,
+            ),
+            (
+                r#"{"character_name":"Abc","world_name":"Bera","character_class":"Hero","character_level":999}"#,
+                r"level must be between 1 and 300, got 999 at line 1 column 91",
+            ),
+            (
+                r#"{"character_name":"","world_name":"Bera","character_class":"Hero","character_level":2}"#,
+                r"character name is empty at line 1 column 20",
+            ),
+            (
+                r#"{"character_name":"Abc","world_name":"Bera","character_class":"Hero","character_level":2,"character_gender":"x"}"#,
+                r"unknown variant `x`, expected `male` or `female` at line 1 column 111",
+            ),
+            (
+                r#"{"character_name":"Abc","world_name":"Bera","character_class":"Hero","character_level":2,"liberation":"x"}"#,
+                r"unknown variant `x`, expected one of `none`, `genesis`, `destiny` at line 1 column 105",
+            ),
+            (
+                r#"{"character_name":"Abc","world_name":"Bera","character_class":"Hero","character_level":2,"character_exp_rate":"x"}"#,
+                r#"invalid type: string "x", expected a number with at most 3 decimal places at line 1 column 113"#,
+            ),
+            (r"[1]", r"invalid type: integer `1`, expected a string at line 1 column 2"),
+            (r#""s""#, r#"invalid type: string "s", expected struct CharacterInput at line 1 column 3"#),
+            (
+                r#"{"character_name":"Abc","character_name":"Abd","world_name":"Bera","character_class":"Hero","character_level":2}"#,
+                r"duplicate field `character_name` at line 1 column 40",
+            ),
+        ] {
+            assert_eq!(serde_json::from_str::<CharacterInput>(json).unwrap_err().to_string(), err, "{json}");
+        }
+    }
+
+    #[test]
+    fn round_trips() {
+        let input: CharacterInput = serde_json::from_str(r#"{"character_name":"Abc","world_name":"Bera","character_class":"Hero","character_level":2,"character_gender":"male","liberation":"genesis","character_exp_rate":1.5,"notes":null}"#).unwrap();
+        let out = serde_json::to_string(&input).unwrap();
+        assert_eq!(
+            out,
+            r#"{"character_name":"Abc","world_name":"Bera","character_class":"Hero","character_level":2,"character_class_level":null,"character_exp":null,"character_exp_rate":1.500,"character_gender":"male","character_guild_name":null,"popularity":null,"liberation":"genesis","character_image":null,"notes":null}"#
+        );
+        assert_eq!(serde_json::to_string(&serde_json::from_str::<CharacterInput>(&out).unwrap()).unwrap(), out);
+    }
 }
