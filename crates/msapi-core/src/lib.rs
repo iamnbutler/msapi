@@ -39,6 +39,7 @@ pub mod fixed;
 pub mod formula;
 pub mod json;
 pub mod lookup;
+pub mod names;
 pub mod policy;
 pub mod query;
 pub mod ratio;

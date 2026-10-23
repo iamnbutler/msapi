@@ -2,12 +2,10 @@
 
 use std::fmt;
 use std::str::FromStr;
-use std::sync::LazyLock;
 
 use serde::{Deserialize, Serialize};
 
 use crate::ascii::lowercase;
-use crate::lookup::Index;
 
 /// A separately operated MapleStory service, each with its own accounts and worlds.
 ///
@@ -78,23 +76,12 @@ impl fmt::Display for Region {
     }
 }
 
-/// Each region's wire name, lowercased → position in [`Region::ALL`].
-#[allow(
-    clippy::expect_used,
-    reason = "the table is constant, so build either always or never succeeds; tests build it"
-)]
-static INDEX: LazyLock<Index> = LazyLock::new(|| {
-    let keys = Region::ALL.iter().map(|r| lowercase(r.as_str().as_bytes())).collect();
-    Index::build(keys, (0..Region::ALL.len()).collect()).expect("two regions share a name")
-});
-
 impl FromStr for Region {
     type Err = String;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        INDEX
-            .get(&lowercase(s.as_bytes()))
-            .map(|i| Self::ALL[i])
+        crate::names::region::find(&lowercase(s.as_bytes()))
+            .and_then(|i| Self::ALL.get(i).copied())
             .ok_or_else(|| format!("unknown region `{s}`; expected one of gms, kms, msea, tms, jms"))
     }
 }
