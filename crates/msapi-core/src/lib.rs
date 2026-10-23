@@ -37,6 +37,7 @@ pub mod decimal;
 pub mod fixed;
 pub mod formula;
 pub mod policy;
+pub mod query;
 pub mod ratio;
 pub mod region;
 pub mod rules;

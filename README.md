@@ -76,8 +76,10 @@ agent did. People sign in with a passkey, which gives them a 30-day root token.
 - **Every write is audited.** The only way to commit a transaction is through
   the audit writer.
 - **Few dependencies.** See [`docs/dependencies.md`](docs/dependencies.md).
-- **Proven formulas.** The formulas, exact-fraction arithmetic, token rules
-  and passkey byte rules are machine-checked with Verus; [`docs/verification.md`](docs/verification.md)
+- **Proven formulas and formats.** The formulas, exact-fraction arithmetic,
+  token rules, passkey formats, and every encoding and parser the server owns
+  (base64url, base32 IDs, CBOR, decimals, query strings, the write log) are
+  machine-checked with Verus; [`docs/verification.md`](docs/verification.md)
   lists what is proven and what is trusted.
 
 ## Development

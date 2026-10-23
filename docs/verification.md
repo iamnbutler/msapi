@@ -1,6 +1,7 @@
 # Verification
 
-`msapi-core`'s formulas, the token rules and the passkey byte rules are checked by
+`msapi-core`'s formulas, the token rules, the passkey byte formats, and every encoding and
+parser the server owns are checked by
 [Verus](https://github.com/verus-lang/verus): each function carries a
 specification, and the proof that the code meets it is machine-checked on every
 pull request (the `verify` job in `.github/workflows/ci.yml`).
@@ -92,9 +93,12 @@ goes through a proven function.
 | `POST`/`PATCH /v1/accounts` | `length_ok` (label, notes) |
 | `POST`/`PATCH /v1/characters…` | `in_range` (levels), `exp_rate_ok`, `length_ok` |
 | `PUT`/`PATCH …/stat` | `captured_at_ok`, `ignore_defense_ok`, `cooldown_reduction_ok`, `percentage_ok`, `range_ok`, and `implied_total` for tooltip warnings |
-| `/v1/auth/passkey/*` | `auth_data_layout`, `cbor_head`, `presence_ok`, `counter_ok`, `length_ok` (display name) |
-| new IDs (audit and history order) | `next_id` |
-| restore from the log | `next_batch_ok` |
+| `/v1/auth/passkey/*` | `base64url::decode` (every binary field and the challenge), `Cbor::decode`, `PublicKey::from_cose`, `auth_data_layout`, `presence_ok`, `counter_ok`, `length_ok` (display name) |
+| every query parameter | `percent_decode` |
+| stat fields with decimals | `parse_decimal` |
+| new IDs (audit and history order) | `next_id`, then `base32::encode_u128` (proven order-preserving) |
+| token secrets | `base32::encode` |
+| every write (the durable log) | `encode_statement`; on restore `frame_at`, `decode_batch`, `next_batch_ok` |
 | calculators (`calc`, `units`) | the `formula.rs` and `ratio.rs` functions above |
 
 ### `webauthn.rs`: passkey bytes and rules
@@ -105,27 +109,49 @@ goes through a proven function.
 | `cbor_head` | the major type, and the argument read big-endian from the 0, 1, 2, 4 or 8 bytes the initial byte declares; the content offset is in bounds; indefinite and reserved lengths are refused |
 | `counter_ok` | a sign-in counter is accepted only if it grew, or if the authenticator keeps none (both 0) |
 | `presence_ok` | sign-in requires the user-present flag |
+| `Cbor::decode` | every item ends after it starts and within the buffer, and every byte and text string it returns lies inside its item. Nesting is capped at 8 and counts larger than the remaining bytes are refused, so it terminates without unbounded allocation |
+| `get_int`, `get_text`, `as_bytes`, `as_int` | a value found is one of the map's entries; `as_bytes` returns exactly the item's range of the buffer; `as_int` is the exact integer |
+| `PublicKey::from_cose` | ES256 and Ed25519 keys come back with exactly 32-byte coordinates |
+
+### Encodings and parsers
+
+| Function | Proven |
+| --- | --- |
+| `base64url::encode` | equals `encode_spec`, RFC 4648 §5 written group by group |
+| `base64url::decode` | whatever it returns encodes back to its input (padding aside), and it returns `None` only when no byte string encodes to the input. So it is canonical: one encoding per byte string |
+| `base32::encode_u128` (IDs) | each character is the Crockford digit of its five bits; `a < b` implies the encoding of `a` sorts first (`lemma_order`), so string order is ID order; distinct values encode differently |
+| `base32::encode` (token secrets) | output length is `(8n + 4) / 5` and every character is Crockford |
+| `decimal::parse_decimal` (`Fixed` from text) | `Ok(v)` exactly when the text is `-?D+(.D+)?` with at most `dp` fraction digits and fits `i64`, and then `v` is its exact value scaled by `10^dp`; each error (`Invalid`, `TooPrecise`, `OutOfRange`) is returned exactly in its case; a string splits into whole and fraction one way only |
+| `query::percent_decode` | equals `decoded`: `+` is a space, `%XX` is that byte, anything else is itself |
+| `batch::encode_statement` | appends exactly the spec encoding when every length fits a `u32`, and refuses (appending nothing) otherwise |
+| `batch::decode_batch` | anything it accepts re-encodes to exactly its input, and the encoding of any statement list decodes back to that list; no read is out of bounds |
+| `batch::frame_at` | a frame is a big-endian sequence number and length, then the body; it returns exactly the frame at that offset |
 
 ## What is trusted
 
 These parts are not proven. They are covered by tests instead.
 
-- **I/O and parsing:** SQL queries, HTTP handling, serde, JSON merge patch,
-  `Fixed` decimal parsing, base32 and base64url encoding (tested, not proven).
-- **Passkey glue:** the recursive CBOR decoder built on `cbor_head`, COSE key
-  selection, the client-data checks (type, challenge, origin) and the
-  signature checks, which are `ring`'s. `tests/passkey.rs` drives both
-  ceremonies with a software authenticator, including replayed counters,
-  wrong origins, wrong sites and tampered signatures.
-- **Durability:** the write log (`durable.rs`) and the Worker that stores it
-  (`deploy/src/index.ts`); `tests/durable.rs` rebuilds a database from its
-  log and compares it with the original.
-- **Glue that feeds the proofs:** the one-line wrappers in `units`, `calc` and
-  `stat` that unwrap unit types, and in `auth.rs` the mapping from account IDs
-  to `AccountCheck { owned, reachable }`.
+- **Outside libraries and runtimes:** SQLite (through `rusqlite`), the HTTP
+  server (`tiny_http`), JSON (`serde_json`) including field types and
+  string-to-enum lookups, `ring` (SHA-256 and signature checks), the OS random
+  number generator, and the Cloudflare Worker and Durable Object that keep the
+  log (`deploy/src/index.ts`, TypeScript).
+- **Code that only moves data between those and the proofs:** SQL query
+  text and account ownership (a SQL query), JSON merge patch (`serde_json`
+  values), string comparisons of the client data's type and origin, the
+  rusqlite-value conversions in `durable.rs` and its iterator over frames, the
+  `&` and `=` split in query strings, turning ASCII bytes into `String`s, the
+  `units`, `calc` and `stat` wrappers that unwrap unit types, and in `auth.rs`
+  the mapping to `AccountCheck { owned, reachable }`.
+- **One `external_body`:** `webauthn::slice`, which is `&data[start..end]`,
+  called only where the proof shows `start <= end <= len`.
 - **Hand-built constants:** `Ratio::ZERO` and `Ratio::ONE`.
-- **What feeds the rules:** which fields exist and their types (serde),
-  string-to-enum lookups (worlds, classes, regions), URL checks on
-  `character_image`, and account ownership (a SQL query).
+- **Spec against reality:** that the specs are the game's formulas and the
+  RFCs' formats is checked by golden tests and known vectors, not proofs.
 - **The verifier itself:** Verus, Z3, and `vstd`'s specs of the standard
   library.
+
+`tests/passkey.rs` drives both passkey ceremonies with a software
+authenticator (replayed counters, wrong origins, wrong sites, tampered
+signatures); `tests/durable.rs` rebuilds a database from its log and compares
+it with the original; `deploy/e2e.ts` runs the hosted web app end to end.
