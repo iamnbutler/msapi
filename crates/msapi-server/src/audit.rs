@@ -6,12 +6,13 @@
 //! records who did it, with which token, and what the data looked like before
 //! and after.
 
-use rusqlite::{Connection, Transaction, TransactionBehavior, params};
+use rusqlite::{Connection, params};
 use serde::Serialize;
 
 use msapi_core::Timestamp;
 
 use crate::auth::Principal;
+use crate::durable::Logged;
 use crate::http::Method;
 use crate::ids;
 
@@ -45,7 +46,7 @@ pub struct Target<'a> {
 
 /// A write in progress. Commit with [`Write::commit`]; drop to roll back.
 pub struct Write<'c> {
-    tx: Transaction<'c>,
+    tx: Logged<'c>,
     ctx: &'c Ctx,
 }
 
@@ -53,13 +54,13 @@ impl<'c> Write<'c> {
     /// Starts a write. `IMMEDIATE` takes the write lock up front, so two
     /// writers queue on `busy_timeout` instead of deadlocking on upgrade.
     pub fn begin(conn: &'c mut Connection, ctx: &'c Ctx) -> rusqlite::Result<Self> {
-        Ok(Self { tx: conn.transaction_with_behavior(TransactionBehavior::Immediate)?, ctx })
+        Ok(Self { tx: Logged::begin(conn)?, ctx })
     }
 
     /// The transaction, for the write's own statements.
     #[must_use]
-    pub fn tx(&self) -> &Transaction<'c> {
-        &self.tx
+    pub fn tx(&self) -> &'c Connection {
+        self.tx.conn()
     }
 
     /// Reserves the ID the audit event will have, so rows written in this
@@ -79,7 +80,7 @@ impl<'c> Write<'c> {
     ) -> rusqlite::Result<String> {
         let id = event_id.unwrap_or_else(Self::reserve_event_id);
         insert(
-            &self.tx,
+            self.tx.conn(),
             &id,
             self.ctx,
             Some(target),
@@ -136,7 +137,11 @@ fn insert(
 /// answer too. Failures to record are logged, not returned: the caller is
 /// already returning an error.
 pub fn record_refused(conn: &Connection, ctx: &Ctx, status: u16) {
-    if let Err(err) = insert(conn, &ids::new_id("evt"), ctx, None, status, None, None) {
+    let result = Logged::begin(conn).and_then(|tx| {
+        insert(tx.conn(), &ids::new_id("evt"), ctx, None, status, None, None)?;
+        tx.commit()
+    });
+    if let Err(err) = result {
         eprintln!("{} could not record refused write: {err}", ctx.request_id);
     }
 }

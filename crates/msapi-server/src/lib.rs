@@ -12,6 +12,7 @@
 pub mod audit;
 pub mod auth;
 pub mod db;
+pub mod durable;
 pub mod error;
 pub mod http;
 pub mod ids;

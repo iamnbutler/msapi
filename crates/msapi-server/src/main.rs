@@ -7,7 +7,8 @@
 //! ```
 //!
 //! `MSAPI_ADDR` and `MSAPI_DB` set the defaults; `MSAPI_TRUST_PROXY=1` takes
-//! client addresses from `X-Forwarded-For`.
+//! client addresses from `X-Forwarded-For`; `MSAPI_LOG=host` makes every write
+//! durable in a changeset log (see `msapi_server::durable`).
 
 use std::path::PathBuf;
 use std::process::ExitCode;
@@ -20,7 +21,7 @@ const USAGE: &str = "usage:
   msapi user create <display name> [--db PATH]
   msapi migrate [--db PATH]
 
-env: MSAPI_ADDR (default 127.0.0.1:8080), MSAPI_DB (default msapi.db), MSAPI_TRUST_PROXY=1";
+env: MSAPI_ADDR (default 127.0.0.1:8080), MSAPI_DB (default msapi.db), MSAPI_TRUST_PROXY=1, MSAPI_LOG=host";
 
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
@@ -39,6 +40,7 @@ fn run(args: &[String]) -> Result<(), String> {
         db: std::env::var_os("MSAPI_DB").map_or_else(|| PathBuf::from("msapi.db"), PathBuf::from),
         workers: thread_count(),
         trust_proxy: std::env::var("MSAPI_TRUST_PROXY").is_ok_and(|v| v == "1" || v == "true"),
+        log: std::env::var("MSAPI_LOG").ok().filter(|v| !v.is_empty()),
     };
     let mut positional = Vec::new();
     let mut rest = args.iter();

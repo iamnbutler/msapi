@@ -14,7 +14,7 @@ msapi-core = { path = "crates/msapi-core" }
 # Keep this list short. Every crate here is a deliberate choice; see docs/dependencies.md.
 foldhash = "0.2"
 ring = "0.17"
-rusqlite = { version = "0.40", features = ["bundled"] }
+rusqlite = { version = "0.40", features = ["bundled", "session"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tiny_http = "0.12"
