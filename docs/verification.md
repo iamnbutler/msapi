@@ -17,6 +17,12 @@ normal build compiles exactly the code it always did, with no extra
 dependencies. Proof blocks are `proof! { … }`, which compiles to nothing
 without the feature.
 
+[`coverage.md`](coverage.md) lists every function in both crates as proven
+against a spec, checked for panics and overflow only, or unverified, and gives
+the reason for each unverified one (from `scripts/unverified.txt`). CI
+regenerates it with `scripts/coverage.py --check` and fails on an unverified
+function with no stated reason.
+
 ## What is proven
 
 Every proof also shows the function cannot panic: no overflow, no division by

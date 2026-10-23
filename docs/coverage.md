@@ -12,23 +12,50 @@ whether Verus checks it:
 
 | crate | spec | checked | unverified |
 |---|---:|---:|---:|
-| `msapi-core` | 189 | 1 | 50 |
-| `msapi-server` | 0 | 0 | 173 |
+| `msapi-core` | 249 | 1 | 50 |
+| `msapi-server` | 0 | 0 | 169 |
 
 ## Unverified functions by reason
 
 | reason | functions |
 |---|---:|
-| moves data between a proven function and the server's types | 17 |
-| I/O: SQL, HTTP, clock, randomness, process | 1 |
-| hands data to or from an outside library (serde, rusqlite, ring, tiny_http) | 10 |
-| missing | 173 |
-| trait shim forwarding to a proven function (`Display`, `FromStr`, serde) | 22 |
+| moves data between a proven function and the server's types | 80 |
+| I/O: SQL, HTTP, clock, randomness, process | 82 |
+| hands data to or from an outside library (serde, rusqlite, ring, tiny_http) | 32 |
+| trait shim forwarding to a proven function (`Display`, `FromStr`, serde) | 25 |
 
 ## Every function
 
 | function | file | status | why unverified |
 |---|---|---|---|
+| `word_bytes` | `crates/msapi-core/src/api.rs:232` | spec |  |
+| `is` | `crates/msapi-core/src/api.rs:303` | spec |  |
+| `Method::parse` | `crates/msapi-core/src/api.rs:371` | spec |  |
+| `Method::word` | `crates/msapi-core/src/api.rs:390` | spec |  |
+| `Method::is_write` | `crates/msapi-core/src/api.rs:404` | spec |  |
+| `same` | `crates/msapi-core/src/api.rs:716` | spec |  |
+| `pick1` | `crates/msapi-core/src/api.rs:731` | spec |  |
+| `pick2` | `crates/msapi-core/src/api.rs:737` | spec |  |
+| `pick3` | `crates/msapi-core/src/api.rs:743` | spec |  |
+| `seg_is` | `crates/msapi-core/src/api.rs:751` | spec |  |
+| `planned` | `crates/msapi-core/src/api.rs:758` | spec |  |
+| `public` | `crates/msapi-core/src/api.rs:781` | spec |  |
+| `passkey` | `crates/msapi-core/src/api.rs:802` | spec |  |
+| `api` | `crates/msapi-core/src/api.rs:819` | spec |  |
+| `route` | `crates/msapi-core/src/api.rs:860` | spec |  |
+| `action` | `crates/msapi-core/src/api.rs:890` | spec |  |
+| `bearer` | `crates/msapi-core/src/api.rs:984` | spec |  |
+| `forwarded` | `crates/msapi-core/src/api.rs:1004` | spec |  |
+| `page_limit` | `crates/msapi-core/src/api.rs:1026` | spec |  |
+| `more_pages` | `crates/msapi-core/src/api.rs:1043` | spec |  |
+| `flag` | `crates/msapi-core/src/api.rs:1051` | spec |  |
+| `json_type` | `crates/msapi-core/src/api.rs:1072` | spec |  |
+| `body_fits` | `crates/msapi-core/src/api.rs:1080` | spec |  |
+| `session_expiry` | `crates/msapi-core/src/api.rs:1089` | spec |  |
+| `text_fits` | `crates/msapi-core/src/api.rs:1188` | spec |  |
+| `character_fields` | `crates/msapi-core/src/api.rs:1200` | spec |  |
+| `account_fields` | `crates/msapi-core/src/api.rs:1245` | spec |  |
+| `name_in` | `crates/msapi-core/src/api.rs:1259` | spec |  |
 | `lowercase` | `crates/msapi-core/src/ascii.rs:70` | spec |  |
 | `to_lower` | `crates/msapi-core/src/ascii.rs:96` | spec |  |
 | `eq_ignore_case` | `crates/msapi-core/src/ascii.rs:103` | spec |  |
@@ -117,6 +144,20 @@ whether Verus checks it:
 | `displayed_range` | `crates/msapi-core/src/formula.rs:474` | spec |  |
 | `bow_normalised` | `crates/msapi-core/src/formula.rs:547` | spec |  |
 | `combat_power` | `crates/msapi-core/src/formula.rs:600` | spec |  |
+| `cont_at` | `crates/msapi-core/src/http1.rs:256` | spec |  |
+| `char_at` | `crates/msapi-core/src/http1.rs:266` | spec |  |
+| `is_utf8` | `crates/msapi-core/src/http1.rs:310` | spec |  |
+| `find_head_end` | `crates/msapi-core/src/http1.rs:338` | spec |  |
+| `find_byte` | `crates/msapi-core/src/http1.rs:356` | spec |  |
+| `find_line_end` | `crates/msapi-core/src/http1.rs:376` | spec |  |
+| `status` | `crates/msapi-core/src/http1.rs:396` | spec |  |
+| `is_te_line` | `crates/msapi-core/src/http1.rs:421` | spec |  |
+| `contains_chunked` | `crates/msapi-core/src/http1.rs:451` | spec |  |
+| `is_chunked` | `crates/msapi-core/src/http1.rs:489` | spec |  |
+| `response` | `crates/msapi-core/src/http1.rs:517` | spec |  |
+| `success` | `crates/msapi-core/src/http1.rs:537` | spec |  |
+| `size` | `crates/msapi-core/src/http1.rs:545` | spec |  |
+| `dechunk` | `crates/msapi-core/src/http1.rs:561` | spec |  |
 | `is_null` | `crates/msapi-core/src/json.rs:316` | spec |  |
 | `find_key` | `crates/msapi-core/src/json.rs:323` | spec |  |
 | `check_wf` | `crates/msapi-core/src/json.rs:347` | spec |  |
@@ -132,16 +173,21 @@ whether Verus checks it:
 | `find` | `crates/msapi-core/src/names.rs:638` | spec |  |
 | `text` | `crates/msapi-core/src/names.rs:757` | spec |  |
 | `find` | `crates/msapi-core/src/names.rs:778` | spec |  |
-| `contains` | `crates/msapi-core/src/policy.rs:48` | spec |  |
-| `minus` | `crates/msapi-core/src/policy.rs:56` | spec |  |
-| `is_subset` | `crates/msapi-core/src/policy.rs:84` | spec |  |
-| `is_member` | `crates/msapi-core/src/policy.rs:147` | spec |  |
-| `reaches` | `crates/msapi-core/src/policy.rs:168` | spec |  |
-| `account_checks` | `crates/msapi-core/src/policy.rs:181` | spec |  |
-| `check_mint` | `crates/msapi-core/src/policy.rs:257` | spec |  |
-| `chain_expiry` | `crates/msapi-core/src/policy.rs:366` | spec |  |
-| `next_id` | `crates/msapi-core/src/policy.rs:411` | spec |  |
-| `page_size` | `crates/msapi-core/src/policy.rs:421` | spec |  |
+| `contains` | `crates/msapi-core/src/policy.rs:49` | spec |  |
+| `with` | `crates/msapi-core/src/policy.rs:57` | spec |  |
+| `first` | `crates/msapi-core/src/policy.rs:76` | spec |  |
+| `minus` | `crates/msapi-core/src/policy.rs:94` | spec |  |
+| `is_subset` | `crates/msapi-core/src/policy.rs:122` | spec |  |
+| `is_member` | `crates/msapi-core/src/policy.rs:185` | spec |  |
+| `reaches` | `crates/msapi-core/src/policy.rs:206` | spec |  |
+| `account_checks` | `crates/msapi-core/src/policy.rs:219` | spec |  |
+| `check_mint` | `crates/msapi-core/src/policy.rs:295` | spec |  |
+| `chain_expiry` | `crates/msapi-core/src/policy.rs:404` | spec |  |
+| `next_id` | `crates/msapi-core/src/policy.rs:449` | spec |  |
+| `id_candidate` | `crates/msapi-core/src/policy.rs:460` | spec |  |
+| `next_seq` | `crates/msapi-core/src/policy.rs:487` | spec |  |
+| `snapshot_due` | `crates/msapi-core/src/policy.rs:496` | spec |  |
+| `page_size` | `crates/msapi-core/src/policy.rs:504` | spec |  |
 | `hex` | `crates/msapi-core/src/query.rs:104` | spec |  |
 | `decode_range` | `crates/msapi-core/src/query.rs:116` | spec |  |
 | `percent_decode` | `crates/msapi-core/src/query.rs:175` | spec |  |
@@ -192,6 +238,18 @@ whether Verus checks it:
 | `findings` | `crates/msapi-core/src/stat.rs:388` | spec |  |
 | `tooltip` | `crates/msapi-core/src/stat.rs:486` | unverified | pairs a breakdown's proven implied_total with its total |
 | `StatWindow::check` | `crates/msapi-core/src/stat.rs:504` | unverified | reads fields into the proven findings and writes one message per finding |
+| `ws_at` | `crates/msapi-core/src/text.rs:181` | spec |  |
+| `is_ws3` | `crates/msapi-core/src/text.rs:199` | spec |  |
+| `ws_before` | `crates/msapi-core/src/text.rs:209` | spec |  |
+| `trim` | `crates/msapi-core/src/text.rs:228` | spec |  |
+| `trim_in` | `crates/msapi-core/src/text.rs:241` | spec |  |
+| `char_count` | `crates/msapi-core/src/text.rs:299` | spec |  |
+| `char_count_in` | `crates/msapi-core/src/text.rs:308` | spec |  |
+| `starts_with` | `crates/msapi-core/src/text.rs:338` | spec |  |
+| `parse_u64` | `crates/msapi-core/src/text.rs:365` | spec |  |
+| `parse_u64_in` | `crates/msapi-core/src/text.rs:374` | spec |  |
+| `parse_hex` | `crates/msapi-core/src/text.rs:432` | spec |  |
+| `parse_hex_in` | `crates/msapi-core/src/text.rs:441` | spec |  |
 | `Timestamp::from_millis` | `crates/msapi-core/src/time.rs:94` | spec |  |
 | `Timestamp::millis` | `crates/msapi-core/src/time.rs:101` | spec |  |
 | `Timestamp::plus_millis` | `crates/msapi-core/src/time.rs:108` | spec |  |
@@ -247,198 +305,195 @@ whether Verus checks it:
 | `auth_data_layout` | `crates/msapi-core/src/webauthn.rs:69` | spec |  |
 | `counter_ok` | `crates/msapi-core/src/webauthn.rs:111` | spec |  |
 | `presence_ok` | `crates/msapi-core/src/webauthn.rs:123` | spec |  |
-| `cbor_head` | `crates/msapi-core/src/webauthn.rs:133` | spec |  |
-| `copy_range` | `crates/msapi-core/src/webauthn.rs:338` | spec |  |
-| `range_eq` | `crates/msapi-core/src/webauthn.rs:363` | spec |  |
-| `Cbor::decode` | `crates/msapi-core/src/webauthn.rs:402` | spec |  |
-| `Cbor::get_int` | `crates/msapi-core/src/webauthn.rs:413` | spec |  |
-| `Cbor::get_text` | `crates/msapi-core/src/webauthn.rs:441` | spec |  |
-| `Cbor::as_int` | `crates/msapi-core/src/webauthn.rs:477` | spec |  |
-| `Cbor::as_bytes` | `crates/msapi-core/src/webauthn.rs:496` | spec |  |
-| `bytes_eq` | `crates/msapi-core/src/webauthn.rs:512` | spec |  |
-| `decode_at` | `crates/msapi-core/src/webauthn.rs:543` | spec |  |
-| `origin_ok` | `crates/msapi-core/src/webauthn.rs:680` | spec |  |
-| `rp_id_hash_ok` | `crates/msapi-core/src/webauthn.rs:689` | spec |  |
-| `es256_point` | `crates/msapi-core/src/webauthn.rs:706` | spec |  |
-| `PublicKey::from_cose` | `crates/msapi-core/src/webauthn.rs:753` | spec |  |
-| `int_at` | `crates/msapi-core/src/webauthn.rs:788` | checked |  |
-| `bytes_at` | `crates/msapi-core/src/webauthn.rs:797` | spec |  |
+| `attested` | `crates/msapi-core/src/webauthn.rs:132` | spec |  |
+| `cbor_head` | `crates/msapi-core/src/webauthn.rs:142` | spec |  |
+| `copy_range` | `crates/msapi-core/src/webauthn.rs:347` | spec |  |
+| `range_eq` | `crates/msapi-core/src/webauthn.rs:372` | spec |  |
+| `Cbor::decode` | `crates/msapi-core/src/webauthn.rs:411` | spec |  |
+| `Cbor::get_int` | `crates/msapi-core/src/webauthn.rs:422` | spec |  |
+| `Cbor::get_text` | `crates/msapi-core/src/webauthn.rs:450` | spec |  |
+| `Cbor::as_int` | `crates/msapi-core/src/webauthn.rs:486` | spec |  |
+| `Cbor::as_bytes` | `crates/msapi-core/src/webauthn.rs:505` | spec |  |
+| `bytes_eq` | `crates/msapi-core/src/webauthn.rs:521` | spec |  |
+| `decode_at` | `crates/msapi-core/src/webauthn.rs:552` | spec |  |
+| `origin_ok` | `crates/msapi-core/src/webauthn.rs:689` | spec |  |
+| `rp_id_hash_ok` | `crates/msapi-core/src/webauthn.rs:698` | spec |  |
+| `es256_point` | `crates/msapi-core/src/webauthn.rs:715` | spec |  |
+| `PublicKey::from_cose` | `crates/msapi-core/src/webauthn.rs:762` | spec |  |
+| `int_at` | `crates/msapi-core/src/webauthn.rs:797` | checked |  |
+| `bytes_at` | `crates/msapi-core/src/webauthn.rs:806` | spec |  |
 | `find` | `crates/msapi-core/src/world.rs:144` | unverified | indexes WORLDS at the position the proven names::world::find returns |
 | `by_key` | `crates/msapi-core/src/world.rs:150` | unverified | indexes WORLDS at the position the proven key_index returns |
 | `in_region` | `crates/msapi-core/src/world.rs:156` | unverified | indexes WORLDS at the positions the proven with_tag returns |
 | `key_index` | `crates/msapi-core/src/world.rs:180` | spec |  |
 | `with_tag` | `crates/msapi-core/src/world.rs:208` | spec |  |
 | `has_tag` | `crates/msapi-core/src/world.rs:230` | spec |  |
-| `Write::begin` | `crates/msapi-server/src/audit.rs:56` | unverified |  |
-| `Write::tx` | `crates/msapi-server/src/audit.rs:62` | unverified |  |
-| `Write::execute` | `crates/msapi-server/src/audit.rs:68` | unverified |  |
-| `Write::query_map` | `crates/msapi-server/src/audit.rs:73` | unverified |  |
-| `Write::reserve_event_id` | `crates/msapi-server/src/audit.rs:84` | unverified |  |
-| `Write::commit` | `crates/msapi-server/src/audit.rs:90` | unverified |  |
-| `to_json` | `crates/msapi-server/src/audit.rs:112` | unverified |  |
-| `insert` | `crates/msapi-server/src/audit.rs:116` | unverified |  |
-| `record_refused` | `crates/msapi-server/src/audit.rs:155` | unverified |  |
-| `Scope::as_str` | `crates/msapi-server/src/auth.rs:61` | unverified |  |
-| `Scope::bit` | `crates/msapi-server/src/auth.rs:66` | unverified |  |
-| `FromStr for Scope::from_str` | `crates/msapi-server/src/auth.rs:73` | unverified |  |
-| `unknown_scope` | `crates/msapi-server/src/auth.rs:78` | unverified |  |
-| `Scopes::all` | `crates/msapi-server/src/auth.rs:89` | unverified |  |
-| `Scopes::contains` | `crates/msapi-server/src/auth.rs:97` | unverified |  |
-| `Scopes::is_subset_of` | `crates/msapi-server/src/auth.rs:103` | unverified |  |
-| `Scopes::minus` | `crates/msapi-server/src/auth.rs:109` | unverified |  |
-| `Scopes::iter` | `crates/msapi-server/src/auth.rs:115` | unverified |  |
-| `FromIterator for Scopes::from_iter` | `crates/msapi-server/src/auth.rs:121` | unverified |  |
-| `fmt::Display for Scopes::fmt` | `crates/msapi-server/src/auth.rs:127` | unverified |  |
-| `fmt::Debug for Scopes::fmt` | `crates/msapi-server/src/auth.rs:134` | unverified |  |
-| `FromStr for Scopes::from_str` | `crates/msapi-server/src/auth.rs:141` | unverified |  |
-| `Serialize for Scopes::serialize` | `crates/msapi-server/src/auth.rs:149` | unverified |  |
-| `Deserialize for Scopes::deserialize` | `crates/msapi-server/src/auth.rs:155` | unverified |  |
-| `Principal::require` | `crates/msapi-server/src/auth.rs:182` | unverified |  |
-| `Principal::require_account` | `crates/msapi-server/src/auth.rs:191` | unverified |  |
-| `Principal::reaches_account` | `crates/msapi-server/src/auth.rs:201` | unverified |  |
-| `as_bytes` | `crates/msapi-server/src/auth.rs:208` | unverified |  |
-| `authenticate` | `crates/msapi-server/src/auth.rs:213` | unverified |  |
-| `create_user` | `crates/msapi-server/src/auth.rs:283` | unverified |  |
-| `MintRequest::validate` | `crates/msapi-server/src/auth.rs:343` | unverified |  |
-| `open` | `crates/msapi-server/src/db.rs:16` | unverified |  |
-| `open_in_memory` | `crates/msapi-server/src/db.rs:25` | unverified |  |
-| `configure` | `crates/msapi-server/src/db.rs:32` | unverified |  |
-| `migrate` | `crates/msapi-server/src/db.rs:39` | unverified |  |
-| `log` | `crates/msapi-server/src/durable.rs:54` | unverified |  |
-| `Logged::begin` | `crates/msapi-server/src/durable.rs:71` | unverified |  |
-| `Logged::conn` | `crates/msapi-server/src/durable.rs:77` | unverified |  |
-| `Logged::execute` | `crates/msapi-server/src/durable.rs:83` | unverified |  |
-| `Logged::query_map` | `crates/msapi-server/src/durable.rs:89` | unverified |  |
-| `Logged::record` | `crates/msapi-server/src/durable.rs:100` | unverified |  |
-| `Logged::commit` | `crates/msapi-server/src/durable.rs:124` | unverified |  |
-| `Drop for Logged::drop` | `crates/msapi-server/src/durable.rs:158` | unverified |  |
-| `encode_statement` | `crates/msapi-server/src/durable.rs:167` | unverified |  |
-| `decode_batch` | `crates/msapi-server/src/durable.rs:182` | unverified |  |
-| `restore` | `crates/msapi-server/src/durable.rs:208` | unverified |  |
-| `rebuild` | `crates/msapi-server/src/durable.rs:222` | unverified |  |
-| `checkpoint` | `crates/msapi-server/src/durable.rs:259` | unverified |  |
-| `snapshot` | `crates/msapi-server/src/durable.rs:267` | unverified |  |
-| `fetch_state` | `crates/msapi-server/src/durable.rs:277` | unverified |  |
-| `frames` | `crates/msapi-server/src/durable.rs:294` | unverified |  |
-| `send` | `crates/msapi-server/src/durable.rs:301` | unverified |  |
-| `dechunk` | `crates/msapi-server/src/durable.rs:330` | unverified |  |
-| `bad` | `crates/msapi-server/src/durable.rs:347` | unverified |  |
-| `other` | `crates/msapi-server/src/durable.rs:351` | unverified |  |
-| `ApiError::new` | `crates/msapi-server/src/error.rs:37` | unverified |  |
-| `ApiError::unavailable` | `crates/msapi-server/src/error.rs:42` | unverified |  |
-| `ApiError::with_details` | `crates/msapi-server/src/error.rs:47` | unverified |  |
-| `ApiError::bad_request` | `crates/msapi-server/src/error.rs:54` | unverified |  |
-| `ApiError::invalid_json` | `crates/msapi-server/src/error.rs:60` | unverified |  |
-| `ApiError::unauthorized` | `crates/msapi-server/src/error.rs:66` | unverified |  |
-| `ApiError::forbidden` | `crates/msapi-server/src/error.rs:71` | unverified |  |
-| `ApiError::not_found` | `crates/msapi-server/src/error.rs:76` | unverified |  |
-| `ApiError::method_not_allowed` | `crates/msapi-server/src/error.rs:81` | unverified |  |
-| `ApiError::conflict` | `crates/msapi-server/src/error.rs:87` | unverified |  |
-| `ApiError::too_large` | `crates/msapi-server/src/error.rs:92` | unverified |  |
-| `ApiError::unsupported_media_type` | `crates/msapi-server/src/error.rs:98` | unverified |  |
-| `ApiError::invalid` | `crates/msapi-server/src/error.rs:104` | unverified |  |
-| `ApiError::not_implemented` | `crates/msapi-server/src/error.rs:109` | unverified |  |
-| `ApiError::internal` | `crates/msapi-server/src/error.rs:114` | unverified |  |
-| `ApiError::to_response` | `crates/msapi-server/src/error.rs:120` | unverified |  |
-| `fmt::Display for ApiError::fmt` | `crates/msapi-server/src/error.rs:129` | unverified |  |
-| `From for ApiError::from` | `crates/msapi-server/src/error.rs:137` | unverified |  |
-| `From for ApiError::from` | `crates/msapi-server/src/error.rs:145` | unverified |  |
-| `Method::parse` | `crates/msapi-server/src/http.rs:27` | unverified |  |
-| `Method::as_str` | `crates/msapi-server/src/http.rs:40` | unverified |  |
-| `Method::is_write` | `crates/msapi-server/src/http.rs:53` | unverified |  |
-| `Request::new` | `crates/msapi-server/src/http.rs:78` | unverified |  |
-| `Request::header` | `crates/msapi-server/src/http.rs:92` | unverified |  |
-| `Request::query` | `crates/msapi-server/src/http.rs:98` | unverified |  |
-| `Request::json` | `crates/msapi-server/src/http.rs:104` | unverified |  |
-| `parse_query` | `crates/msapi-server/src/http.rs:119` | unverified |  |
-| `Response::json` | `crates/msapi-server/src/http.rs:140` | unverified |  |
-| `Response::text` | `crates/msapi-server/src/http.rs:149` | unverified |  |
-| `Response::no_content` | `crates/msapi-server/src/http.rs:155` | unverified |  |
-| `Response::with_header` | `crates/msapi-server/src/http.rs:161` | unverified |  |
-| `Response::json_body` | `crates/msapi-server/src/http.rs:168` | unverified |  |
-| `base32` | `crates/msapi-server/src/ids.rs:25` | unverified |  |
-| `new_id` | `crates/msapi-server/src/ids.rs:38` | unverified |  |
-| `new_token_secret` | `crates/msapi-server/src/ids.rs:55` | unverified |  |
-| `hash_token` | `crates/msapi-server/src/ids.rs:61` | unverified |  |
-| `merge_patch` | `crates/msapi-server/src/json.rs:20` | unverified |  |
-| `to_model` | `crates/msapi-server/src/json.rs:27` | unverified |  |
-| `from_model` | `crates/msapi-server/src/json.rs:41` | unverified |  |
-| `decode` | `crates/msapi-server/src/json.rs:59` | unverified |  |
-| `main` | `crates/msapi-server/src/main.rs:27` | unverified |  |
-| `run` | `crates/msapi-server/src/main.rs:38` | unverified |  |
-| `thread_count` | `crates/msapi-server/src/main.rs:83` | unverified |  |
-| `configure` | `crates/msapi-server/src/passkey.rs:61` | unverified |  |
-| `rp` | `crates/msapi-server/src/passkey.rs:65` | unverified |  |
-| `pending` | `crates/msapi-server/src/passkey.rs:78` | unverified |  |
-| `begin` | `crates/msapi-server/src/passkey.rs:82` | unverified |  |
-| `finish` | `crates/msapi-server/src/passkey.rs:96` | unverified |  |
-| `handle` | `crates/msapi-server/src/passkey.rs:104` | unverified |  |
-| `register_start` | `crates/msapi-server/src/passkey.rs:129` | unverified |  |
-| `login_start` | `crates/msapi-server/src/passkey.rs:151` | unverified |  |
-| `client_data` | `crates/msapi-server/src/passkey.rs:201` | unverified |  |
-| `check_auth_data` | `crates/msapi-server/src/passkey.rs:215` | unverified |  |
-| `register_finish` | `crates/msapi-server/src/passkey.rs:227` | unverified |  |
-| `login_finish` | `crates/msapi-server/src/passkey.rs:283` | unverified |  |
-| `verify` | `crates/msapi-server/src/passkey.rs:331` | unverified |  |
-| `Session::new` | `crates/msapi-server/src/passkey.rs:354` | unverified |  |
-| `Session::ctx` | `crates/msapi-server/src/passkey.rs:364` | unverified |  |
-| `Session::insert` | `crates/msapi-server/src/passkey.rs:384` | unverified |  |
-| `Session::response` | `crates/msapi-server/src/passkey.rs:400` | unverified |  |
-| `is_primary_key_violation` | `crates/msapi-server/src/passkey.rs:414` | unverified |  |
-| `b64url` | `crates/msapi-server/src/passkey.rs:419` | unverified |  |
-| `b64url_decode` | `crates/msapi-server/src/passkey.rs:425` | unverified |  |
-| `AccountInput::validate` | `crates/msapi-server/src/routes/accounts.rs:29` | unverified |  |
-| `load` | `crates/msapi-server/src/routes/accounts.rs:77` | unverified |  |
-| `list` | `crates/msapi-server/src/routes/accounts.rs:145` | unverified |  |
-| `get` | `crates/msapi-server/src/routes/accounts.rs:160` | unverified |  |
-| `create` | `crates/msapi-server/src/routes/accounts.rs:166` | unverified |  |
-| `update` | `crates/msapi-server/src/routes/accounts.rs:186` | unverified |  |
-| `delete` | `crates/msapi-server/src/routes/accounts.rs:209` | unverified |  |
-| `parse_json` | `crates/msapi-server/src/routes/audit_log.rs:36` | unverified |  |
-| `from_row` | `crates/msapi-server/src/routes/audit_log.rs:42` | unverified |  |
-| `list` | `crates/msapi-server/src/routes/audit_log.rs:66` | unverified |  |
-| `CharacterInput::validate` | `crates/msapi-server/src/routes/characters.rs:64` | unverified |  |
-| `CharacterView::to_input` | `crates/msapi-server/src/routes/characters.rs:135` | unverified |  |
-| `from_row` | `crates/msapi-server/src/routes/characters.rs:160` | unverified |  |
-| `find` | `crates/msapi-server/src/routes/characters.rs:199` | unverified |  |
-| `account_region` | `crates/msapi-server/src/routes/characters.rs:208` | unverified |  |
-| `duplicate` | `crates/msapi-server/src/routes/characters.rs:221` | unverified |  |
-| `list` | `crates/msapi-server/src/routes/characters.rs:229` | unverified |  |
-| `get` | `crates/msapi-server/src/routes/characters.rs:260` | unverified |  |
-| `create` | `crates/msapi-server/src/routes/characters.rs:266` | unverified |  |
-| `update` | `crates/msapi-server/src/routes/characters.rs:309` | unverified |  |
-| `delete` | `crates/msapi-server/src/routes/characters.rs:353` | unverified |  |
-| `public` | `crates/msapi-server/src/routes/meta.rs:22` | unverified |  |
-| `index` | `crates/msapi-server/src/routes/meta.rs:41` | unverified |  |
-| `by_method` | `crates/msapi-server/src/routes/mod.rs:62` | unverified |  |
-| `Route::parse` | `crates/msapi-server/src/routes/mod.rs:67` | unverified |  |
-| `Route::action` | `crates/msapi-server/src/routes/mod.rs:106` | unverified |  |
-| `Route::run` | `crates/msapi-server/src/routes/mod.rs:129` | unverified |  |
-| `handle` | `crates/msapi-server/src/routes/mod.rs:165` | unverified |  |
-| `dispatch` | `crates/msapi-server/src/routes/mod.rs:185` | unverified |  |
-| `page` | `crates/msapi-server/src/routes/mod.rs:219` | unverified |  |
-| `enum_to_sql` | `crates/msapi-server/src/routes/mod.rs:227` | unverified |  |
-| `enum_from_sql` | `crates/msapi-server/src/routes/mod.rs:232` | unverified |  |
-| `corrupt` | `crates/msapi-server/src/routes/mod.rs:241` | unverified |  |
-| `is_unique_violation` | `crates/msapi-server/src/routes/mod.rs:246` | unverified |  |
-| `token_subtree` | `crates/msapi-server/src/routes/mod.rs:251` | unverified |  |
-| `in_list` | `crates/msapi-server/src/routes/mod.rs:264` | unverified |  |
-| `from_row` | `crates/msapi-server/src/routes/stats.rs:33` | unverified |  |
-| `latest` | `crates/msapi-server/src/routes/stats.rs:44` | unverified |  |
-| `get` | `crates/msapi-server/src/routes/stats.rs:50` | unverified |  |
-| `replace` | `crates/msapi-server/src/routes/stats.rs:61` | unverified |  |
-| `update` | `crates/msapi-server/src/routes/stats.rs:70` | unverified |  |
-| `record` | `crates/msapi-server/src/routes/stats.rs:83` | unverified |  |
-| `history` | `crates/msapi-server/src/routes/stats.rs:113` | unverified |  |
-| `from_row` | `crates/msapi-server/src/routes/tokens.rs:35` | unverified |  |
-| `load` | `crates/msapi-server/src/routes/tokens.rs:57` | unverified |  |
-| `visible` | `crates/msapi-server/src/routes/tokens.rs:63` | unverified |  |
-| `me` | `crates/msapi-server/src/routes/tokens.rs:73` | unverified |  |
-| `list` | `crates/msapi-server/src/routes/tokens.rs:89` | unverified |  |
-| `get` | `crates/msapi-server/src/routes/tokens.rs:101` | unverified |  |
-| `mint` | `crates/msapi-server/src/routes/tokens.rs:113` | unverified |  |
-| `revoke` | `crates/msapi-server/src/routes/tokens.rs:168` | unverified |  |
-| `run` | `crates/msapi-server/src/serve.rs:41` | unverified |  |
-| `worker` | `crates/msapi-server/src/serve.rs:64` | unverified |  |
-| `read_request` | `crates/msapi-server/src/serve.rs:78` | unverified |  |
-| `to_tiny` | `crates/msapi-server/src/serve.rs:108` | unverified |  |
+| `Write::begin` | `crates/msapi-server/src/audit.rs:56` | unverified | SQLite writes for the audit log |
+| `Write::tx` | `crates/msapi-server/src/audit.rs:62` | unverified | SQLite writes for the audit log |
+| `Write::execute` | `crates/msapi-server/src/audit.rs:68` | unverified | SQLite writes for the audit log |
+| `Write::query_map` | `crates/msapi-server/src/audit.rs:73` | unverified | SQLite writes for the audit log |
+| `Write::reserve_event_id` | `crates/msapi-server/src/audit.rs:84` | unverified | SQLite writes for the audit log |
+| `Write::commit` | `crates/msapi-server/src/audit.rs:90` | unverified | SQLite writes for the audit log |
+| `to_json` | `crates/msapi-server/src/audit.rs:112` | unverified | turns a serde_json value into the stored text |
+| `insert` | `crates/msapi-server/src/audit.rs:116` | unverified | SQLite writes for the audit log |
+| `record_refused` | `crates/msapi-server/src/audit.rs:155` | unverified | SQLite writes for the audit log |
+| `Scope::as_str` | `crates/msapi-server/src/auth.rs:62` | unverified | the proven scope::scope_name bytes as &str (ASCII) |
+| `FromStr for Scope::from_str` | `crates/msapi-server/src/auth.rs:70` | unverified | maps the proven scope::scope_index result to the enum |
+| `unknown_scope` | `crates/msapi-server/src/auth.rs:75` | unverified | words the error for an unknown scope |
+| `Scopes::all` | `crates/msapi-server/src/auth.rs:86` | unverified | the proven policy::first set of every scope |
+| `Scopes::contains` | `crates/msapi-server/src/auth.rs:94` | unverified | forwards to the proven policy::contains |
+| `Scopes::is_subset_of` | `crates/msapi-server/src/auth.rs:100` | unverified | forwards to the proven policy::is_subset |
+| `Scopes::minus` | `crates/msapi-server/src/auth.rs:106` | unverified | forwards to the proven policy::minus |
+| `Scopes::iter` | `crates/msapi-server/src/auth.rs:112` | unverified | filters Scope::ALL by the proven contains |
+| `FromIterator for Scopes::from_iter` | `crates/msapi-server/src/auth.rs:118` | unverified | folds the proven policy::with over the scopes |
+| `fmt::Display for Scopes::fmt` | `crates/msapi-server/src/auth.rs:124` | unverified | writes the proven scope::format_scopes bytes |
+| `fmt::Debug for Scopes::fmt` | `crates/msapi-server/src/auth.rs:131` | unverified | writes the proven scope::format_scopes bytes |
+| `FromStr for Scopes::from_str` | `crates/msapi-server/src/auth.rs:138` | unverified | forwards to the proven scope::parse_scopes |
+| `Serialize for Scopes::serialize` | `crates/msapi-server/src/auth.rs:146` | unverified | hands serde the Display text |
+| `Deserialize for Scopes::deserialize` | `crates/msapi-server/src/auth.rs:152` | unverified | takes serde's string to from_str |
+| `Principal::require` | `crates/msapi-server/src/auth.rs:179` | unverified | forwards to the proven contains and words the refusal |
+| `Principal::require_account` | `crates/msapi-server/src/auth.rs:188` | unverified | forwards to the proven policy::reaches and words the refusal |
+| `Principal::reaches_account` | `crates/msapi-server/src/auth.rs:198` | unverified | forwards to require_account |
+| `as_bytes` | `crates/msapi-server/src/auth.rs:205` | unverified | views ID Strings as the byte strings policy compares |
+| `authenticate` | `crates/msapi-server/src/auth.rs:210` | unverified | after the proven api::bearer parse, looks the token hash and its chain up in SQLite; the proven policy::chain_expiry decides |
+| `create_user` | `crates/msapi-server/src/auth.rs:281` | unverified | inserts the user and root token rows |
+| `MintRequest::validate` | `crates/msapi-server/src/auth.rs:341` | unverified | gathers inputs for the proven policy::check_mint and account_checks, and words the refusals |
+| `open` | `crates/msapi-server/src/db.rs:16` | unverified | opens and migrates SQLite |
+| `open_in_memory` | `crates/msapi-server/src/db.rs:25` | unverified | opens and migrates SQLite |
+| `configure` | `crates/msapi-server/src/db.rs:32` | unverified | opens and migrates SQLite |
+| `migrate` | `crates/msapi-server/src/db.rs:39` | unverified | opens and migrates SQLite |
+| `log` | `crates/msapi-server/src/durable.rs:55` | unverified | ships and restores the SQLite changeset log over HTTP to the Durable Object |
+| `Logged::begin` | `crates/msapi-server/src/durable.rs:72` | unverified | ships and restores the SQLite changeset log over HTTP to the Durable Object |
+| `Logged::conn` | `crates/msapi-server/src/durable.rs:78` | unverified | ships and restores the SQLite changeset log over HTTP to the Durable Object |
+| `Logged::execute` | `crates/msapi-server/src/durable.rs:84` | unverified | ships and restores the SQLite changeset log over HTTP to the Durable Object |
+| `Logged::query_map` | `crates/msapi-server/src/durable.rs:90` | unverified | ships and restores the SQLite changeset log over HTTP to the Durable Object |
+| `Logged::record` | `crates/msapi-server/src/durable.rs:101` | unverified | ships and restores the SQLite changeset log over HTTP to the Durable Object |
+| `Logged::commit` | `crates/msapi-server/src/durable.rs:125` | unverified | ships and restores the SQLite changeset log over HTTP to the Durable Object |
+| `Drop for Logged::drop` | `crates/msapi-server/src/durable.rs:159` | unverified | ships and restores the SQLite changeset log over HTTP to the Durable Object |
+| `encode_statement` | `crates/msapi-server/src/durable.rs:168` | unverified | passes rusqlite values to the proven batch::encode_statement |
+| `decode_batch` | `crates/msapi-server/src/durable.rs:183` | unverified | turns the proven batch::decode_batch output into rusqlite values |
+| `restore` | `crates/msapi-server/src/durable.rs:209` | unverified | ships and restores the SQLite changeset log over HTTP to the Durable Object |
+| `rebuild` | `crates/msapi-server/src/durable.rs:223` | unverified | ships and restores the SQLite changeset log over HTTP to the Durable Object |
+| `checkpoint` | `crates/msapi-server/src/durable.rs:260` | unverified | ships and restores the SQLite changeset log over HTTP to the Durable Object |
+| `snapshot` | `crates/msapi-server/src/durable.rs:268` | unverified | ships and restores the SQLite changeset log over HTTP to the Durable Object |
+| `fetch_state` | `crates/msapi-server/src/durable.rs:278` | unverified | ships and restores the SQLite changeset log over HTTP to the Durable Object |
+| `frames` | `crates/msapi-server/src/durable.rs:295` | unverified | forwards to the proven batch::frames |
+| `send` | `crates/msapi-server/src/durable.rs:302` | unverified | ships and restores the SQLite changeset log over HTTP to the Durable Object |
+| `bad` | `crates/msapi-server/src/durable.rs:332` | unverified | builds an io::Error |
+| `other` | `crates/msapi-server/src/durable.rs:336` | unverified | builds an io::Error |
+| `ApiError::new` | `crates/msapi-server/src/error.rs:37` | unverified | builds an error response |
+| `ApiError::unavailable` | `crates/msapi-server/src/error.rs:42` | unverified | builds an error response |
+| `ApiError::with_details` | `crates/msapi-server/src/error.rs:47` | unverified | builds an error response |
+| `ApiError::bad_request` | `crates/msapi-server/src/error.rs:54` | unverified | builds an error response |
+| `ApiError::invalid_json` | `crates/msapi-server/src/error.rs:60` | unverified | builds an error response |
+| `ApiError::unauthorized` | `crates/msapi-server/src/error.rs:66` | unverified | builds an error response |
+| `ApiError::forbidden` | `crates/msapi-server/src/error.rs:71` | unverified | builds an error response |
+| `ApiError::not_found` | `crates/msapi-server/src/error.rs:76` | unverified | builds an error response |
+| `ApiError::method_not_allowed` | `crates/msapi-server/src/error.rs:81` | unverified | builds an error response |
+| `ApiError::conflict` | `crates/msapi-server/src/error.rs:87` | unverified | builds an error response |
+| `ApiError::too_large` | `crates/msapi-server/src/error.rs:92` | unverified | builds an error response |
+| `ApiError::unsupported_media_type` | `crates/msapi-server/src/error.rs:98` | unverified | builds an error response |
+| `ApiError::invalid` | `crates/msapi-server/src/error.rs:104` | unverified | builds an error response |
+| `ApiError::not_implemented` | `crates/msapi-server/src/error.rs:109` | unverified | builds an error response |
+| `ApiError::internal` | `crates/msapi-server/src/error.rs:114` | unverified | builds an error response |
+| `ApiError::to_response` | `crates/msapi-server/src/error.rs:120` | unverified | builds an error response |
+| `fmt::Display for ApiError::fmt` | `crates/msapi-server/src/error.rs:129` | unverified | builds an error response |
+| `From for ApiError::from` | `crates/msapi-server/src/error.rs:137` | unverified | builds an error response |
+| `From for ApiError::from` | `crates/msapi-server/src/error.rs:145` | unverified | builds an error response |
+| `word` | `crates/msapi-server/src/http.rs:12` | unverified | turns a proven ASCII word into &str |
+| `method_name` | `crates/msapi-server/src/http.rs:19` | unverified | the proven api method name as &str |
+| `Request::new` | `crates/msapi-server/src/http.rs:43` | unverified | splits the target at ? and keeps the proven query::parse_query pairs |
+| `Request::header` | `crates/msapi-server/src/http.rs:57` | unverified | finds a header by its lowercased name |
+| `Request::query` | `crates/msapi-server/src/http.rs:63` | unverified | finds a query pair by name |
+| `Request::json` | `crates/msapi-server/src/http.rs:69` | unverified | decodes the body with serde_json after the proven content-type and size checks |
+| `parse_query` | `crates/msapi-server/src/http.rs:83` | unverified | turns the proven query::parse_query ranges into Strings |
+| `Response::json` | `crates/msapi-server/src/http.rs:104` | unverified | serializes the body with serde_json |
+| `Response::text` | `crates/msapi-server/src/http.rs:113` | unverified | builds a response |
+| `Response::no_content` | `crates/msapi-server/src/http.rs:119` | unverified | builds a response |
+| `Response::with_header` | `crates/msapi-server/src/http.rs:125` | unverified | adds a header |
+| `Response::json_body` | `crates/msapi-server/src/http.rs:132` | unverified | parses the body with serde_json (tests) |
+| `base32` | `crates/msapi-server/src/ids.rs:25` | unverified | the proven base32::encode bytes as a String |
+| `new_id` | `crates/msapi-server/src/ids.rs:38` | unverified | reads the clock and OS randomness; the order rule is the proven policy::next_id and encode_u128 |
+| `new_token_secret` | `crates/msapi-server/src/ids.rs:54` | unverified | OS randomness through the proven base32::encode |
+| `hash_token` | `crates/msapi-server/src/ids.rs:60` | unverified | SHA-256 from ring |
+| `merge_patch` | `crates/msapi-server/src/json.rs:20` | unverified | converts serde_json values around the proven json::merge |
+| `to_model` | `crates/msapi-server/src/json.rs:27` | unverified | serde_json value to the proven Json model |
+| `from_model` | `crates/msapi-server/src/json.rs:41` | unverified | the proven Json model to a serde_json value |
+| `decode` | `crates/msapi-server/src/json.rs:59` | unverified | decodes a patched document through serde_json text (exact decimals) |
+| `main` | `crates/msapi-server/src/main.rs:27` | unverified | process start-up and configuration |
+| `run` | `crates/msapi-server/src/main.rs:38` | unverified | process start-up and configuration |
+| `thread_count` | `crates/msapi-server/src/main.rs:83` | unverified | process start-up and configuration |
+| `configure` | `crates/msapi-server/src/passkey.rs:60` | unverified | reads process configuration |
+| `rp` | `crates/msapi-server/src/passkey.rs:64` | unverified | reads process configuration |
+| `pending` | `crates/msapi-server/src/passkey.rs:77` | unverified | the in-memory table of in-progress ceremonies |
+| `begin` | `crates/msapi-server/src/passkey.rs:81` | unverified | stores a ceremony under a random challenge; the size cap and five-minute expiry use the monotonic clock |
+| `finish` | `crates/msapi-server/src/passkey.rs:95` | unverified | takes a ceremony out of the in-memory table if its monotonic-clock age is under five minutes |
+| `handle` | `crates/msapi-server/src/passkey.rs:103` | unverified | a passkey ceremony step: SQLite reads and writes around the proven WebAuthn checks |
+| `register_start` | `crates/msapi-server/src/passkey.rs:124` | unverified | a passkey ceremony step: SQLite reads and writes around the proven WebAuthn checks |
+| `login_start` | `crates/msapi-server/src/passkey.rs:146` | unverified | a passkey ceremony step: SQLite reads and writes around the proven WebAuthn checks |
+| `client_data` | `crates/msapi-server/src/passkey.rs:196` | unverified | parses clientDataJSON with serde_json, then the proven origin and challenge checks |
+| `check_auth_data` | `crates/msapi-server/src/passkey.rs:210` | unverified | forwards to the proven webauthn layout, rp-id-hash and flag checks |
+| `register_finish` | `crates/msapi-server/src/passkey.rs:222` | unverified | a passkey ceremony step: SQLite reads and writes around the proven WebAuthn checks |
+| `login_finish` | `crates/msapi-server/src/passkey.rs:278` | unverified | a passkey ceremony step: SQLite reads and writes around the proven WebAuthn checks |
+| `verify` | `crates/msapi-server/src/passkey.rs:326` | unverified | ECDSA P-256 signature check from ring over the proven es256_point |
+| `Session::new` | `crates/msapi-server/src/passkey.rs:349` | unverified | a passkey ceremony step: SQLite reads and writes around the proven WebAuthn checks |
+| `Session::ctx` | `crates/msapi-server/src/passkey.rs:359` | unverified | a passkey ceremony step: SQLite reads and writes around the proven WebAuthn checks |
+| `Session::insert` | `crates/msapi-server/src/passkey.rs:379` | unverified | a passkey ceremony step: SQLite reads and writes around the proven WebAuthn checks |
+| `Session::response` | `crates/msapi-server/src/passkey.rs:395` | unverified | a passkey ceremony step: SQLite reads and writes around the proven WebAuthn checks |
+| `is_primary_key_violation` | `crates/msapi-server/src/passkey.rs:409` | unverified | matches a rusqlite error code |
+| `b64url` | `crates/msapi-server/src/passkey.rs:414` | unverified | the proven base64url::encode bytes as a String |
+| `b64url_decode` | `crates/msapi-server/src/passkey.rs:420` | unverified | forwards to the proven base64url::decode |
+| `AccountInput::validate` | `crates/msapi-server/src/routes/accounts.rs:31` | unverified | forwards to the proven api account checks and words the error |
+| `load` | `crates/msapi-server/src/routes/accounts.rs:78` | unverified | route handler: SQL against SQLite around the proven checks, then the audit row |
+| `list` | `crates/msapi-server/src/routes/accounts.rs:146` | unverified | route handler: SQL against SQLite around the proven checks, then the audit row |
+| `get` | `crates/msapi-server/src/routes/accounts.rs:161` | unverified | route handler: SQL against SQLite around the proven checks, then the audit row |
+| `create` | `crates/msapi-server/src/routes/accounts.rs:167` | unverified | route handler: SQL against SQLite around the proven checks, then the audit row |
+| `update` | `crates/msapi-server/src/routes/accounts.rs:187` | unverified | route handler: SQL against SQLite around the proven checks, then the audit row |
+| `delete` | `crates/msapi-server/src/routes/accounts.rs:210` | unverified | route handler: SQL against SQLite around the proven checks, then the audit row |
+| `parse_json` | `crates/msapi-server/src/routes/audit_log.rs:38` | unverified | parses a stored JSON column with serde_json |
+| `from_row` | `crates/msapi-server/src/routes/audit_log.rs:44` | unverified | reads a rusqlite row into the view |
+| `list` | `crates/msapi-server/src/routes/audit_log.rs:68` | unverified | route handler: SQL against SQLite around the proven checks, then the audit row |
+| `CharacterInput::validate` | `crates/msapi-server/src/routes/characters.rs:64` | unverified | forwards to the proven api character checks and words the error |
+| `CharacterView::to_input` | `crates/msapi-server/src/routes/characters.rs:129` | unverified | copies fields |
+| `from_row` | `crates/msapi-server/src/routes/characters.rs:154` | unverified | reads a rusqlite row into the view |
+| `find` | `crates/msapi-server/src/routes/characters.rs:193` | unverified | route handler: SQL against SQLite around the proven checks, then the audit row |
+| `account_region` | `crates/msapi-server/src/routes/characters.rs:202` | unverified | route handler: SQL against SQLite around the proven checks, then the audit row |
+| `duplicate` | `crates/msapi-server/src/routes/characters.rs:215` | unverified | words the conflict error |
+| `list` | `crates/msapi-server/src/routes/characters.rs:223` | unverified | route handler: SQL against SQLite around the proven checks, then the audit row |
+| `get` | `crates/msapi-server/src/routes/characters.rs:254` | unverified | route handler: SQL against SQLite around the proven checks, then the audit row |
+| `create` | `crates/msapi-server/src/routes/characters.rs:260` | unverified | route handler: SQL against SQLite around the proven checks, then the audit row |
+| `update` | `crates/msapi-server/src/routes/characters.rs:303` | unverified | route handler: SQL against SQLite around the proven checks, then the audit row |
+| `delete` | `crates/msapi-server/src/routes/characters.rs:347` | unverified | route handler: SQL against SQLite around the proven checks, then the audit row |
+| `public` | `crates/msapi-server/src/routes/meta.rs:23` | unverified | answers the public routes the proven api::route names |
+| `index` | `crates/msapi-server/src/routes/meta.rs:41` | unverified | a constant JSON index of the routes |
+| `planned` | `crates/msapi-server/src/routes/mod.rs:36` | unverified | pairs the proven api::PLANNED words with their descriptions |
+| `run` | `crates/msapi-server/src/routes/mod.rs:42` | unverified | one match from the proven route to its handler |
+| `handle` | `crates/msapi-server/src/routes/mod.rs:88` | unverified | makes the request ID, calls dispatch and logs the request |
+| `dispatch` | `crates/msapi-server/src/routes/mod.rs:108` | unverified | splits the path on /, matches on the proven api::route result, authenticates, and calls run |
+| `page` | `crates/msapi-server/src/routes/mod.rs:146` | unverified | forwards to the proven api::page_limit |
+| `opt_bytes` | `crates/msapi-server/src/routes/mod.rs:153` | unverified | views an optional String as bytes |
+| `enum_to_sql` | `crates/msapi-server/src/routes/mod.rs:158` | unverified | serde_json wire string of an enum |
+| `enum_from_sql` | `crates/msapi-server/src/routes/mod.rs:163` | unverified | serde_json parse of a stored enum |
+| `corrupt` | `crates/msapi-server/src/routes/mod.rs:172` | unverified | builds a rusqlite error |
+| `is_unique_violation` | `crates/msapi-server/src/routes/mod.rs:177` | unverified | matches a rusqlite error code |
+| `token_subtree` | `crates/msapi-server/src/routes/mod.rs:182` | unverified | route handler: SQL against SQLite around the proven checks, then the audit row |
+| `in_list` | `crates/msapi-server/src/routes/mod.rs:195` | unverified | builds SQL placeholders |
+| `from_row` | `crates/msapi-server/src/routes/stats.rs:33` | unverified | reads a rusqlite row into the view |
+| `latest` | `crates/msapi-server/src/routes/stats.rs:44` | unverified | route handler: SQL against SQLite around the proven checks, then the audit row |
+| `get` | `crates/msapi-server/src/routes/stats.rs:50` | unverified | route handler: SQL against SQLite around the proven checks, then the audit row |
+| `replace` | `crates/msapi-server/src/routes/stats.rs:61` | unverified | route handler: SQL against SQLite around the proven checks, then the audit row |
+| `update` | `crates/msapi-server/src/routes/stats.rs:70` | unverified | route handler: SQL against SQLite around the proven checks, then the audit row |
+| `record` | `crates/msapi-server/src/routes/stats.rs:83` | unverified | route handler: SQL against SQLite around the proven checks, then the audit row |
+| `history` | `crates/msapi-server/src/routes/stats.rs:113` | unverified | route handler: SQL against SQLite around the proven checks, then the audit row |
+| `from_row` | `crates/msapi-server/src/routes/tokens.rs:36` | unverified | reads a rusqlite row into the view |
+| `load` | `crates/msapi-server/src/routes/tokens.rs:58` | unverified | route handler: SQL against SQLite around the proven checks, then the audit row |
+| `visible` | `crates/msapi-server/src/routes/tokens.rs:64` | unverified | route handler: SQL against SQLite around the proven checks, then the audit row |
+| `me` | `crates/msapi-server/src/routes/tokens.rs:74` | unverified | route handler: SQL against SQLite around the proven checks, then the audit row |
+| `list` | `crates/msapi-server/src/routes/tokens.rs:90` | unverified | route handler: SQL against SQLite around the proven checks, then the audit row |
+| `get` | `crates/msapi-server/src/routes/tokens.rs:102` | unverified | route handler: SQL against SQLite around the proven checks, then the audit row |
+| `mint` | `crates/msapi-server/src/routes/tokens.rs:114` | unverified | route handler: SQL against SQLite around the proven checks, then the audit row |
+| `revoke` | `crates/msapi-server/src/routes/tokens.rs:169` | unverified | route handler: SQL against SQLite around the proven checks, then the audit row |
+| `run` | `crates/msapi-server/src/serve.rs:42` | unverified | tiny_http socket I/O |
+| `worker` | `crates/msapi-server/src/serve.rs:65` | unverified | tiny_http socket I/O |
+| `read_request` | `crates/msapi-server/src/serve.rs:79` | unverified | tiny_http socket I/O |
+| `to_tiny` | `crates/msapi-server/src/serve.rs:116` | unverified | tiny_http socket I/O |
