@@ -118,18 +118,8 @@ impl Request {
 /// Splits and percent-decodes a query string.
 #[must_use]
 pub fn parse_query(query: &str) -> Vec<(String, String)> {
-    query
-        .split('&')
-        .filter(|p| !p.is_empty())
-        .map(|pair| {
-            let (k, v) = pair.split_once('=').unwrap_or((pair, ""));
-            (percent_decode(k), percent_decode(v))
-        })
-        .collect()
-}
-
-fn percent_decode(s: &str) -> String {
-    String::from_utf8_lossy(&msapi_core::query::percent_decode(s.as_bytes())).into_owned()
+    let text = |b: &[u8]| String::from_utf8_lossy(b).into_owned();
+    msapi_core::query::parse_query(query.as_bytes()).into_iter().map(|p| (text(&p.name), text(&p.value))).collect()
 }
 
 /// An outgoing response.

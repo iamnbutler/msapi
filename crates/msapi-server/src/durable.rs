@@ -220,7 +220,7 @@ pub fn restore(path: &Path, host: Option<&str>) -> io::Result<()> {
 /// Replaces the database at `path` with the log's `state` (a `GET /state`
 /// body). Returns the snapshot's batch number and the last one applied.
 pub fn rebuild(path: &Path, state: &[u8]) -> io::Result<(u64, u64)> {
-    let mut frames = Frames { bytes: state };
+    let mut frames = frames(state)?.into_iter();
     let (snapshot_seq, snapshot) = frames.next().ok_or_else(|| bad("log state has no snapshot frame"))?;
 
     for suffix in ["", "-wal", "-shm"] {
@@ -289,19 +289,11 @@ fn fetch_state(host: &str) -> io::Result<Vec<u8>> {
     }
 }
 
-struct Frames<'a> {
-    bytes: &'a [u8],
-}
-
-impl<'a> Iterator for Frames<'a> {
-    type Item = (u64, &'a [u8]);
-
-    fn next(&mut self) -> Option<Self::Item> {
-        let (seq, start, end) = batch::frame_at(self.bytes, 0)?;
-        let body = &self.bytes[start..end];
-        self.bytes = &self.bytes[end..];
-        Some((seq, body))
-    }
+/// The frames of a `GET /state` body, as sequence numbers and bodies. A body
+/// with anything but whole frames is refused rather than replayed in part.
+fn frames(state: &[u8]) -> io::Result<Vec<(u64, &[u8])>> {
+    let frames = batch::frames(state).ok_or_else(|| bad("log state has a truncated frame"))?;
+    Ok(frames.into_iter().map(|(seq, start, end)| (seq, &state[start..end])).collect())
 }
 
 /// A minimal HTTP/1.1 exchange: one request, `Connection: close`, and the body
@@ -372,8 +364,8 @@ mod tests {
             bytes.extend_from_slice(&(body.len() as u64).to_be_bytes());
             bytes.extend_from_slice(body);
         }
-        let frames: Vec<_> = Frames { bytes: &bytes }.collect();
-        assert_eq!(frames, vec![(3, &b"snap"[..]), (4, &b""[..]), (5, &b"xy"[..])]);
+        assert_eq!(frames(&bytes).unwrap(), vec![(3, &b"snap"[..]), (4, &b""[..]), (5, &b"xy"[..])]);
+        assert!(frames(&bytes[..bytes.len() - 1]).is_err(), "a truncated tail is refused");
     }
 
     #[test]

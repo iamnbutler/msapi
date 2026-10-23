@@ -441,6 +441,56 @@ proof fn lemma_statement_parts(data: Seq<u8>, at: int, q: StatementView)
     lemma_split(data, at + 4 + q.sql.len(), c, enc_params(q.params));
 }
 
+/// A run of frames, back to back.
+pub open spec fn enc_frames(fs: Seq<(u64, Seq<u8>)>) -> Seq<u8>
+    decreases fs.len(),
+{
+    if fs.len() == 0 {
+        Seq::empty()
+    } else {
+        enc_frames(fs.drop_last()) + enc_frame(fs.last().0, fs.last().1)
+    }
+}
+
+/// The frames of `fs` from the `k`th on, back to back.
+pub open spec fn frames_from(fs: Seq<(u64, Seq<u8>)>, k: int) -> Seq<u8>
+    decreases fs.len() - k,
+{
+    if k < 0 || k >= fs.len() {
+        Seq::empty()
+    } else {
+        enc_frame(fs[k].0, fs[k].1) + frames_from(fs, k + 1)
+    }
+}
+
+/// Frame positions in `data`, as sequence numbers and bodies.
+pub open spec fn frames_view(data: Seq<u8>, out: Seq<(u64, usize, usize)>) -> Seq<(u64, Seq<u8>)> {
+    out.map_values(|f: (u64, usize, usize)| (f.0, data.subrange(f.1 as int, f.2 as int)))
+}
+
+proof fn lemma_enc_frame_len(seq: u64, body: Seq<u8>)
+    ensures enc_frame(seq, body).len() == 16 + body.len(),
+{
+}
+
+/// A run of frames is its first `k` frames followed by the rest.
+proof fn lemma_frames_split(fs: Seq<(u64, Seq<u8>)>, k: int)
+    requires 0 <= k <= fs.len(),
+    ensures enc_frames(fs) == enc_frames(fs.take(k)) + frames_from(fs, k),
+    decreases fs.len() - k,
+{
+    if k == fs.len() {
+        assert(fs.take(k) =~= fs);
+        assert(enc_frames(fs) + Seq::<u8>::empty() =~= enc_frames(fs));
+    } else {
+        lemma_frames_split(fs, k + 1);
+        assert(fs.take(k + 1).drop_last() =~= fs.take(k));
+        assert(fs.take(k + 1).last() == fs[k]);
+        assert(enc_frames(fs.take(k + 1)) + frames_from(fs, k + 1)
+            =~= enc_frames(fs.take(k)) + frames_from(fs, k));
+    }
+}
+
 } // verus!
 
 /// Appends `n`, big-endian.
@@ -1063,6 +1113,108 @@ pub fn frame_at(data: &[u8], at: usize) -> Option<(u64, usize, usize)> {
     Some((seq, at + 16, end))
 }
 
+/// Every frame in `data`, which must be frames back to back with nothing
+/// left over. `None` if any header or body runs past the end.
+#[cfg_attr(feature = "verus", verus_verify)]
+#[cfg_attr(feature = "verus", verus_spec(r =>
+    ensures
+        r matches Some(out) ==> {
+            &&& enc_frames(frames_view(data@, out@)) == data@
+            &&& forall|i: int| 0 <= i < out@.len() ==> {
+                let f = #[trigger] out@[i];
+                f.1 <= f.2 <= data@.len()
+            }
+        },
+        forall|fs: Seq<(u64, Seq<u8>)>| #[trigger] enc_frames(fs) == data@
+            ==> (r matches Some(out) && frames_view(data@, out@) == fs),
+))]
+#[must_use]
+#[allow(clippy::question_mark, reason = "the `else` holds a proof block, which compiles away")]
+pub fn frames(data: &[u8]) -> Option<Vec<(u64, usize, usize)>> {
+    let mut out: Vec<(u64, usize, usize)> = Vec::new();
+    let mut at: usize = 0;
+    proof! {
+        assert(frames_view(data@, out@) =~= Seq::<(u64, Seq<u8>)>::empty());
+        assert(data@.subrange(0, 0) =~= Seq::<u8>::empty());
+    }
+    #[cfg_attr(feature = "verus", verus_spec(
+        invariant
+            at <= data@.len(),
+            enc_frames(frames_view(data@, out@)) == data@.subrange(0, at as int),
+            forall|i: int| 0 <= i < out@.len() ==> {
+                let f = #[trigger] out@[i];
+                f.1 <= f.2 <= data@.len()
+            },
+            forall|fs: Seq<(u64, Seq<u8>)>| #[trigger] enc_frames(fs) == data@
+                ==> out@.len() <= fs.len() && frames_view(data@, out@) == fs.take(out@.len() as int),
+        decreases data@.len() - at
+    ))]
+    while at < data.len() {
+        let Some((seq, start, end)) = frame_at(data, at) else {
+            proof! {
+                assert forall|fs: Seq<(u64, Seq<u8>)>| #[trigger] enc_frames(fs) == data@ implies false by {
+                    let k = out@.len() as int;
+                    lemma_frames_split(fs, k);
+                    if k == fs.len() {
+                        assert(fs.take(k) =~= fs);
+                        assert(data@.subrange(0, at as int).len() == data@.len());
+                    } else {
+                        lemma_enc_frame_len(fs[k].0, fs[k].1);
+                        assert(enc_frames(fs.take(k)) == data@.subrange(0, at as int));
+                        assert(frames_from(fs, k) == enc_frame(fs[k].0, fs[k].1) + frames_from(fs, k + 1));
+                        assert(data@.subrange(at as int, at + 16 + fs[k].1.len())
+                            =~= enc_frame(fs[k].0, fs[k].1));
+                        assert(encoded_at(data@, at as int, enc_frame(fs[k].0, fs[k].1)));
+                    }
+                }
+            }
+            return None;
+        };
+        proof! {
+            let body = data@.subrange(start as int, end as int);
+            let old_view = frames_view(data@, out@);
+            let new_view = frames_view(data@, out@.push((seq, start, end)));
+            assert(new_view =~= old_view.push((seq, body)));
+            assert(new_view.drop_last() =~= old_view);
+            assert(data@.subrange(0, end as int)
+                =~= data@.subrange(0, at as int) + data@.subrange(at as int, end as int));
+            lemma_enc_frame_len(seq, body);
+            assert(data@.subrange(at as int, end as int) =~= enc_frame(seq, body));
+            assert forall|fs: Seq<(u64, Seq<u8>)>| #[trigger] enc_frames(fs) == data@
+                implies out@.len() + 1 <= fs.len() && new_view == fs.take(out@.len() + 1 as int) by {
+                let k = out@.len() as int;
+                lemma_frames_split(fs, k);
+                if k == fs.len() {
+                    assert(fs.take(k) =~= fs);
+                    assert(data@.subrange(0, at as int).len() == data@.len());
+                }
+                lemma_enc_frame_len(fs[k].0, fs[k].1);
+                assert(frames_from(fs, k) == enc_frame(fs[k].0, fs[k].1) + frames_from(fs, k + 1));
+                assert(data@.subrange(at as int, at + 16 + fs[k].1.len()) =~= enc_frame(fs[k].0, fs[k].1));
+                assert(encoded_at(data@, at as int, enc_frame(fs[k].0, fs[k].1)));
+                assert(fs[k].1 =~= body);
+                assert(fs.take(k + 1) =~= fs.take(k).push(fs[k]));
+            }
+        }
+        out.push((seq, start, end));
+        at = end;
+    }
+    proof! {
+        assert(data@.subrange(0, at as int) =~= data@);
+        assert forall|fs: Seq<(u64, Seq<u8>)>| #[trigger] enc_frames(fs) == data@
+            implies frames_view(data@, out@) == fs by {
+            let k = out@.len() as int;
+            lemma_frames_split(fs, k);
+            if k < fs.len() {
+                lemma_enc_frame_len(fs[k].0, fs[k].1);
+                assert(frames_from(fs, k) == enc_frame(fs[k].0, fs[k].1) + frames_from(fs, k + 1));
+            }
+            assert(fs.take(k) =~= fs);
+        }
+    }
+    Some(out)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1103,5 +1255,8 @@ mod tests {
         assert_eq!(frame_at(&bytes, 0), Some((7, 16, 18)));
         assert_eq!(frame_at(&bytes, 18), None);
         assert_eq!(frame_at(&bytes[..17], 0), None);
+        assert_eq!(frames(&bytes), Some(vec![(7, 16, 18)]));
+        assert_eq!(frames(&bytes[..17]), None);
+        assert_eq!(frames(&[]), Some(vec![]));
     }
 }
