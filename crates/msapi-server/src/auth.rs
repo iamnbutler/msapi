@@ -9,6 +9,15 @@
 //! else. Every request re-checks the whole ancestor chain, so revoking or
 //! expiring a token cuts off everything minted from it immediately.
 
+#![allow(
+    clippy::cast_lossless,
+    clippy::single_char_add_str,
+    clippy::manual_map,
+    clippy::single_match,
+    clippy::collapsible_if,
+    reason = "Verus checks plain casts, matches and `push_str`; it has no spec for `From` widening, `Option` combinators or `if let` chains"
+)]
+
 use std::fmt;
 use std::str::FromStr;
 
@@ -17,11 +26,14 @@ use serde::{Deserialize, Serialize};
 
 use msapi_core::Timestamp;
 use msapi_core::api;
+use msapi_core::msg;
 use msapi_core::policy::{self, AccountCheck, Link, MintRefusal, Parent};
 use msapi_core::scope;
 
 use crate::error::ApiError;
 use crate::ids;
+#[cfg(feature = "verus")]
+use msapi_core::msg::{chars, lemma_boundary_after_ascii};
 #[cfg(feature = "verus")]
 use msapi_core::policy::{bit_set, reaches_spec, subset};
 #[cfg(feature = "verus")]
@@ -29,7 +41,10 @@ use vstd::prelude::*;
 #[cfg(feature = "verus")]
 use vstd::string::StringSliceAdditionalSpecFns;
 #[cfg(feature = "verus")]
-use vstd::utf8::encode_utf8;
+use vstd::utf8::{
+    encode_utf8, encode_utf8_valid_utf8, is_char_boundary_iff_not_is_continuation_byte,
+    is_char_boundary_start_end_of_seq,
+};
 
 /// One permission.
 #[cfg_attr(feature = "verus", verus_verify)]
@@ -65,17 +80,72 @@ impl Scope {
         Self::TokensWrite,
         Self::AuditRead,
     ];
+}
 
-    /// The wire name, e.g. `"characters:write"`, from the proven table in
-    /// [`scope::scope_name`] (whose names are ASCII).
-    #[must_use]
-    pub fn as_str(self) -> &'static str {
-        std::str::from_utf8(scope::scope_name(self as u16)).unwrap_or_default()
+#[cfg(feature = "verus")]
+verus! {
+
+impl Scope {
+    /// The wire name, e.g. `"characters:write"`.
+    pub open spec fn wire(self) -> Seq<char> {
+        match self {
+            Self::AccountsRead => "accounts:read"@,
+            Self::AccountsWrite => "accounts:write"@,
+            Self::CharactersRead => "characters:read"@,
+            Self::CharactersWrite => "characters:write"@,
+            Self::Delete => "delete"@,
+            Self::TokensRead => "tokens:read"@,
+            Self::TokensWrite => "tokens:write"@,
+            Self::AuditRead => "audit:read"@,
+        }
     }
 }
 
+/// The error for a name that is no scope.
+pub open spec fn unknown_message(name: Seq<char>) -> Seq<char> {
+    "unknown scope `"@ + name
+        + "`; known scopes: accounts:read, accounts:write, characters:read, characters:write, delete, tokens:read, tokens:write, audit:read"@
+}
+
+/// The scope `names[i]` names, if any.
+pub open spec fn named(names: Seq<String>, i: int) -> Option<u16> {
+    scope::index_of(encode_utf8(names[i]@))
+}
+
+/// `ids` separated by `", "`, as `[String]::join(", ")` gives.
+pub open spec fn joined(ids: Seq<String>) -> Seq<char>
+    decreases ids.len(),
+{
+    if ids.len() == 0 {
+        Seq::empty()
+    } else if ids.len() == 1 {
+        ids[0]@
+    } else {
+        joined(ids.drop_last()) + ", "@ + ids.last()@
+    }
+}
+
+} // verus!
+
 #[cfg_attr(feature = "verus", verus_verify)]
 impl Scope {
+    /// The wire name, e.g. `"characters:write"`. The tests check it is the
+    /// text the proven [`scope::scope_name`] table parses.
+    #[cfg_attr(feature = "verus", verus_spec(r => ensures r@ == self.wire()))]
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::AccountsRead => "accounts:read",
+            Self::AccountsWrite => "accounts:write",
+            Self::CharactersRead => "characters:read",
+            Self::CharactersWrite => "characters:write",
+            Self::Delete => "delete",
+            Self::TokensRead => "tokens:read",
+            Self::TokensWrite => "tokens:write",
+            Self::AuditRead => "audit:read",
+        }
+    }
+
     /// The scope at index `k` of [`Scope::ALL`].
     #[cfg_attr(feature = "verus", verus_spec(r =>
         ensures
@@ -101,7 +171,7 @@ impl Scope {
     #[cfg_attr(feature = "verus", verus_spec(r =>
         ensures
             r matches Some(s) ==> scope::index_of(name.spec_bytes()) == Some(s as u16),
-            scope::index_of(name.spec_bytes()) is None ==> r is None,
+            scope::index_of(name.spec_bytes()) is None <==> r is None,
     ))]
     #[must_use]
     pub fn parse(name: &str) -> Option<Self> {
@@ -112,16 +182,31 @@ impl Scope {
     }
 }
 
+#[cfg_attr(feature = "verus", verus_verify)]
 impl FromStr for Scope {
     type Err = String;
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        Self::parse(s).ok_or_else(|| unknown_scope(s))
+        match Self::parse(s) {
+            Some(x) => Ok(x),
+            None => Err(unknown_scope(s)),
+        }
     }
 }
 
+/// The error for `name`, which is no scope.
+#[cfg_attr(feature = "verus", verus_verify)]
+#[cfg_attr(feature = "verus", verus_spec(r => ensures r@ == unknown_message(name@)))]
 fn unknown_scope(name: &str) -> String {
-    let known: Vec<_> = Scope::ALL.iter().map(|s| s.as_str()).collect();
-    format!("unknown scope `{name}`; known scopes: {}", known.join(", "))
+    let mut m = String::new();
+    m.push_str("unknown scope `");
+    m.push_str(name);
+    m.push_str(
+        "`; known scopes: accounts:read, accounts:write, characters:read, characters:write, delete, tokens:read, tokens:write, audit:read",
+    );
+    proof! {
+        assert(Seq::<char>::empty() + "unknown scope `"@ =~= "unknown scope `"@);
+    }
+    m
 }
 
 /// A set of scopes: bit `i` is scope `i` of [`Scope::ALL`].
@@ -174,53 +259,213 @@ impl Scopes {
     pub const fn minus(self, other: Self) -> Self {
         Self(policy::minus(self.0, other.0))
     }
-}
 
-impl Scopes {
     /// The scopes, in declaration order.
-    pub fn iter(self) -> impl Iterator<Item = Scope> {
-        Scope::ALL.into_iter().filter(move |s| self.contains(*s))
+    #[cfg_attr(feature = "verus", verus_spec(r =>
+        ensures
+            forall|i: int| 0 <= i < r@.len() ==> bit_set(self.bits(), #[trigger] r@[i] as u16),
+            forall|i: int, j: int| 0 <= i < j < r@.len() ==> (#[trigger] r@[i] as u16) < (#[trigger] r@[j] as u16),
+            forall|k: u16| k < scope::COUNT && #[trigger] bit_set(self.bits(), k) ==> exists|i: int| 0 <= i < r@.len() && #[trigger] r@[i] as u16 == k,
+    ))]
+    #[must_use]
+    pub fn list(self) -> Vec<Scope> {
+        let mut out: Vec<Scope> = Vec::new();
+        let mut k: u16 = 0;
+        #[cfg_attr(feature = "verus", verus_spec(
+            invariant
+                k <= scope::COUNT,
+                forall|i: int| 0 <= i < out@.len() ==> bit_set(self.bits(), #[trigger] out@[i] as u16) && (out@[i] as u16) < k,
+                forall|i: int, j: int| 0 <= i < j < out@.len() ==> (#[trigger] out@[i] as u16) < (#[trigger] out@[j] as u16),
+                forall|m: u16| m < k && #[trigger] bit_set(self.bits(), m) ==> exists|i: int| 0 <= i < out@.len() && #[trigger] out@[i] as u16 == m,
+            decreases scope::COUNT - k
+        ))]
+        while k < scope::COUNT {
+            proof_decl! {
+                let ghost before = out@;
+            }
+            if let Some(s) = Scope::from_index(k) {
+                if self.contains(s) {
+                    out.push(s);
+                    proof! {
+                        assert(out@[out@.len() - 1] as u16 == k);
+                    }
+                }
+            }
+            proof! {
+                assert forall|m: u16| m < k + 1 && #[trigger] bit_set(self.bits(), m)
+                    implies exists|i: int| 0 <= i < out@.len() && #[trigger] out@[i] as u16 == m by {
+                    if m < k {
+                        let i = choose|i: int| 0 <= i < before.len() && #[trigger] before[i] as u16 == m;
+                        assert(out@[i] == before[i]);
+                    } else {
+                        assert(out@[out@.len() - 1] as u16 == k);
+                    }
+                }
+            }
+            k += 1;
+        }
+        out
     }
-}
 
-impl FromIterator<Scope> for Scopes {
-    fn from_iter<I: IntoIterator<Item = Scope>>(iter: I) -> Self {
-        Self(iter.into_iter().fold(0, |acc, s| policy::with(acc, s as u16)))
+    /// The scopes named in `names`.
+    ///
+    /// # Errors
+    ///
+    /// The first name that is no scope, worded by [`unknown_scope`].
+    #[cfg_attr(feature = "verus", verus_spec(r =>
+        ensures
+            match r {
+                Ok(set) => forall|k: u16| k < 16 ==> (#[trigger] bit_set(set.bits(), k)
+                    <==> exists|i: int| 0 <= i < names@.len() && #[trigger] named(names@, i) == Some(k)),
+                Err(m) => exists|i: int| 0 <= i < names@.len() && #[trigger] named(names@, i) is None
+                    && m@ == unknown_message(names@[i]@),
+            },
+    ))]
+    pub fn from_names(names: &[String]) -> Result<Self, String> {
+        let mut acc: u16 = 0;
+        let mut i: usize = 0;
+        proof! {
+            assert forall|k: u16| k < 16 implies !bit_set(0u16, k) by {
+                assert((0u16 >> k) & 1u16 == 0u16) by (bit_vector);
+            }
+        }
+        #[cfg_attr(feature = "verus", verus_spec(
+            invariant
+                i <= names@.len(),
+                forall|k: u16| k < 16 ==> (#[trigger] bit_set(acc, k)
+                    <==> exists|j: int| 0 <= j < i && #[trigger] named(names@, j) == Some(k)),
+            decreases names@.len() - i
+        ))]
+        while i < names.len() {
+            match Scope::parse(names[i].as_str()) {
+                Some(s) => {
+                    let next = policy::with(acc, s as u16);
+                    proof! {
+                        assert forall|k: u16| k < 16 implies (#[trigger] bit_set(next, k)
+                            <==> exists|j: int| 0 <= j < i + 1 && #[trigger] named(names@, j) == Some(k)) by {
+                            if bit_set(next, k) {
+                                if k == s as u16 {
+                                    assert(named(names@, i as int) == Some(k));
+                                } else {
+                                    assert(bit_set(acc, k));
+                                }
+                            }
+                            if exists|j: int| 0 <= j < i + 1 && #[trigger] named(names@, j) == Some(k) {
+                                let j = choose|j: int| 0 <= j < i + 1 && #[trigger] named(names@, j) == Some(k);
+                                if j < i {
+                                    assert(bit_set(acc, k));
+                                }
+                            }
+                        }
+                    }
+                    acc = next;
+                }
+                None => {
+                    proof! {
+                        assert(named(names@, i as int) is None);
+                    }
+                    return Err(unknown_scope(names[i].as_str()));
+                }
+            }
+            i += 1;
+        }
+        Ok(Self(acc))
+    }
+
+    /// The names of the scopes, separated by spaces: the proven
+    /// [`scope::format_scopes`].
+    #[cfg_attr(feature = "verus", verus_spec(r => ensures r@ == chars(scope::fmt(self.bits(), 8))))]
+    #[must_use]
+    pub fn text(self) -> String {
+        msg::text(scope::format_scopes(self.0).as_slice())
+    }
+
+    /// What `Debug` writes: `Scopes(delete tokens:read)`.
+    #[cfg_attr(feature = "verus", verus_spec(r => ensures r@ == "Scopes("@ + chars(scope::fmt(self.bits(), 8)) + ")"@))]
+    #[must_use]
+    pub fn debug_text(self) -> String {
+        let mut m = String::new();
+        m.push_str("Scopes(");
+        m.push_str(self.text().as_str());
+        m.push_str(")");
+        proof! {
+            assert(Seq::<char>::empty() + "Scopes("@ =~= "Scopes("@);
+        }
+        m
+    }
+
+    /// The scopes in space-separated `s`: the proven [`scope::parse_scopes`].
+    ///
+    /// # Errors
+    ///
+    /// A word that is no scope, worded by [`unknown_scope`].
+    #[cfg_attr(feature = "verus", verus_spec(r =>
+        ensures
+            match r {
+                Ok(set) => scope::parse(s.spec_bytes()) == Some(set.bits()),
+                Err(m) => scope::parse(s.spec_bytes()) is None
+                    && exists|w: Seq<char>| scope::index_of(encode_utf8(w)) is None && m@ == #[trigger] unknown_message(w),
+            },
+    ))]
+    pub fn parse(s: &str) -> Result<Self, String> {
+        match scope::parse_scopes(s.as_bytes()) {
+            Ok(bits) => Ok(Self(bits)),
+            Err((start, end)) => {
+                // The offending word is bounded by ASCII whitespace or the
+                // ends, so both cuts fall on character boundaries.
+                proof! {
+                    let b = s.spec_bytes();
+                    encode_utf8_valid_utf8(s@);
+                    is_char_boundary_start_end_of_seq(b);
+                    if start > 0 {
+                        lemma_boundary_after_ascii(b, start - 1);
+                    }
+                    if end < b.len() {
+                        is_char_boundary_iff_not_is_continuation_byte(b, end as int);
+                    }
+                }
+                let word = msg::cut(s, start, end);
+                let m = unknown_scope(word);
+                proof! {
+                    assert(word.spec_bytes() == s.spec_bytes().subrange(start as int, end as int));
+                    assert(unknown_message(word@) == m@);
+                }
+                Err(m)
+            }
+        }
     }
 }
 
 impl fmt::Display for Scopes {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        // Scope names are ASCII, so this never fails.
-        f.write_str(std::str::from_utf8(&scope::format_scopes(self.0)).map_err(|_| fmt::Error)?)
+        f.write_str(&self.text())
     }
 }
 
 impl fmt::Debug for Scopes {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "Scopes({self})")
+        f.write_str(&self.debug_text())
     }
 }
 
+#[cfg_attr(feature = "verus", verus_verify)]
 impl FromStr for Scopes {
     type Err = String;
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        // The offending token is bounded by ASCII whitespace or the ends, so
-        // slicing there is on a char boundary.
-        scope::parse_scopes(s.as_bytes()).map(Self).map_err(|(start, end)| unknown_scope(&s[start..end]))
+        Self::parse(s)
     }
 }
 
 impl Serialize for Scopes {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        serializer.collect_seq(self.iter().map(Scope::as_str))
+        serializer.collect_seq(self.list().into_iter().map(Scope::as_str))
     }
 }
 
 impl<'de> Deserialize<'de> for Scopes {
     fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         let names = Vec::<String>::deserialize(deserializer)?;
-        names.iter().map(|n| n.parse::<Scope>()).collect::<Result<Self, _>>().map_err(serde::de::Error::custom)
+        Self::from_names(&names).map_err(serde::de::Error::custom)
     }
 }
 
@@ -244,24 +489,105 @@ pub struct Principal {
     pub expires_at: Option<Timestamp>,
 }
 
+#[cfg_attr(feature = "verus", verus_verify)]
 impl Principal {
     /// Fails unless the token has `scope`.
+    ///
+    /// # Errors
+    ///
+    /// 403 naming the token and the missing scope.
+    #[cfg_attr(feature = "verus", verus_spec(r =>
+        ensures
+            r is Ok <==> bit_set(self.scopes.bits(), scope as u16),
+            r matches Err(e) ==> e.status == 403 && e.name == "forbidden" && e.details is None
+                && e.message@ == "token `"@ + self.label@ + "` lacks the `"@ + scope.wire() + "` scope"@,
+    ))]
     pub fn require(&self, scope: Scope) -> Result<(), ApiError> {
         if self.scopes.contains(scope) {
             Ok(())
         } else {
-            Err(ApiError::forbidden(format!("token `{}` lacks the `{}` scope", self.label, scope.as_str())))
+            let mut m = String::new();
+            m.push_str("token `");
+            m.push_str(self.label.as_str());
+            m.push_str("` lacks the `");
+            m.push_str(scope.as_str());
+            m.push_str("` scope");
+            proof! {
+                assert(Seq::<char>::empty() + "token `"@ =~= "token `"@);
+            }
+            Err(ApiError { status: 403, name: "forbidden", message: m, details: None })
         }
     }
 
     /// Fails unless the token may touch `account_id`.
+    ///
+    /// # Errors
+    ///
+    /// 403 naming the token and the accounts it is limited to.
+    #[cfg_attr(feature = "verus", verus_spec(r =>
+        ensures
+            r is Ok <==> match self.account_ids {
+                None => true,
+                Some(ids) => exists|i: int| 0 <= i < ids@.len() && #[trigger] encode_utf8(ids@[i]@) == account_id.spec_bytes(),
+            },
+            r matches Err(e) ==> e.status == 403 && e.name == "forbidden" && e.details is None
+                && e.message@ == "token `"@ + self.label@ + "` is limited to accounts "@
+                    + joined(match self.account_ids { Some(ids) => ids@, None => Seq::empty() }),
+    ))]
     pub fn require_account(&self, account_id: &str) -> Result<(), ApiError> {
         if self.reaches_account(account_id) {
             return Ok(());
         }
-        let ids = self.account_ids.as_deref().unwrap_or_default().join(", ");
-        Err(ApiError::forbidden(format!("token `{}` is limited to accounts {ids}", self.label)))
+        let mut m = String::new();
+        m.push_str("token `");
+        m.push_str(self.label.as_str());
+        m.push_str("` is limited to accounts ");
+        match &self.account_ids {
+            Some(ids) => m.push_str(join(ids.as_slice()).as_str()),
+            None => {
+                proof! {
+                    assert(joined(Seq::<String>::empty()) =~= Seq::<char>::empty());
+                }
+            }
+        }
+        proof! {
+            assert(Seq::<char>::empty() + "token `"@ =~= "token `"@);
+        }
+        Err(ApiError { status: 403, name: "forbidden", message: m, details: None })
     }
+}
+
+/// `ids` separated by `", "`.
+#[cfg_attr(feature = "verus", verus_verify)]
+#[cfg_attr(feature = "verus", verus_spec(r => ensures r@ == joined(ids@)))]
+fn join(ids: &[String]) -> String {
+    let mut out = String::new();
+    let mut i: usize = 0;
+    #[cfg_attr(feature = "verus", verus_spec(
+        invariant
+            i <= ids@.len(),
+            out@ == joined(ids@.subrange(0, i as int)),
+        decreases ids@.len() - i
+    ))]
+    while i < ids.len() {
+        proof! {
+            assert(ids@.subrange(0, i + 1).drop_last() =~= ids@.subrange(0, i as int));
+        }
+        proof! {
+            if i == 0 {
+                assert(Seq::<char>::empty() + ids@[0]@ =~= ids@[0]@);
+            }
+        }
+        if i > 0 {
+            out.push_str(", ");
+        }
+        out.push_str(ids[i].as_str());
+        i += 1;
+    }
+    proof! {
+        assert(ids@.subrange(0, ids@.len() as int) =~= ids@);
+    }
+    out
 }
 
 #[cfg_attr(feature = "verus", verus_verify)]
@@ -414,10 +740,13 @@ pub fn create_user(conn: &mut Connection, display_name: &str) -> rusqlite::Resul
 }
 
 /// Default lifetime of a delegated token: one day.
+#[cfg_attr(feature = "verus", verus_verify)]
 pub const DEFAULT_TTL_SECONDS: u64 = policy::DEFAULT_TTL_SECONDS;
 /// Longest lifetime of a delegated token: thirty days.
+#[cfg_attr(feature = "verus", verus_verify)]
 pub const MAX_TTL_SECONDS: u64 = policy::MAX_TTL_SECONDS;
 /// Deepest delegation chain below a root token.
+#[cfg_attr(feature = "verus", verus_verify)]
 pub const MAX_DEPTH: u64 = policy::MAX_DEPTH;
 
 /// `POST /v1/tokens` body.
@@ -438,6 +767,7 @@ pub struct MintRequest {
 }
 
 /// A validated mint, ready to insert.
+#[cfg_attr(feature = "verus", verus_verify)]
 #[derive(Debug)]
 pub struct Mint {
     /// The new token's label.
@@ -450,67 +780,228 @@ pub struct Mint {
     pub expires_at: Timestamp,
 }
 
+#[cfg(feature = "verus")]
+verus! {
+
+/// `id` is one of `list`.
+pub open spec fn listed(id: Seq<u8>, list: Seq<String>) -> bool {
+    exists|j: int| 0 <= j < list.len() && #[trigger] encode_utf8(list[j]@) == id
+}
+
+} // verus!
+
 impl MintRequest {
-    /// Checks the request against what `parent` may delegate.
+    /// Checks the request against what `parent` may delegate, as of now:
+    /// [`check_mint`] with the system clock.
     ///
     /// `depth` is how many delegations already sit above `parent`
     /// (0 for a root token). `owned_accounts` are the user's account IDs.
+    ///
+    /// # Errors
+    ///
+    /// The refusal [`check_mint`] gives.
     pub fn validate(self, parent: &Principal, depth: u64, owned_accounts: &[String]) -> Result<Mint, ApiError> {
-        let label = api::name_in(self.label.as_bytes(), 1, 100)
-            .and_then(|(a, b)| self.label.get(a..b))
-            .ok_or_else(|| ApiError::invalid("label must be 1-100 characters"))?
-            .to_owned();
-        // The rules themselves are in `msapi_core::policy`, checked by Verus; this
-        // gathers their inputs and words their refusals.
-        let owned = as_bytes(owned_accounts);
-        let allowed = parent.account_ids.as_deref().map(as_bytes);
-        let checks: Option<Vec<AccountCheck>> =
-            self.account_ids.as_deref().map(|ids| policy::account_checks(&as_bytes(ids), &owned, allowed.as_deref()));
-        let decision = policy::check_mint(
-            Parent {
-                scopes: parent.scopes.0,
-                depth,
-                limited: parent.account_ids.is_some(),
-                expires_at: parent.expires_at.map(Timestamp::millis),
-            },
-            self.scopes.0,
-            checks.as_deref(),
+        check_mint(
+            &self.label,
+            self.scopes,
+            self.account_ids,
             self.expires_in_seconds,
+            parent,
+            depth,
+            owned_accounts,
             Timestamp::now().millis(),
-        );
-        let account = |i: usize| self.account_ids.as_ref().and_then(|ids| ids.get(i)).map_or("", String::as_str);
-        let expires_at = decision.map_err(|refusal| match refusal {
-            MintRefusal::NoScopes => ApiError::invalid("grant at least one scope"),
-            MintRefusal::ExcessScopes(excess) => {
-                ApiError::forbidden(format!("cannot grant scopes this token does not have: {}", Scopes(excess)))
-            }
-            MintRefusal::TooDeep => ApiError::forbidden(format!("delegation chains are limited to {MAX_DEPTH} levels")),
-            MintRefusal::MustListAccounts => ApiError::invalid(
-                "this token is limited to specific accounts, so the new token must list account_ids too",
-            ),
-            MintRefusal::EmptyAccounts => {
-                ApiError::invalid("account_ids must not be empty; omit it to allow every account")
-            }
-            MintRefusal::UnknownAccount(i) => ApiError::not_found(format!("account `{}`", account(i))),
-            MintRefusal::UnreachableAccount(i) => {
-                ApiError::forbidden(format!("this token cannot reach account `{}`", account(i)))
-            }
-            MintRefusal::TtlOutOfRange => ApiError::invalid(format!(
-                "expires_in_seconds must be between {} and {MAX_TTL_SECONDS}",
-                policy::MIN_TTL_SECONDS
-            )),
-            MintRefusal::OutlivesParent => ApiError::invalid(format!(
-                "a token cannot outlive the token that mints it; this one expires at {}",
-                parent.expires_at.map(|t| t.to_string()).unwrap_or_default()
-            )),
-        })?;
+        )
+    }
+}
 
-        Ok(Mint {
-            label,
-            scopes: self.scopes,
-            account_ids: self.account_ids,
-            expires_at: Timestamp::from_millis(expires_at),
-        })
+/// The latest clock reading [`policy::check_mint`] accepts.
+#[cfg_attr(feature = "verus", verus_verify)]
+#[allow(
+    clippy::cast_possible_wrap,
+    reason = "thirty days of milliseconds fits an i64; Verus has no spec for `cast_signed`"
+)]
+pub const LATEST_MS: i64 = i64::MAX - (MAX_TTL_SECONDS * 1000) as i64;
+
+/// Checks a mint of `label`, `scopes`, `account_ids` and
+/// `expires_in_seconds` against what `parent` may delegate at `now_ms`.
+///
+/// The rules are the proven [`policy::check_mint`] and
+/// [`policy::account_checks`]; this gathers their inputs and words their
+/// refusals. `depth` is how many delegations already sit above `parent`
+/// (0 for a root token). `owned_accounts` are the user's account IDs.
+///
+/// # Errors
+///
+/// A label that is not 1-100 characters once trimmed, or the refusal
+/// [`policy::check_mint`] gives.
+#[cfg_attr(feature = "verus", verus_verify)]
+#[cfg_attr(feature = "verus", verus_spec(r =>
+    requires 0 <= now_ms,
+    ensures
+        r matches Ok(m) ==> {
+            &&& encode_utf8(m.label@) == msapi_core::text::trimmed(encode_utf8(label@))
+            &&& 1 <= msapi_core::text::chars(msapi_core::text::trimmed(encode_utf8(label@))) <= 100
+            &&& m.scopes == scopes
+            &&& m.account_ids == account_ids
+            &&& scopes.bits() != 0
+            &&& subset(scopes.bits(), parent.scopes.bits())
+            &&& depth < MAX_DEPTH
+            &&& (parent.account_ids is Some ==> account_ids is Some)
+            &&& (account_ids matches Some(ids) ==> ids@.len() > 0 && forall|i: int| 0 <= i < ids@.len() ==> {
+                    let id = #[trigger] encode_utf8(ids@[i]@);
+                    &&& listed(id, owned_accounts@)
+                    &&& (parent.account_ids matches Some(p) ==> listed(id, p@))
+                })
+            &&& now_ms <= LATEST_MS ==> m.expires_at.ms() <= now_ms + MAX_TTL_SECONDS * 1000
+            &&& (parent.expires_at matches Some(p) ==> m.expires_at.ms() <= p.ms())
+        },
+))]
+#[allow(clippy::too_many_arguments, reason = "the fields of a `MintRequest`, which Verus cannot see, plus the clock")]
+pub fn check_mint(
+    label: &str,
+    scopes: Scopes,
+    account_ids: Option<Vec<String>>,
+    expires_in_seconds: Option<u64>,
+    parent: &Principal,
+    depth: u64,
+    owned_accounts: &[String],
+    now_ms: i64,
+) -> Result<Mint, ApiError> {
+    // `name_in` trims whole characters, so the range falls on character
+    // boundaries; checking costs nothing and spares a proof that it does.
+    let label = match api::name_in(label.as_bytes(), 1, 100) {
+        Some((a, b)) if label.is_char_boundary(a) && label.is_char_boundary(b) => {
+            let kept = msg::cut(label, a, b).to_owned();
+            proof! {
+                assert(encode_utf8(kept@) == encode_utf8(label@).subrange(a as int, b as int));
+            }
+            kept
+        }
+        _ => return Err(ApiError::invalid("label must be 1-100 characters")),
+    };
+    let owned = as_bytes(owned_accounts);
+    let allowed: Option<Vec<&[u8]>> = match &parent.account_ids {
+        Some(ids) => Some(as_bytes(ids.as_slice())),
+        None => None,
+    };
+    let allowed_slice: Option<&[&[u8]]> = match &allowed {
+        Some(v) => Some(v.as_slice()),
+        None => None,
+    };
+    let checks: Option<Vec<AccountCheck>> = match &account_ids {
+        Some(ids) => Some(policy::account_checks(as_bytes(ids.as_slice()).as_slice(), owned.as_slice(), allowed_slice)),
+        None => None,
+    };
+    let check_slice: Option<&[AccountCheck]> = match &checks {
+        Some(v) => Some(v.as_slice()),
+        None => None,
+    };
+    let parent_expiry = match parent.expires_at {
+        Some(t) => Some(t.millis()),
+        None => None,
+    };
+    // A real clock is far inside this range; clamping keeps the policy's
+    // arithmetic in bounds without a fallible step.
+    let now = if now_ms > LATEST_MS { LATEST_MS } else { now_ms };
+    let decision = policy::check_mint(
+        Parent { scopes: parent.scopes.0, depth, limited: parent.account_ids.is_some(), expires_at: parent_expiry },
+        scopes.0,
+        check_slice,
+        expires_in_seconds,
+        now,
+    );
+    match decision {
+        Ok(expires_at) => {
+            proof! {
+                if account_ids is Some {
+                    let ids = account_ids->0;
+                    assert forall|i: int| 0 <= i < ids@.len() implies {
+                        let id = #[trigger] encode_utf8(ids@[i]@);
+                        &&& listed(id, owned_accounts@)
+                        &&& (parent.account_ids matches Some(p) ==> listed(id, p@))
+                    } by {
+                        let id = encode_utf8(ids@[i]@);
+                        let c = (check_slice->0)@[i];
+                        assert(c.owned && c.reachable);
+                        let j = choose|j: int| 0 <= j < owned@.len() && (#[trigger] owned@[j])@ == id;
+                        assert(encode_utf8(owned_accounts@[j]@) == id);
+                        if parent.account_ids is Some {
+                            let p = parent.account_ids->0;
+                            let a = (allowed_slice->0)@;
+                            let k = choose|k: int| 0 <= k < a.len() && (#[trigger] a[k])@ == id;
+                            assert(encode_utf8(p@[k]@) == id);
+                        }
+                    }
+                }
+            }
+            Ok(Mint { label, scopes, account_ids, expires_at: Timestamp::from_millis(expires_at) })
+        }
+        Err(refusal) => Err(refusal_error(refusal, account_ids.as_ref(), parent.expires_at)),
+    }
+}
+
+/// The error for `refusal`; `account_ids` are the requested accounts and
+/// `parent_expiry` the minting token's expiry.
+#[cfg_attr(feature = "verus", verus_verify)]
+fn refusal_error(
+    refusal: MintRefusal,
+    account_ids: Option<&Vec<String>>,
+    parent_expiry: Option<Timestamp>,
+) -> ApiError {
+    match refusal {
+        MintRefusal::NoScopes => ApiError::invalid("grant at least one scope"),
+        MintRefusal::ExcessScopes(excess) => {
+            let mut m = String::new();
+            m.push_str("cannot grant scopes this token does not have: ");
+            m.push_str(Scopes(excess).text().as_str());
+            ApiError::forbidden(m)
+        }
+        MintRefusal::TooDeep => {
+            let mut m = String::new();
+            m.push_str("delegation chains are limited to ");
+            msg::push_uint(&mut m, MAX_DEPTH as u128);
+            m.push_str(" levels");
+            ApiError::forbidden(m)
+        }
+        MintRefusal::MustListAccounts => {
+            ApiError::invalid("this token is limited to specific accounts, so the new token must list account_ids too")
+        }
+        MintRefusal::EmptyAccounts => {
+            ApiError::invalid("account_ids must not be empty; omit it to allow every account")
+        }
+        MintRefusal::UnknownAccount(i) => ApiError::not_found_id("account", account_at(account_ids, i)),
+        MintRefusal::UnreachableAccount(i) => {
+            let mut m = String::new();
+            m.push_str("this token cannot reach account `");
+            m.push_str(account_at(account_ids, i));
+            m.push_str("`");
+            ApiError::forbidden(m)
+        }
+        MintRefusal::TtlOutOfRange => {
+            let mut m = String::new();
+            m.push_str("expires_in_seconds must be between ");
+            msg::push_uint(&mut m, policy::MIN_TTL_SECONDS as u128);
+            m.push_str(" and ");
+            msg::push_uint(&mut m, MAX_TTL_SECONDS as u128);
+            ApiError::invalid(m)
+        }
+        MintRefusal::OutlivesParent => {
+            let mut m = String::new();
+            m.push_str("a token cannot outlive the token that mints it; this one expires at ");
+            if let Some(t) = parent_expiry {
+                m.push_str(t.to_rfc3339().as_str());
+            }
+            ApiError::invalid(m)
+        }
+    }
+}
+
+/// Requested account `i`, or `""` if there is none.
+#[cfg_attr(feature = "verus", verus_verify)]
+fn account_at(account_ids: Option<&Vec<String>>, i: usize) -> &str {
+    match account_ids {
+        Some(ids) if i < ids.len() => ids[i].as_str(),
+        _ => "",
     }
 }
 
@@ -553,7 +1044,83 @@ mod tests {
             assert_eq!(s.as_str().parse::<Scope>().unwrap(), s, "scope {k} round-trips by name");
             assert_eq!(s as usize, k);
         }
-        assert_eq!(Scopes::all().iter().count(), Scope::ALL.len());
+        assert_eq!(Scopes::all().list().len(), Scope::ALL.len());
+    }
+
+    #[test]
+    fn wording_is_unchanged() {
+        for (k, s) in Scope::ALL.into_iter().enumerate() {
+            assert_eq!(s.as_str().as_bytes(), scope::scope_name(s as u16), "scope {k} has its proven name");
+        }
+        let known: Vec<_> = Scope::ALL.iter().map(|s| s.as_str()).collect();
+        assert_eq!(unknown_scope("x"), format!("unknown scope `x`; known scopes: {}", known.join(", ")));
+        let s: Scopes = "tokens:read delete".parse().unwrap();
+        assert_eq!(s.to_string(), "delete tokens:read");
+        assert_eq!(format!("{s:?}"), "Scopes(delete tokens:read)");
+        assert_eq!(s.list(), vec![Scope::Delete, Scope::TokensRead]);
+        let names = vec!["delete".to_owned(), "tokens:read".to_owned()];
+        assert_eq!(Scopes::from_names(&names).unwrap(), s);
+        assert_eq!(
+            Scopes::from_names(&["delete".to_owned(), "nope".to_owned()]).unwrap_err(),
+            "nope".parse::<Scope>().unwrap_err()
+        );
+        assert_eq!("delete\u{a0}x".parse::<Scopes>().unwrap_err(), unknown_scope("delete\u{a0}x"));
+        assert_eq!("  é:x\tdelete".parse::<Scopes>().unwrap_err(), unknown_scope("é:x"));
+        let p = principal("delete", Some(&["acc_a", "acc_b"]));
+        assert_eq!(p.require(Scope::TokensRead).unwrap_err().message, "token `test` lacks the `tokens:read` scope");
+        assert_eq!(p.require_account("acc_c").unwrap_err().message, "token `test` is limited to accounts acc_a, acc_b");
+        assert!(p.require_account("acc_b").is_ok() && p.require(Scope::Delete).is_ok());
+    }
+
+    #[test]
+    fn mint_refusals_are_worded_as_before() {
+        let mut parent = principal("characters:read tokens:write", Some(&["acc_a"]));
+        let owned = vec!["acc_a".to_owned(), "acc_b".to_owned()];
+        let msg = |r: Result<Mint, ApiError>| r.unwrap_err().message;
+        assert_eq!(
+            msg(request("delete", Some(&["acc_a"])).validate(&parent, 0, &owned)),
+            "cannot grant scopes this token does not have: delete"
+        );
+        assert_eq!(
+            msg(request("characters:read", Some(&["acc_a"])).validate(&parent, MAX_DEPTH, &owned)),
+            "delegation chains are limited to 4 levels"
+        );
+        assert_eq!(
+            msg(request("characters:read", Some(&["acc_z"])).validate(&parent, 0, &owned)),
+            "account `acc_z` not found"
+        );
+        assert_eq!(
+            msg(request("characters:read", Some(&["acc_b"])).validate(&parent, 0, &owned)),
+            "this token cannot reach account `acc_b`"
+        );
+        let ttl = MintRequest { expires_in_seconds: Some(1), ..request("characters:read", Some(&["acc_a"])) };
+        assert_eq!(msg(ttl.validate(&parent, 0, &owned)), "expires_in_seconds must be between 60 and 2592000");
+        let blank = MintRequest { label: " \u{3000} ".into(), ..request("characters:read", Some(&["acc_a"])) };
+        assert_eq!(msg(blank.validate(&parent, 0, &owned)), "label must be 1-100 characters");
+        let padded =
+            MintRequest { label: "\u{a0} agent é \u{3000}".into(), ..request("characters:read", Some(&["acc_a"])) };
+        assert_eq!(padded.validate(&parent, 0, &owned).unwrap().label, "agent é");
+        parent.expires_at = Some(Timestamp::from_millis(1_800_000_000_000));
+        let long = MintRequest {
+            expires_in_seconds: Some(DEFAULT_TTL_SECONDS),
+            ..request("characters:read", Some(&["acc_a"]))
+        };
+        assert_eq!(
+            msg(check_mint(
+                &long.label,
+                long.scopes,
+                long.account_ids,
+                long.expires_in_seconds,
+                &parent,
+                0,
+                &owned,
+                1_799_999_000_000
+            )),
+            format!(
+                "a token cannot outlive the token that mints it; this one expires at {}",
+                parent.expires_at.unwrap()
+            )
+        );
     }
 
     #[test]

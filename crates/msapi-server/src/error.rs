@@ -1,10 +1,19 @@
 //! API errors, shaped like the Nexon Open API's: `{"error": {"name", "message"}}`.
 
+#![allow(
+    clippy::cast_lossless,
+    clippy::single_char_add_str,
+    reason = "Verus checks plain casts and `push_str`; it has no spec for `From` widening or `String::push` of a literal"
+)]
+
 use std::fmt;
 
 use serde::Serialize;
 
 use msapi_core::Issue;
+use msapi_core::msg::push_uint;
+#[cfg(feature = "verus")]
+use msapi_core::msg::uint_chars;
 #[cfg(feature = "verus")]
 use vstd::prelude::*;
 
@@ -112,6 +121,95 @@ impl ApiError {
     pub fn internal() -> Self {
         Self::new(500, "internal", "internal error; see the server log with this request's x-request-id")
     }
+
+    /// 404: `what` names the missing thing, e.g. ``account `acc_1` ``.
+    #[cfg_attr(feature = "verus", verus_spec(r =>
+        ensures r.status == 404, r.name == "not_found", r.details is None, r.message@ == what@ + " not found"@
+    ))]
+    #[must_use]
+    pub fn not_found(what: &str) -> Self {
+        let mut m = String::new();
+        m.push_str(what);
+        m.push_str(" not found");
+        proof! { assert(Seq::<char>::empty() + what@ =~= what@); }
+        Self { status: 404, name: "not_found", message: m, details: None }
+    }
+
+    /// 404 for a resource of kind `kind` with ID `id`: ``account `acc_1` not found``.
+    #[cfg_attr(feature = "verus", verus_spec(r =>
+        ensures
+            r.status == 404, r.name == "not_found", r.details is None,
+            r.message@ == kind@ + " `"@ + id@ + "` not found"@,
+    ))]
+    #[must_use]
+    pub fn not_found_id(kind: &str, id: &str) -> Self {
+        let mut m = String::new();
+        m.push_str(kind);
+        m.push_str(" `");
+        m.push_str(id);
+        m.push_str("` not found");
+        proof! { assert(Seq::<char>::empty() + kind@ =~= kind@); }
+        Self { status: 404, name: "not_found", message: m, details: None }
+    }
+
+    /// 404 for a path no route answers: `route /v1/nope not found`.
+    #[cfg_attr(feature = "verus", verus_spec(r =>
+        ensures r.status == 404, r.name == "not_found", r.details is None, r.message@ == "route "@ + path@ + " not found"@
+    ))]
+    #[must_use]
+    pub fn not_found_route(path: &str) -> Self {
+        let mut m = String::new();
+        m.push_str("route ");
+        m.push_str(path);
+        m.push_str(" not found");
+        Self { status: 404, name: "not_found", message: m, details: None }
+    }
+
+    /// 413.
+    #[cfg_attr(feature = "verus", verus_spec(r =>
+        ensures
+            r.status == 413, r.name == "payload_too_large", r.details is None,
+            r.message@ == "body exceeds "@ + uint_chars(limit as nat) + " bytes"@,
+    ))]
+    #[must_use]
+    pub fn too_large(limit: usize) -> Self {
+        let mut m = String::new();
+        m.push_str("body exceeds ");
+        push_uint(&mut m, limit as u128);
+        m.push_str(" bytes");
+        Self { status: 413, name: "payload_too_large", message: m, details: None }
+    }
+
+    /// 415.
+    #[cfg_attr(feature = "verus", verus_spec(r =>
+        ensures
+            r.status == 415, r.name == "unsupported_media_type", r.details is None,
+            r.message@ == "expected application/json, got `"@ + ct@ + "`"@,
+    ))]
+    #[must_use]
+    pub fn unsupported_media_type(ct: &str) -> Self {
+        let mut m = String::new();
+        m.push_str("expected application/json, got `");
+        m.push_str(ct);
+        m.push_str("`");
+        Self { status: 415, name: "unsupported_media_type", message: m, details: None }
+    }
+
+    /// The one-line description `Display` writes: `404 not_found: ...`.
+    #[cfg_attr(feature = "verus", verus_spec(r =>
+        ensures r@ == uint_chars(self.status as nat) + " "@ + self.name@ + ": "@ + self.message@
+    ))]
+    #[must_use]
+    pub fn describe(&self) -> String {
+        let mut m = String::new();
+        push_uint(&mut m, self.status as u128);
+        m.push_str(" ");
+        m.push_str(self.name);
+        m.push_str(": ");
+        m.push_str(self.message.as_str());
+        proof! { assert(Seq::<char>::empty() + uint_chars(self.status as nat) =~= uint_chars(self.status as nat)); }
+        m
+    }
 }
 
 impl ApiError {
@@ -120,23 +218,6 @@ impl ApiError {
     #[must_use]
     pub fn invalid_json(err: &serde_json::Error) -> Self {
         Self::new(400, "invalid_body", err.to_string())
-    }
-
-    /// 404.
-    pub fn not_found(what: impl fmt::Display) -> Self {
-        Self::new(404, "not_found", format!("{what} not found"))
-    }
-
-    /// 413.
-    #[must_use]
-    pub fn too_large(limit: usize) -> Self {
-        Self::new(413, "payload_too_large", format!("body exceeds {limit} bytes"))
-    }
-
-    /// 415.
-    #[must_use]
-    pub fn unsupported_media_type(ct: &str) -> Self {
-        Self::new(415, "unsupported_media_type", format!("expected application/json, got `{ct}`"))
     }
 
     /// The response.
@@ -155,7 +236,7 @@ impl ApiError {
 
 impl fmt::Display for ApiError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{} {}: {}", self.status, self.name, self.message)
+        f.write_str(&self.describe())
     }
 }
 
@@ -168,7 +249,22 @@ impl From<rusqlite::Error> for ApiError {
     }
 }
 
+// The conversion is checked, but claims no spec beyond what `invalid` ensures.
+#[cfg(feature = "verus")]
+verus! {
+
+impl vstd::std_specs::convert::FromSpecImpl<String> for ApiError {
+    open spec fn obeys_from_spec() -> bool {
+        false
+    }
+
+    uninterp spec fn from_spec(message: String) -> Self;
+}
+
+} // verus!
+
 /// Converts a validation message from `msapi-core` into a 422.
+#[cfg_attr(feature = "verus", verus_verify)]
 impl From<String> for ApiError {
     fn from(message: String) -> Self {
         Self::invalid(message)

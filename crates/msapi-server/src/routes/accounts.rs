@@ -92,7 +92,7 @@ fn load(conn: &Connection, ctx: &Ctx, id: &str) -> Result<AccountView, ApiError>
         )
         .optional()?;
     let Some((Some(region), label, notes, created, updated)) = row else {
-        return Err(ApiError::not_found(format!("account `{id}`")));
+        return Err(ApiError::not_found_id("account", id));
     };
     ctx.principal.require_account(id)?;
 

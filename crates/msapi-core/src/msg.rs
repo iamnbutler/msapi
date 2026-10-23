@@ -16,6 +16,13 @@
 
 #[cfg(feature = "verus")]
 use vstd::prelude::*;
+#[cfg(feature = "verus")]
+use vstd::string::StringSliceAdditionalSpecFns;
+#[cfg(feature = "verus")]
+use vstd::utf8::{
+    encode_utf8_valid_utf8, is_char_boundary, is_char_boundary_iff_not_is_continuation_byte,
+    is_char_boundary_start_end_of_seq, length_of_first_scalar, pop_first_scalar, valid_utf8,
+};
 
 #[cfg(feature = "verus")]
 use crate::decimal::{decimal_text, digits_of};
@@ -32,6 +39,31 @@ pub open spec fn chars(b: Seq<u8>) -> Seq<char> {
 /// The characters `n` prints as: its decimal digits.
 pub open spec fn uint_chars(n: nat) -> Seq<char> {
     chars(digits_of(n))
+}
+
+/// In UTF-8, the byte after an ASCII byte starts a character, so a `str`
+/// may be cut there.
+pub proof fn lemma_boundary_after_ascii(bytes: Seq<u8>, i: int)
+    requires
+        valid_utf8(bytes),
+        0 <= i < bytes.len(),
+        bytes[i] < 0x80,
+    ensures
+        is_char_boundary(bytes, i + 1),
+    decreases bytes.len(),
+{
+    let l = length_of_first_scalar(bytes);
+    assert(1 <= l <= bytes.len());
+    if i < l {
+        assert(i == 0 && l == 1);
+        reveal_with_fuel(is_char_boundary, 2);
+    } else {
+        let rest = pop_first_scalar(bytes);
+        assert(rest.len() == bytes.len() - l);
+        assert(rest[i - l] == bytes[i]);
+        lemma_boundary_after_ascii(rest, i - l);
+        reveal_with_fuel(is_char_boundary, 2);
+    }
 }
 
 /// The characters `v` prints as: `-` for negatives, then the digits of `|v|`.
@@ -89,6 +121,36 @@ pub fn push_int(s: &mut String, v: i64) {
     push_bytes(s, d.as_slice());
 }
 
+/// `s[start..end]`, with its bytes stated (vstd specifies `str::split_at`,
+/// not range indexing).
+#[cfg_attr(feature = "verus", verus_verify)]
+#[cfg_attr(feature = "verus", verus_spec(r =>
+    requires
+        start <= end <= s.spec_bytes().len(),
+        is_char_boundary(s.spec_bytes(), start as int),
+        is_char_boundary(s.spec_bytes(), end as int),
+    ensures
+        r.spec_bytes() == s.spec_bytes().subrange(start as int, end as int),
+))]
+#[must_use]
+pub fn cut(s: &str, start: usize, end: usize) -> &str {
+    let head = s.split_at(end).0;
+    proof! {
+        encode_utf8_valid_utf8(s@);
+        encode_utf8_valid_utf8(head@);
+        is_char_boundary_start_end_of_seq(head.spec_bytes());
+        if start < end {
+            is_char_boundary_iff_not_is_continuation_byte(s.spec_bytes(), start as int);
+            is_char_boundary_iff_not_is_continuation_byte(head.spec_bytes(), start as int);
+        }
+    }
+    let r = head.split_at(start).1;
+    proof! {
+        assert(r.spec_bytes() =~= s.spec_bytes().subrange(start as int, end as int));
+    }
+    r
+}
+
 /// `a` followed by `b`.
 #[cfg_attr(feature = "verus", verus_verify)]
 #[cfg_attr(feature = "verus", verus_spec(r => ensures r@ == a@ + b@))]
@@ -118,5 +180,6 @@ mod tests {
             assert_eq!(s, v.to_string());
         }
         assert_eq!(text(b"a:b"), "a:b");
+        assert_eq!(cut("héllo wörld", 7, 13), "wörld");
     }
 }

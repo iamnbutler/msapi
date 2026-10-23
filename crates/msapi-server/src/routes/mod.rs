@@ -85,7 +85,7 @@ fn run(route: Route, id: &str, conn: &mut Connection, ctx: &Ctx, req: &Request) 
         | Route::RegisterStart
         | Route::RegisterFinish
         | Route::LoginStart
-        | Route::LoginFinish => Err(ApiError::not_found(format!("route {}", req.path))),
+        | Route::LoginFinish => Err(ApiError::not_found_route(&req.path)),
     }
 }
 
@@ -117,7 +117,7 @@ fn dispatch(conn: &mut Connection, req: &Request, request_id: &str) -> Result<Ou
     let route = match api::route(req.method, &words) {
         Routed::Found(route) => route,
         Routed::NotAllowed => return Err((ApiError::method_not_allowed(), None)),
-        Routed::NotFound => return Err((ApiError::not_found(format!("route {}", req.path)), None)),
+        Routed::NotFound => return Err((ApiError::not_found_route(&req.path), None)),
     };
     if let Some(response) = meta::public(route) {
         return Ok((response, None));

@@ -64,7 +64,7 @@ impl CharacterInput {
     fn validate(self, region: Region) -> Result<Valid, ApiError> {
         self.character_name.check_region(region)?;
         let world = world::find(region, &self.world_name).ok_or_else(|| {
-            let names: Vec<_> = world::in_region(region).map(|w| w.name).collect();
+            let names: Vec<_> = world::in_region(region).into_iter().map(|w| w.name).collect();
             ApiError::invalid(format!(
                 "unknown {region} world `{}`; expected one of {}",
                 self.world_name,
@@ -194,7 +194,7 @@ pub fn find(conn: &Connection, principal: &Principal, id: &str) -> Result<Charac
     let view = conn
         .query_row(&format!("{SELECT} WHERE c.id = ?1 AND c.user_id = ?2"), params![id, principal.user_id], from_row)
         .optional()?
-        .ok_or_else(|| ApiError::not_found(format!("character `{id}`")))?;
+        .ok_or_else(|| ApiError::not_found_id("character", id))?;
     principal.require_account(&view.account_id)?;
     Ok(view)
 }
@@ -207,7 +207,7 @@ fn account_region(conn: &Connection, ctx: &Ctx, account_id: &str) -> Result<Regi
             |r| r.get(0),
         )
         .optional()?;
-    let region = region.ok_or_else(|| ApiError::not_found(format!("account `{account_id}`")))?;
+    let region = region.ok_or_else(|| ApiError::not_found_id("account", account_id))?;
     ctx.principal.require_account(account_id)?;
     enum_from_sql(0, Some(region))?.ok_or_else(ApiError::internal)
 }
