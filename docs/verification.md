@@ -154,6 +154,7 @@ goes through a proven function.
 | `base32::digit_char` | equals the table `crockford()` for every digit below 32 |
 | `decimal::parse_decimal` (`Fixed` from text) | `Ok(v)` exactly when the text is `-?D+(.D+)?` with at most `dp` fraction digits and fits `i64`, and then `v` is its exact value scaled by `10^dp`; each error (`Invalid`, `TooPrecise`, `OutOfRange`) is returned exactly in its case; a string splits into whole and fraction one way only |
 | `query::percent_decode` | equals `decoded`: `+` is a space, `%XX` is that byte, anything else is itself |
+| `json::merge` (every `PATCH`) | the result is `merged(result, target, patch)`, RFC 7396 §2 key by key: a `null` member's key is absent, any other member's key holds the merge of the target's value (or `null`) with it, every other key keeps the target's value, keys are unique, and a non-object patch is the result; `None` exactly when an input repeats an object key (`serde_json` values never do) |
 | `query::parse_query` | equals `pairs`: the `&`-separated segments in order, empty ones skipped, each split at its first `=` (none means an empty value) and both halves `decoded` |
 | `batch::encode_statement` | appends exactly the spec encoding when every length fits a `u32`, and refuses (appending nothing) otherwise |
 | `batch::decode_batch` | anything it accepts re-encodes to exactly its input, and the encoding of any statement list decodes back to that list; no read is out of bounds |
@@ -170,10 +171,11 @@ These parts are not proven. They are covered by tests instead.
   number generator, and the Cloudflare Worker and Durable Object that keep the
   log (`deploy/src/index.ts`, TypeScript).
 - **Code that only moves data between those and the proofs:** SQL query
-  text and account ownership (a SQL query), JSON merge patch (`serde_json`
-  values), the rusqlite-value conversions in `durable.rs`, turning ASCII bytes into
-  `String`s, and in `auth.rs` viewing account-ID `String`s as their bytes
-  (`String::as_bytes`) for `account_checks` and `reaches`.
+  text and account ownership (a SQL query), converting `serde_json` values to
+  and from `json::Json` around the merge patch, the rusqlite-value conversions
+  in `durable.rs`, turning ASCII bytes into `String`s, and in `auth.rs` viewing
+  account-ID `String`s as their bytes (`String::as_bytes`) for
+  `account_checks` and `reaches`.
 - **Unit plumbing that is generic or a trait impl:** `StatBreakdown::implied_total`
   passing its three fields to the proven `breakdown_total` (the struct derives
   serde, so Verus does not see it), the `Sum` impls (std's `Iterator::fold`
