@@ -8,7 +8,7 @@
 //!
 //! `MSAPI_ADDR` and `MSAPI_DB` set the defaults; `MSAPI_TRUST_PROXY=1` takes
 //! client addresses from `X-Forwarded-For`; `MSAPI_LOG=host` makes every write
-//! durable in a changeset log (see `msapi_server::durable`).
+//! durable in a write log (see `msapi_server::durable`).
 
 use std::path::PathBuf;
 use std::process::ExitCode;

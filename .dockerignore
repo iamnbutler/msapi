@@ -1,0 +1,6 @@
+target
+deploy
+.lane
+.git
+*.db
+*.db-*

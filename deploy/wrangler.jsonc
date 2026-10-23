@@ -1,0 +1,27 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "msapi",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-10-23",
+  "observability": { "enabled": true },
+  // The reference web app. API paths go to the Worker first, then the container.
+  "assets": {
+    "directory": "../web",
+    "binding": "ASSETS",
+    "not_found_handling": "single-page-application",
+    "run_worker_first": ["/v1", "/v1/*", "/health"]
+  },
+  "containers": [
+    {
+      "class_name": "Api",
+      "scheduling_policy": "durable_object",
+      "images": { "base": { "dockerfile": "../Dockerfile", "build_context": ".." } }
+    }
+  ],
+  "durable_objects": { "bindings": [{ "name": "API", "class_name": "Api" }] },
+  "exports": { "Api": { "type": "durable-object", "storage": "sqlite" } },
+  "vars": {
+    "MSAPI_RP_ID": "msapi.iamnbutler.workers.dev",
+    "MSAPI_ORIGIN": "https://msapi.iamnbutler.workers.dev"
+  }
+}
