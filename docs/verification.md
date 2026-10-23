@@ -82,6 +82,8 @@ each error is returned exactly in its case. `value()` is a unit's raw integer.
 | `Ratio::ZERO`, `Ratio::ONE` | built by `Ratio::from_int`, so in lowest terms and equal to 0 and 1 |
 | `Count::get`, `Count::of_count`, `Percent::pct` (every unit) | trait specs: the count or hundredths in is the count or hundredths out |
 | `+`, `+=` on every unit | `plus`: saturating addition, matching vstd's `Add`/`AddAssign` specs |
+| `+`, `-` on `Fixed` (`Pct`, `ExpRate`) | the exact sum or difference saturated at the ends of `i64` (`saturate`), matching vstd's `Add`/`Sub` specs |
+| `stat::findings` (`StatWindow::check`) | exactly `findings_spec`: in order, Ignore Enemy Defense at 100% or more, cooldown reduction above 100%, a damage range minimum above its maximum, each negative percentage (by position in `PERCENT_FIELDS`), then each tooltip whose `breakdown_total` differs from the shown total (a warning) or overflows (an error), by position in `TOOLTIP_FIELDS` |
 | `breakdown_total` (generic over `Scalable`) | `implied_total`'s spec of the base, the percent's hundredths (0 if absent) and the flat value (0 if absent); `None` exactly on overflow |
 
 ### `policy.rs`: token rules
@@ -100,7 +102,10 @@ each error is returned exactly in its case. `value()` is a unit's raw integer.
 
 | Function | Proven |
 | --- | --- |
-| `in_range` | `min <= v <= max` (character level 1-300, class level 0-6) |
+| `in_range` | `min <= v <= max` |
+| `bounded_u16`, `bounded_u8` (`Level::new` 1-300, `ClassLevel::new` 0-6) | `Some(v)` exactly when `min <= v <= max`, else `None` |
+| `name_check` (`CharacterName::new`) | `Empty` for 0 characters, else `TooLong` above 13, else `Untidy` if not tidy, else `Ok` |
+| `gms_name_ok` (`CharacterName::check_region` for GMS) | at most 12 bytes, every one an ASCII letter or digit |
 | `length_ok` | `min <= chars <= max` (labels, notes, names, display names) |
 | `ignore_defense_ok`, `cooldown_reduction_ok`, `percentage_ok`, `exp_rate_ok`, `range_ok` | the stat window's and character's hard limits, exactly as stated |
 | `captured_at_ok` | `captured_at <= now + 5 min` in exact integers, with no overflow at the ends of `i64` |
@@ -117,8 +122,9 @@ goes through a proven function.
 | `POST /v1/tokens` | `account_checks`, `check_mint`, `length_ok` (label) |
 | `GET` lists (`limit`) | `page_size` |
 | `POST`/`PATCH /v1/accounts` | `length_ok` (label, notes) |
-| `POST`/`PATCH /v1/characters…` | `in_range` (levels), `exp_rate_ok`, `length_ok` |
-| `PUT`/`PATCH …/stat` | `captured_at_ok`, `ignore_defense_ok`, `cooldown_reduction_ok`, `percentage_ok`, `range_ok`, and `implied_total` for tooltip warnings |
+| `POST`/`PATCH /v1/characters…` | `bounded_u16`/`bounded_u8` (levels), `name_check`, `gms_name_ok`, `exp_rate_ok`, `length_ok`, `world::find` |
+| `POST`/`PATCH /v1/accounts` (region) | `world::has_tag` (`Region::is_supported`) |
+| `PUT`/`PATCH …/stat` | `captured_at_ok` and `stat::findings` (which uses `ignore_defense_ok`, `cooldown_reduction_ok`, `percentage_ok`, `range_ok`, with `breakdown_total` for tooltips) |
 | `/v1/auth/passkey/*` | `base64url::decode` (every binary field and the challenge), `Cbor::decode`, `PublicKey::from_cose`, `bytes_eq` (type, credential ID), `origin_ok`, `rp_id_hash_ok`, `es256_point`, `auth_data_layout`, `presence_ok`, `counter_ok`, `length_ok` (display name) |
 | every query parameter | `parse_query` |
 | stat fields with decimals | `parse_decimal` in, `format_decimal` out (exact JSON text) |
@@ -162,6 +168,9 @@ goes through a proven function.
 | `ascii::lowercase` (region names) | equals `lowered`: each byte lowercased if an ASCII capital; two names' `lowered` forms are equal exactly when `eq_ignore_case` holds (`lemma_same_folded_lowered`) |
 | `lookup::tagged_key` (world names) | the region's tag, `0xFF`, then the lowercased name; two keys are equal exactly when the regions are and the names are equal ignoring case (`lemma_tagged`) |
 | `names::{class,world,region}::find` (`class::find`, `world::find`, `Region`'s `FromStr`) | each table's names are byte literals (`raw(i)`, text `i` naming entry `i / GROUP`) and each key is computed from its name at lookup time (`folded`, `tagged` with the world's region, `lowered`); names of different entries never share a key (`lemma_distinct`, every key and every pair evaluated), so `find(q)` is `Some(o)` exactly when some name of entry `o` has key `q`, and for every name `i`, `find(key(i))` is `Some(i / GROUP)`. Nothing is checked at run time and nothing can panic |
+| `world::key_index` (`world::by_key`), `world::with_tag` (`world::in_region`), `world::has_tag` (`Region::is_supported`) | the first world whose key text is exactly the query; exactly the worlds whose region tag is `t`, in table order; whether any world has tag `t` |
+| `Region::as_str` | the proven `names::region::text` at the region's position |
+| `Timestamp::from_millis`, `millis`, `plus_millis` | the milliseconds in are the milliseconds out; `plus_millis` saturates at the ends of `i64` |
 | `names::same` | `true` exactly when the two byte strings are equal; the compile-time checks below use it |
 | `scope::scope_index` (`Scope::from_str`) | `r == index_of(name)`: the scope whose `scope_name` is exactly `name`, or `None` |
 | `scope::parse_scopes` (stored token scopes) | `Ok(bits)` exactly when every ASCII-whitespace-separated token names a scope, `bits` being their union (`parse`); `Err` gives the range of a token that names none |
@@ -216,14 +225,21 @@ These parts are not proven. They are covered by tests instead.
   in `durable.rs`, turning ASCII bytes into `String`s (including `Scope::as_str` over
   `scope::scope_name`), and in `auth.rs` viewing
   account-ID `String`s as their bytes (`String::as_bytes`) for
-  `account_checks` and `reaches`, and `Timestamp`'s `Display`, `FromStr`
+  `account_checks` and `reaches`, `CharacterName::new` counting characters
+  and checking for surrounding whitespace and control characters (std's
+  Unicode tables) before the proven `name_check`, and `Timestamp`'s `Display`, `FromStr`
   and serde impls passing bytes to and from the proven `format_rfc3339` and
   `parse_rfc3339`. `Timestamp::now` reads the system clock.
-- **Unit plumbing that is generic or a trait impl:** `StatBreakdown::implied_total`
-  passing its three fields to the proven `breakdown_total` (the struct derives
-  serde, so Verus does not see it), the `Sum` impls (std's `Iterator::fold`
-  over the proven `+`, since Verus cannot specify a generic iterator), and the
-  `From`, `Debug` and serde impls of the unit types. Their `Display`,
+- **Forwarding shims Verus cannot see into:** each of these only passes its
+  arguments to a proven function and wraps the result, because its type derives
+  serde or holds `&str`, which Verus does not check:
+  - `StatBreakdown::implied_total` → `breakdown_total`
+  - `StatWindow::check` → `findings`; the shim reads the fields into raw values and writes each finding's message
+  - `class::find`, `world::find`, `world::by_key`, `world::in_region` → the `names` and `world` lookups, then index the table
+  - `Region::is_supported` → `world::has_tag`
+  - `Ratio`'s `Ord` → the proven `compare`
+  - `Region::display_name` and the class and world tables themselves: constant labels
+  - the `From`, `Debug` and serde impls of the unit types Their `Display`,
   `FromStr` and JSON impls only write or read the bytes of the proven
   `format_decimal`, `format_uint` and `parse_decimal`: `Fixed` crosses JSON as
   its exact decimal text (`serde_json`'s `arbitrary_precision`), never as an

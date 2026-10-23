@@ -39,7 +39,6 @@
 //! ```
 
 use std::fmt::{self, Write as _};
-use std::iter::Sum;
 use std::ops::{Add, AddAssign};
 use std::str::FromStr;
 
@@ -278,12 +277,6 @@ macro_rules! additive {
             #[cfg_attr(feature = "verus", verus_spec(ensures final(self).value() == old(self).plus_value(rhs)))]
             fn add_assign(&mut self, rhs: Self) {
                 *self = self.plus(rhs);
-            }
-        }
-
-        impl Sum for $name {
-            fn sum<I: Iterator<Item = Self>>(iter: I) -> Self {
-                iter.fold(Self::default(), Add::add)
             }
         }
     )*};

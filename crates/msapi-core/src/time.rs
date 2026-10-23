@@ -47,6 +47,7 @@ use vstd::prelude::*;
 /// assert_eq!(t.to_string(), "2026-10-23T07:38:00.500Z");
 /// # Ok::<(), String>(())
 /// ```
+#[cfg_attr(feature = "verus", verus_verify)]
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
 pub struct Timestamp(i64);
 
@@ -70,32 +71,66 @@ pub const MIN_MS: i64 = -62_167_219_200_000;
 #[cfg_attr(feature = "verus", verus_verify)]
 pub const MAX_MS: i64 = 253_402_300_799_999;
 
+#[cfg(feature = "verus")]
+verus! {
+
+impl Timestamp {
+    /// Milliseconds since the Unix epoch, for specs.
+    pub closed spec fn ms(self) -> int {
+        self.0 as int
+    }
+}
+
+/// `t` limited to the range of `i64`.
+pub open spec fn saturate_i64(t: int) -> int {
+    if t > i64::MAX { i64::MAX as int } else if t < i64::MIN { i64::MIN as int } else { t }
+}
+
+} // verus!
+
+#[cfg_attr(feature = "verus", verus_verify)]
 impl Timestamp {
     /// From milliseconds since the Unix epoch.
     #[must_use]
+    #[cfg_attr(feature = "verus", verus_spec(r => ensures r.ms() == ms as int))]
     pub const fn from_millis(ms: i64) -> Self {
         Self(ms)
     }
 
     /// Milliseconds since the Unix epoch.
     #[must_use]
+    #[cfg_attr(feature = "verus", verus_spec(r => ensures r as int == self.ms()))]
     pub const fn millis(self) -> i64 {
         self.0
     }
 
-    /// The current time.
+    /// This time plus `ms` milliseconds, saturating.
+    #[must_use]
+    #[cfg_attr(feature = "verus", verus_spec(r => ensures r.ms() == saturate_i64(self.ms() + ms)))]
+    pub const fn plus_millis(self, ms: i64) -> Self {
+        // `i64::saturating_add`, written out so Verus can check it.
+        let sum = self.0 as i128 + ms as i128;
+        let t = if sum > i64::MAX as i128 {
+            i64::MAX
+        } else if sum < i64::MIN as i128 {
+            i64::MIN
+        } else {
+            #[allow(clippy::cast_possible_truncation, reason = "in range: the branches above cut off the rest")]
+            let t = sum as i64;
+            t
+        };
+        Self(t)
+    }
+}
+
+impl Timestamp {
+    /// The current time: the system clock, which no proof can speak for.
     #[must_use]
     pub fn now() -> Self {
         let ms = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .map_or(0, |d| i64::try_from(d.as_millis()).unwrap_or(i64::MAX));
         Self(ms)
-    }
-
-    /// This time plus `ms` milliseconds, saturating.
-    #[must_use]
-    pub const fn plus_millis(self, ms: i64) -> Self {
-        Self(self.0.saturating_add(ms))
     }
 }
 
