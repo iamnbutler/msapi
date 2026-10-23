@@ -36,6 +36,7 @@ pub mod class;
 pub mod decimal;
 pub mod fixed;
 pub mod formula;
+pub mod json;
 pub mod policy;
 pub mod query;
 pub mod ratio;
