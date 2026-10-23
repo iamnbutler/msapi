@@ -128,7 +128,7 @@ struct RegisterStart {
 fn register_start(req: &Request) -> Result<Response, ApiError> {
     let body: RegisterStart = req.json()?;
     let display_name = body.display_name.trim().to_owned();
-    if display_name.is_empty() || display_name.chars().count() > 64 {
+    if !msapi_core::rules::length_ok(display_name.chars().count(), 1, 64) {
         return Err(ApiError::invalid("display_name must be 1-64 characters"));
     }
     let user_id = ids::new_id("usr");

@@ -35,6 +35,7 @@ pub mod formula;
 pub mod policy;
 pub mod ratio;
 pub mod region;
+pub mod rules;
 pub mod stat;
 pub mod time;
 pub mod units;

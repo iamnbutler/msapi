@@ -246,6 +246,78 @@ pub fn check_mint(
     }
 }
 
+/// One token in a chain from a presented token up to its root.
+#[cfg_attr(feature = "verus", verus_verify)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub struct Link {
+    /// The token was revoked.
+    pub revoked: bool,
+    /// When it expires; `None` for a root token that never does.
+    pub expires_at: Option<i64>,
+}
+
+#[cfg(feature = "verus")]
+verus! {
+
+/// `link` still works at `now`.
+pub open spec fn live(link: Link, now: i64) -> bool {
+    !link.revoked && (link.expires_at matches Some(e) ==> e > now)
+}
+
+/// `m` is the earliest expiry in `chain[..n]`, or `None` if none of them expire.
+pub open spec fn earliest(chain: Seq<Link>, n: int, m: Option<i64>) -> bool {
+    &&& (m is None <==> forall|j: int| 0 <= j < n ==> (#[trigger] chain[j]).expires_at is None)
+    &&& (m matches Some(x) ==> {
+            &&& exists|j: int| 0 <= j < n && (#[trigger] chain[j]).expires_at == Some(x)
+            &&& forall|j: int| 0 <= j < n ==> ((#[trigger] chain[j]).expires_at matches Some(e) ==> x <= e)
+        })
+}
+
+} // verus!
+
+/// Whether a token works at `now`, given its whole chain (the token and every
+/// ancestor). A token works only if no token in its chain is revoked or
+/// expired; it then expires with the earliest of them. Returns that expiry
+/// (`None` if nothing in the chain expires), or `None` outside if it is dead.
+#[cfg_attr(feature = "verus", verus_verify)]
+#[cfg_attr(feature = "verus", verus_spec(r =>
+    ensures
+        r.is_some() <==> forall|j: int| 0 <= j < chain@.len() ==> live(#[trigger] chain@[j], now),
+        r matches Some(m) ==> earliest(chain@, chain@.len() as int, m),
+))]
+#[must_use]
+pub fn chain_expiry(chain: &[Link], now: i64) -> Option<Option<i64>> {
+    let mut min: Option<i64> = None;
+    let mut i: usize = 0;
+    #[cfg_attr(feature = "verus", verus_spec(
+        invariant
+            i <= chain@.len(),
+            forall|j: int| 0 <= j < i ==> live(#[trigger] chain@[j], now),
+            earliest(chain@, i as int, min),
+        decreases chain@.len() - i
+    ))]
+    while i < chain.len() {
+        let link = chain[i];
+        if link.revoked {
+            return None;
+        }
+        if let Some(e) = link.expires_at {
+            if e <= now {
+                return None;
+            }
+            min = match min {
+                Some(m) if m <= e => Some(m),
+                _ => Some(e),
+            };
+        }
+        proof! {
+            assert(chain@[i as int] == link);
+        }
+        i += 1;
+    }
+    Some(min)
+}
+
 /// The next ID value after `last`, given a fresh `candidate` (time in the high
 /// bits, randomness below): the candidate if it is larger, else `last + 1`.
 ///

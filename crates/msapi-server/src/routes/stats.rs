@@ -7,8 +7,8 @@ use rusqlite::{Connection, OptionalExtension, Row, params};
 use serde::Serialize;
 use serde_json::json;
 
-use msapi_core::Timestamp;
 use msapi_core::stat::{Issue, Severity, StatWindow};
+use msapi_core::{Timestamp, rules};
 
 use super::{characters, corrupt, page};
 use crate::audit::{Ctx, Target, Write};
@@ -16,9 +16,6 @@ use crate::auth::Scope;
 use crate::error::ApiError;
 use crate::http::{Request, Response};
 use crate::json::merge_patch;
-
-/// How far in the future `captured_at` may be, for clock skew.
-const MAX_FUTURE_MS: i64 = 5 * 60 * 1000;
 
 /// One recorded stat window.
 #[derive(Serialize, Debug)]
@@ -86,7 +83,7 @@ pub fn update(conn: &mut Connection, ctx: &Ctx, req: &Request, id: &str) -> Resu
 fn record(conn: &mut Connection, ctx: &Ctx, id: &str, mut window: StatWindow) -> Result<Response, ApiError> {
     let now = Timestamp::now();
     let captured_at = *window.captured_at.get_or_insert(now);
-    if captured_at > now.plus_millis(MAX_FUTURE_MS) {
+    if !rules::captured_at_ok(now.millis(), captured_at.millis()) {
         return Err(ApiError::invalid(format!("captured_at {captured_at} is in the future")));
     }
     let (errors, warnings): (Vec<Issue>, Vec<Issue>) =
