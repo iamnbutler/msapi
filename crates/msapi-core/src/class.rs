@@ -103,6 +103,7 @@ const fn row(
 /// in `calc`. Mo Xuan's main stats are inferred from its job type.
 /// Lethe is KMS-only until it reaches GMS (expected November 2026); Beast
 /// Tamer, Jett and Zen were removed from the game.
+#[rustfmt::skip] // one class per line, as a table
 pub static CLASSES: &[Class] = &[
     row("hero", "Hero", JobType::Warrior, &[MainStat::Str], &[MainStat::Dex], false, 14400, 90, true),
     row("paladin", "Paladin", JobType::Warrior, &[MainStat::Str], &[MainStat::Dex], false, 13400, 90, true),

@@ -1,0 +1,27 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    env:
+      # Third-party crates in the normal and build graph; see docs/dependencies.md.
+      DEPENDENCY_BUDGET: 40
+    steps:
+      - uses: actions/checkout@v7
+      - uses: jdx/mr-boxington-action@v1
+      - run: cargo fmt --all --check
+      - run: mbx clippy --workspace --all-targets -- -D warnings
+      - run: mbx test --workspace
+      - name: dependency budget
+        run: |
+          count=$(cargo tree -e normal,build --prefix none --format '{p}' | sed 's/ (.*//' | sort -u | grep -v '^msapi' | wc -l)
+          echo "third-party crates: $count (budget $DEPENDENCY_BUDGET)"
+          test "$count" -le "$DEPENDENCY_BUDGET"

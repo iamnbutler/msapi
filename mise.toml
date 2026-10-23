@@ -1,0 +1,5 @@
+# Contributors using mise get the toolchain and the shared mbx build cache
+# (https://mr-boxington.jdx.dev). Plain rustup + cargo works too.
+[tools]
+rust = { version = "stable", mr_boxington = true }
+mr-boxington = "latest"
