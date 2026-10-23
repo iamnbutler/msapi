@@ -88,7 +88,7 @@ pub fn list(conn: &Connection, ctx: &Ctx, req: &Request) -> Result<Response, Api
     }
     if let Some(token_id) = req.query("token_id") {
         if visible.as_ref().is_some_and(|v| !policy::is_member(token_id.as_bytes(), &as_bytes(v))) {
-            return Err(ApiError::not_found(format!("token `{token_id}`")));
+            return Err(ApiError::not_found_id("token", token_id));
         }
         let ids = match api::flag(req.query("include_descendants").map(str::as_bytes)) {
             Some(true) => {

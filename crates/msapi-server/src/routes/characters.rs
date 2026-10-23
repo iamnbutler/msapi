@@ -4,6 +4,15 @@
 //! `world_name`, `character_class`, `character_level`, …) so code written
 //! against it reads the same here, but values are typed rather than strings.
 
+#![allow(
+    clippy::cast_lossless,
+    clippy::single_char_add_str,
+    clippy::manual_map,
+    clippy::manual_unwrap_or_default,
+    clippy::manual_unwrap_or,
+    reason = "Verus checks plain casts, matches and `push_str`; it has no spec for `From` widening or `Option` combinators"
+)]
+
 use rusqlite::{Connection, OptionalExtension, Row, params};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
@@ -22,6 +31,8 @@ use crate::error::ApiError;
 use crate::http::{Request, Response};
 use crate::ids;
 use crate::json::merge_patch;
+#[cfg(feature = "verus")]
+use vstd::prelude::*;
 
 /// The fields a client sets. `world_name` and `character_class` accept any
 /// spelling the reference data resolves (`"Night Walker"`, `"night-walker"`).
@@ -61,38 +72,94 @@ struct Valid {
 }
 
 impl CharacterInput {
+    /// The proven [`check_character`] on this input's fields.
     fn validate(self, region: Region) -> Result<Valid, ApiError> {
-        self.character_name.check_region(region)?;
-        let world = world::find(region, &self.world_name).ok_or_else(|| {
-            let names: Vec<_> = world::in_region(region).map(|w| w.name).collect();
-            ApiError::invalid(format!(
-                "unknown {region} world `{}`; expected one of {}",
-                self.world_name,
-                names.join(", ")
-            ))
-        })?;
-        let class = class::find(&self.character_class).ok_or_else(|| {
-            ApiError::invalid(format!("unknown class `{}`; see /v1/ref/classes", self.character_class))
-        })?;
-        let exp = api::character_fields(
-            self.character_exp_rate.map(ExpRate::raw),
+        let (world, class, exp) = check_character(
+            region,
+            &self.character_name,
+            &self.world_name,
+            &self.character_class,
+            self.character_exp_rate,
             self.character_exp,
-            opt_bytes(self.character_guild_name.as_ref()),
-            opt_bytes(self.character_image.as_ref()),
-            opt_bytes(self.notes.as_ref()),
-        )
-        .map_err(|refusal| match refusal {
-            CharacterRefusal::ExpRate => ApiError::invalid(format!(
-                "character_exp_rate must be in [0, 100), got {}",
-                self.character_exp_rate.map(|r| r.to_string()).unwrap_or_default()
-            )),
-            CharacterRefusal::ExpTooLarge => ApiError::invalid("character_exp is too large"),
-            CharacterRefusal::GuildTooLong => ApiError::invalid("character_guild_name must be at most 32 characters"),
-            CharacterRefusal::ImageTooLong => ApiError::invalid("character_image must be at most 4096 characters"),
-            CharacterRefusal::NotesTooLong => ApiError::invalid("notes must be at most 4000 characters"),
-            CharacterRefusal::ImageNotHttps => ApiError::invalid("character_image must be an https:// URL"),
-        })?;
+            self.character_guild_name.as_ref(),
+            self.character_image.as_ref(),
+            self.notes.as_ref(),
+        )?;
         Ok(Valid { input: self, world, class, exp })
+    }
+}
+
+/// Resolves a character's world and class and checks its values against
+/// the region's naming rules and the proven [`api::character_fields`].
+#[cfg_attr(feature = "verus", verus_verify)]
+#[cfg_attr(feature = "verus", verus_spec(r => ensures r matches Err(e) ==> e.status == 422 && e.name == "invalid"))]
+#[allow(clippy::too_many_arguments, reason = "the fields of a `CharacterInput`, which Verus cannot see")]
+#[allow(clippy::type_complexity, reason = "the parts of a `Valid` besides its input")]
+fn check_character(
+    region: Region,
+    name: &CharacterName,
+    world_name: &str,
+    class_name: &str,
+    exp_rate: Option<ExpRate>,
+    exp: Option<u64>,
+    guild: Option<&String>,
+    image: Option<&String>,
+    notes: Option<&String>,
+) -> Result<(&'static World, &'static Class, Option<i64>), ApiError> {
+    if let Err(m) = name.check_region(region) {
+        return Err(ApiError::invalid(m));
+    }
+    let Some(world) = world::find(region, world_name) else {
+        {
+            let worlds = world::in_region(region);
+            let mut m = String::new();
+            m.push_str("unknown ");
+            m.push_str(region.as_str());
+            m.push_str(" world `");
+            m.push_str(world_name);
+            m.push_str("`; expected one of ");
+            let mut i: usize = 0;
+            #[cfg_attr(feature = "verus", verus_spec(invariant i <= worlds@.len(), decreases worlds@.len() - i))]
+            while i < worlds.len() {
+                if i > 0 {
+                    m.push_str(", ");
+                }
+                m.push_str(worlds[i].name);
+                i += 1;
+            }
+            return Err(ApiError::invalid(m));
+        }
+    };
+    let Some(class) = class::find(class_name) else {
+        {
+            let mut m = String::new();
+            m.push_str("unknown class `");
+            m.push_str(class_name);
+            m.push_str("`; see /v1/ref/classes");
+            return Err(ApiError::invalid(m));
+        }
+    };
+    let raw_rate = match exp_rate {
+        Some(r) => Some(r.raw()),
+        None => None,
+    };
+    match api::character_fields(raw_rate, exp, opt_bytes(guild), opt_bytes(image), opt_bytes(notes)) {
+        Ok(exp) => Ok((world, class, exp)),
+        Err(refusal) => Err(ApiError::invalid(match refusal {
+            CharacterRefusal::ExpRate => {
+                let mut m = String::new();
+                m.push_str("character_exp_rate must be in [0, 100), got ");
+                if let Some(r) = exp_rate {
+                    m.push_str(r.text().as_str());
+                }
+                m
+            }
+            CharacterRefusal::ExpTooLarge => "character_exp is too large".to_owned(),
+            CharacterRefusal::GuildTooLong => "character_guild_name must be at most 32 characters".to_owned(),
+            CharacterRefusal::ImageTooLong => "character_image must be at most 4096 characters".to_owned(),
+            CharacterRefusal::NotesTooLong => "notes must be at most 4000 characters".to_owned(),
+            CharacterRefusal::ImageNotHttps => "character_image must be an https:// URL".to_owned(),
+        })),
     }
 }
 
@@ -194,7 +261,7 @@ pub fn find(conn: &Connection, principal: &Principal, id: &str) -> Result<Charac
     let view = conn
         .query_row(&format!("{SELECT} WHERE c.id = ?1 AND c.user_id = ?2"), params![id, principal.user_id], from_row)
         .optional()?
-        .ok_or_else(|| ApiError::not_found(format!("character `{id}`")))?;
+        .ok_or_else(|| ApiError::not_found_id("character", id))?;
     principal.require_account(&view.account_id)?;
     Ok(view)
 }
@@ -207,16 +274,21 @@ fn account_region(conn: &Connection, ctx: &Ctx, account_id: &str) -> Result<Regi
             |r| r.get(0),
         )
         .optional()?;
-    let region = region.ok_or_else(|| ApiError::not_found(format!("account `{account_id}`")))?;
+    let region = region.ok_or_else(|| ApiError::not_found_id("account", account_id))?;
     ctx.principal.require_account(account_id)?;
     enum_from_sql(0, Some(region))?.ok_or_else(ApiError::internal)
 }
 
-fn duplicate(valid: &Valid) -> ApiError {
-    ApiError::conflict(format!(
-        "you already have a character named `{}` in {}",
-        valid.input.character_name, valid.world.name
-    ))
+/// 409 for a second character named `name` in `world`.
+#[cfg_attr(feature = "verus", verus_verify)]
+#[cfg_attr(feature = "verus", verus_spec(r => ensures r.status == 409, r.name == "conflict"))]
+fn duplicate(name: &CharacterName, world: &World) -> ApiError {
+    let mut m = String::new();
+    m.push_str("you already have a character named `");
+    m.push_str(name.as_str());
+    m.push_str("` in ");
+    m.push_str(world.name);
+    ApiError::conflict(m)
 }
 
 /// `GET /v1/characters` and `GET /v1/accounts/{id}/characters`, optionally `?world=`.
@@ -291,7 +363,7 @@ pub fn create(conn: &mut Connection, ctx: &Ctx, req: &Request, account_id: &str)
         ],
     );
     match inserted {
-        Err(e) if is_unique_violation(&e) => return Err(duplicate(&valid)),
+        Err(e) if is_unique_violation(&e) => return Err(duplicate(&valid.input.character_name, valid.world)),
         other => other?,
     };
     let view = find(write.tx(), &ctx.principal, &id)?;
@@ -335,7 +407,7 @@ pub fn update(conn: &mut Connection, ctx: &Ctx, req: &Request, id: &str) -> Resu
         ],
     );
     match updated {
-        Err(e) if is_unique_violation(&e) => return Err(duplicate(&valid)),
+        Err(e) if is_unique_violation(&e) => return Err(duplicate(&valid.input.character_name, valid.world)),
         other => other?,
     };
     let after = find(write.tx(), &ctx.principal, id)?;

@@ -5,7 +5,7 @@ use serde_json::json;
 
 use msapi_core::{Region, class, world};
 
-use msapi_core::api::Route;
+use msapi_core::api::{self, Route};
 
 use crate::http::Response;
 
@@ -58,6 +58,6 @@ fn index() -> serde_json::Value {
             "GET    /v1/characters/{id}/stat   PUT /v1/characters/{id}/stat   PATCH /v1/characters/{id}/stat",
             "GET    /v1/characters/{id}/stat/history",
         ],
-        "planned": super::planned().map(|(name, what)| json!({ "path": format!("/v1/characters/{{id}}/{name}"), "what": what })).collect::<Vec<_>>(),
+        "planned": (0..api::PLANNED.len()).filter_map(super::planned_at).map(|(name, what)| json!({ "path": format!("/v1/characters/{{id}}/{name}"), "what": what })).collect::<Vec<_>>(),
     })
 }

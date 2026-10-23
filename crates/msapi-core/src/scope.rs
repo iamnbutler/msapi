@@ -272,7 +272,9 @@ pub fn scope_index(name: &[u8]) -> Option<u16> {
     ensures
         r matches Ok(bits) ==> parse(text@) == Some(bits),
         r matches Err((start, end)) ==> parse(text@) is None && start < end <= text@.len()
-            && index_of(text@.subrange(start as int, end as int)) is None,
+            && index_of(text@.subrange(start as int, end as int)) is None
+            && (start == 0 || is_ws(text@[start - 1]))
+            && (end == text@.len() || is_ws(text@[end as int])),
 ))]
 pub fn parse_scopes(text: &[u8]) -> Result<u16, (usize, usize)> {
     let mut acc: u16 = 0;
@@ -282,6 +284,7 @@ pub fn parse_scopes(text: &[u8]) -> Result<u16, (usize, usize)> {
         invariant
             start <= i <= text@.len(),
             state(text@.subrange(0, i as int)) == (Some(acc), text@.subrange(start as int, i as int)),
+            start == 0 || is_ws(text@[start - 1]),
         decreases text@.len() - i
     ))]
     while i < text.len() {

@@ -493,6 +493,7 @@ pub enum Routed {
 
 /// Character resources the Nexon Open API has that msapi will add later, in
 /// the order [`Route::Planned`] numbers them.
+#[cfg_attr(feature = "verus", verus_verify)]
 pub const PLANNED: [Word; 7] = [
     Word::ItemEquipment,
     Word::SymbolEquipment,

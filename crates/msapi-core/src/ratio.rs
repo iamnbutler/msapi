@@ -1,9 +1,23 @@
 //! Exact dimensionless ratios for damage formulas.
 
-use std::cmp::Ordering;
-use std::fmt::{self, Write as _};
+#![allow(
+    clippy::cast_lossless,
+    clippy::single_char_add_str,
+    clippy::manual_unwrap_or_default,
+    clippy::manual_map,
+    clippy::single_match,
+    clippy::collapsible_if,
+    clippy::manual_unwrap_or,
+    clippy::single_match_else,
+    reason = "Verus checks plain casts, matches and `push_str`; it has no spec for `From` widening, `Option` combinators or `if let` chains"
+)]
 
-use crate::decimal::format_uint;
+use std::cmp::Ordering;
+use std::fmt;
+
+use crate::msg::push_uint;
+#[cfg(feature = "verus")]
+use crate::msg::uint_chars;
 
 #[cfg(feature = "verus")]
 use vstd::arithmetic::div_mod::lemma_fundamental_div_mod;
@@ -353,7 +367,7 @@ impl Ratio {
     /// difference `a·d - c·b` is unchanged at every step, and the denominators
     /// shrink, as in Euclid's algorithm.
     #[cfg_attr(feature = "verus", verus_spec(r =>
-        requires self.wf(), other.wf(),
+        requires self.d() > 0, other.d() > 0,
         ensures
             (r == Ordering::Less) == (self.n() * other.d() < other.n() * self.d()),
             (r == Ordering::Equal) == (self.n() * other.d() == other.n() * self.d()),
@@ -423,26 +437,93 @@ impl Ratio {
     }
 }
 
+#[cfg_attr(feature = "verus", verus_verify)]
+impl Ratio {
+    /// The digits of the numerator, then `/` and the denominator's unless it is `1`.
+    #[cfg_attr(feature = "verus", verus_spec(r =>
+        ensures
+            r@ == if self.d() == 1 {
+                uint_chars(self.n() as nat)
+            } else {
+                uint_chars(self.n() as nat) + "/"@ + uint_chars(self.d() as nat)
+            },
+    ))]
+    #[must_use]
+    pub fn text(self) -> String {
+        let mut t = String::new();
+        push_uint(&mut t, self.num);
+        if self.den != 1 {
+            t.push_str("/");
+            push_uint(&mut t, self.den);
+        }
+        proof! { assert(Seq::<char>::empty() + uint_chars(self.n() as nat) =~= uint_chars(self.n() as nat)); }
+        t
+    }
+}
+
+#[cfg(feature = "verus")]
+verus! {
+
+/// `a` against `b`.
+pub open spec fn order(a: int, b: int) -> Ordering {
+    if a < b { Ordering::Less } else if a == b { Ordering::Equal } else { Ordering::Greater }
+}
+
+impl Ratio {
+    /// How [`Ord`] compares: by value, cross-multiplied.
+    pub open spec fn compare_spec(self, other: Self) -> Ordering {
+        if self.d() == 0 || other.d() == 0 {
+            order(self.n(), other.n())
+        } else {
+            order(self.n() * other.d(), other.n() * self.d())
+        }
+    }
+}
+
+impl vstd::std_specs::cmp::OrdSpecImpl for Ratio {
+    open spec fn obeys_cmp_spec() -> bool {
+        true
+    }
+
+    open spec fn cmp_spec(&self, other: &Self) -> Ordering {
+        self.compare_spec(*other)
+    }
+}
+
+impl vstd::std_specs::cmp::PartialOrdSpecImpl for Ratio {
+    open spec fn obeys_partial_cmp_spec() -> bool {
+        true
+    }
+
+    open spec fn partial_cmp_spec(&self, other: &Self) -> Option<Ordering> {
+        Some(self.compare_spec(*other))
+    }
+}
+
+} // verus!
+
+#[cfg_attr(feature = "verus", verus_verify)]
 impl PartialOrd for Ratio {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         Some(self.cmp(other))
     }
 }
 
+#[cfg_attr(feature = "verus", verus_verify)]
 impl Ord for Ratio {
     fn cmp(&self, other: &Self) -> Ordering {
+        // Every constructor keeps the denominator positive (`wf`); Verus has
+        // no invariant on the type to say so, so the case is ruled out here.
+        if self.den == 0 || other.den == 0 {
+            return self.num.cmp(&other.num);
+        }
         self.compare(*other)
     }
 }
 
 impl fmt::Display for Ratio {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let mut text = format_uint(self.num);
-        if self.den != 1 {
-            text.push(b'/');
-            text.extend(format_uint(self.den));
-        }
-        text.into_iter().try_for_each(|b| f.write_char(char::from(b)))
+        f.write_str(&self.text())
     }
 }
 

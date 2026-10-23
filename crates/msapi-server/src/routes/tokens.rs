@@ -104,9 +104,9 @@ pub fn get(conn: &Connection, ctx: &Ctx, id: &str) -> Result<Response, ApiError>
         ctx.principal.require(Scope::TokensRead)?;
     }
     if !policy::is_member(id.as_bytes(), &as_bytes(&visible(conn, ctx)?)) {
-        return Err(ApiError::not_found(format!("token `{id}`")));
+        return Err(ApiError::not_found_id("token", id));
     }
-    let token = load(conn, id)?.ok_or_else(|| ApiError::not_found(format!("token `{id}`")))?;
+    let token = load(conn, id)?.ok_or_else(|| ApiError::not_found_id("token", id))?;
     Ok(Response::json(200, &token))
 }
 
@@ -171,9 +171,9 @@ pub fn revoke(conn: &mut Connection, ctx: &Ctx, id: &str) -> Result<Response, Ap
         ctx.principal.require(Scope::TokensWrite)?;
     }
     if !policy::is_member(id.as_bytes(), &as_bytes(&visible(conn, ctx)?)) {
-        return Err(ApiError::not_found(format!("token `{id}`")));
+        return Err(ApiError::not_found_id("token", id));
     }
-    let before = load(conn, id)?.ok_or_else(|| ApiError::not_found(format!("token `{id}`")))?;
+    let before = load(conn, id)?.ok_or_else(|| ApiError::not_found_id("token", id))?;
     let now = Timestamp::now().millis();
 
     let write = Write::begin(conn, ctx)?;

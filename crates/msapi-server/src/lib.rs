@@ -18,6 +18,13 @@ macro_rules! proof {
     ($($t:tt)*) => {};
 }
 
+/// Without Verus, `proof_decl! { .. }` ghost bindings compile to nothing.
+#[cfg(not(feature = "verus"))]
+#[allow(unused_macros, reason = "used as modules gain proofs")]
+macro_rules! proof_decl {
+    ($($t:tt)*) => {};
+}
+
 pub mod audit;
 pub mod auth;
 pub mod db;

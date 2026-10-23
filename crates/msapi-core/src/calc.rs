@@ -30,12 +30,33 @@ pub enum CalcError {
     Unsupported(&'static str),
 }
 
+#[cfg_attr(feature = "verus", verus_verify)]
+impl CalcError {
+    /// The message [`Display`](fmt::Display) writes.
+    #[cfg_attr(feature = "verus", verus_spec(r =>
+        ensures
+            r@ == match self {
+                Self::Overflow => "an intermediate value overflowed"@,
+                Self::Unsupported(what) => "not supported yet: "@ + what@,
+            },
+    ))]
+    #[must_use]
+    pub fn message(&self) -> String {
+        let mut m = String::new();
+        match self {
+            Self::Overflow => m.push_str("an intermediate value overflowed"),
+            Self::Unsupported(what) => {
+                m.push_str("not supported yet: ");
+                m.push_str(what);
+            }
+        }
+        m
+    }
+}
+
 impl fmt::Display for CalcError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Overflow => f.write_str("an intermediate value overflowed"),
-            Self::Unsupported(what) => write!(f, "not supported yet: {what}"),
-        }
+        f.write_str(&self.message())
     }
 }
 

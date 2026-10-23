@@ -38,14 +38,31 @@
 //! # Ok::<(), msapi_core::FixedError>(())
 //! ```
 
-use std::fmt::{self, Write as _};
+#![allow(
+    clippy::cast_lossless,
+    clippy::single_char_add_str,
+    clippy::manual_unwrap_or_default,
+    clippy::manual_map,
+    clippy::single_match,
+    clippy::collapsible_if,
+    clippy::manual_unwrap_or,
+    clippy::single_match_else,
+    reason = "Verus checks plain casts, matches and `push_str`; it has no spec for `From` widening, `Option` combinators or `if let` chains"
+)]
+
+use std::fmt;
 use std::ops::{Add, AddAssign};
 use std::str::FromStr;
 
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
+#[cfg(feature = "verus")]
+use crate::decimal::decimal_text;
 use crate::fixed::{Fixed, FixedError, Pct};
 use crate::formula;
+use crate::msg::push_uint;
+#[cfg(feature = "verus")]
+use crate::msg::uint_chars;
 use crate::ratio::Ratio;
 #[cfg(feature = "verus")]
 use vstd::prelude::*;
@@ -209,21 +226,69 @@ macro_rules! flat {
             }
         }
 
+        #[cfg(feature = "verus")]
+        verus! {
+            impl $name {
+                /// The unit holding `n`, for specs.
+                pub closed spec fn of(n: u64) -> Self {
+                    Self(n)
+                }
+            }
+
+            impl vstd::std_specs::convert::FromSpecImpl<u64> for $name {
+                open spec fn obeys_from_spec() -> bool {
+                    true
+                }
+
+                open spec fn from_spec(n: u64) -> Self {
+                    Self::of(n)
+                }
+            }
+        }
+
+        #[cfg_attr(feature = "verus", verus_verify)]
         impl From<u64> for $name {
             fn from(n: u64) -> Self {
                 Self(n)
             }
         }
 
+        #[cfg_attr(feature = "verus", verus_verify)]
+        impl $name {
+            /// The count's digits, as `Display` writes them.
+            #[must_use]
+            #[cfg_attr(feature = "verus", verus_spec(r => ensures r@ == uint_chars(self.value() as nat)))]
+            pub fn text(self) -> String {
+                let mut t = String::new();
+                push_uint(&mut t, self.0 as u128);
+                proof! { assert(Seq::<char>::empty() + uint_chars(self.value() as nat) =~= uint_chars(self.value() as nat)); }
+                t
+            }
+
+            /// The name and count, as `Debug` writes them: `Str(1234)`.
+            #[must_use]
+            #[cfg_attr(feature = "verus", verus_spec(r =>
+                ensures r@ == concat!(stringify!($name), "(")@ + uint_chars(self.value() as nat) + ")"@
+            ))]
+            pub fn debug_text(self) -> String {
+                let mut t = String::new();
+                t.push_str(concat!(stringify!($name), "("));
+                push_uint(&mut t, self.0 as u128);
+                t.push_str(")");
+                proof! { assert(Seq::<char>::empty() + concat!(stringify!($name), "(")@ =~= concat!(stringify!($name), "(")@); }
+                t
+            }
+        }
+
         impl fmt::Display for $name {
             fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-                crate::decimal::format_uint(u128::from(self.0)).into_iter().try_for_each(|b| f.write_char(char::from(b)))
+                f.write_str(&self.text())
             }
         }
 
         impl fmt::Debug for $name {
             fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-                write!(f, concat!(stringify!($name), "({})"), self.0)
+                f.write_str(&self.debug_text())
             }
         }
     )*};
@@ -390,22 +455,51 @@ macro_rules! percent {
             }
         }
 
+        #[cfg_attr(feature = "verus", verus_verify)]
+        impl $name {
+            /// The percentage, as `Display` writes it: `93.14`.
+            #[must_use]
+            #[cfg_attr(feature = "verus", verus_spec(r => ensures r@ == crate::msg::chars(decimal_text(self.value(), 2))))]
+            pub fn text(self) -> String {
+                self.0.text()
+            }
+
+            /// The name and percentage, as `Debug` writes them: `DamagePct(93.14%)`.
+            #[must_use]
+            #[cfg_attr(feature = "verus", verus_spec(r =>
+                ensures r@ == concat!(stringify!($name), "(")@ + crate::msg::chars(decimal_text(self.value(), 2)) + "%)"@
+            ))]
+            pub fn debug_text(self) -> String {
+                let mut t = String::new();
+                t.push_str(concat!(stringify!($name), "("));
+                let v = self.0.text();
+                t.push_str(v.as_str());
+                t.push_str("%)");
+                proof! { assert(Seq::<char>::empty() + concat!(stringify!($name), "(")@ =~= concat!(stringify!($name), "(")@); }
+                t
+            }
+        }
+
+        #[cfg_attr(feature = "verus", verus_verify)]
         impl FromStr for $name {
             type Err = FixedError;
             fn from_str(s: &str) -> Result<Self, Self::Err> {
-                s.parse().map(Self)
+                match Pct::parse(s) {
+                    Ok(p) => Ok(Self(p)),
+                    Err(e) => Err(e),
+                }
             }
         }
 
         impl fmt::Display for $name {
             fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-                fmt::Display::fmt(&self.0, f)
+                f.write_str(&self.text())
             }
         }
 
         impl fmt::Debug for $name {
             fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-                write!(f, concat!(stringify!($name), "({}%)"), self.0)
+                f.write_str(&self.debug_text())
             }
         }
     )*};
