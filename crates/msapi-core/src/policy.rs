@@ -125,6 +125,90 @@ pub struct AccountCheck {
     pub reachable: bool,
 }
 
+#[cfg(feature = "verus")]
+verus! {
+
+/// `id` is one of the IDs in `list`.
+pub open spec fn member(id: Seq<u8>, list: Seq<&[u8]>) -> bool {
+    exists|j: int| 0 <= j < list.len() && (#[trigger] list[j])@ == id
+}
+
+/// A token limited to `allowed` (or to nothing, if `None`) may reach `id`.
+pub open spec fn reaches_spec(id: Seq<u8>, allowed: Option<&[&[u8]]>) -> bool {
+    match allowed {
+        Some(list) => member(id, list@),
+        None => true,
+    }
+}
+
+} // verus!
+
+/// Whether `id` is one of the IDs in `list`, compared byte for byte.
+#[cfg_attr(feature = "verus", verus_verify)]
+#[cfg_attr(feature = "verus", verus_spec(r => ensures r == member(id@, list@)))]
+#[must_use]
+pub fn is_member(id: &[u8], list: &[&[u8]]) -> bool {
+    let mut j: usize = 0;
+    #[cfg_attr(feature = "verus", verus_spec(
+        invariant
+            j <= list.len(),
+            forall|k: int| 0 <= k < j ==> (#[trigger] list@[k])@ != id@,
+        decreases list.len() - j
+    ))]
+    while j < list.len() {
+        if crate::webauthn::bytes_eq(list[j], id) {
+            return true;
+        }
+        j += 1;
+    }
+    false
+}
+
+/// Whether a token limited to `allowed` (`None`: unlimited) may reach `id`.
+#[cfg_attr(feature = "verus", verus_verify)]
+#[cfg_attr(feature = "verus", verus_spec(r => ensures r == reaches_spec(id@, allowed)))]
+#[must_use]
+pub fn reaches(id: &[u8], allowed: Option<&[&[u8]]>) -> bool {
+    match allowed {
+        Some(list) => is_member(id, list),
+        None => true,
+    }
+}
+
+/// What [`check_mint`] needs to know about each requested account: whether
+/// the user owns it, and whether the minting token (limited to `allowed`, or
+/// unlimited if `None`) may reach it.
+#[cfg_attr(feature = "verus", verus_verify)]
+#[cfg_attr(feature = "verus", verus_spec(r =>
+    ensures
+        r@.len() == requested@.len(),
+        forall|i: int| 0 <= i < requested@.len() ==> {
+            &&& (#[trigger] r@[i]).owned == member(requested@[i]@, owned@)
+            &&& r@[i].reachable == reaches_spec(requested@[i]@, allowed)
+        },
+))]
+#[must_use]
+pub fn account_checks(requested: &[&[u8]], owned: &[&[u8]], allowed: Option<&[&[u8]]>) -> Vec<AccountCheck> {
+    let mut out: Vec<AccountCheck> = Vec::new();
+    let mut i: usize = 0;
+    #[cfg_attr(feature = "verus", verus_spec(
+        invariant
+            i <= requested.len(),
+            out@.len() == i,
+            forall|k: int| 0 <= k < i ==> {
+                &&& (#[trigger] out@[k]).owned == member(requested@[k]@, owned@)
+                &&& out@[k].reachable == reaches_spec(requested@[k]@, allowed)
+            },
+        decreases requested.len() - i
+    ))]
+    while i < requested.len() {
+        let id = requested[i];
+        out.push(AccountCheck { owned: is_member(id, owned), reachable: reaches(id, allowed) });
+        i += 1;
+    }
+    out
+}
+
 /// Why a token cannot be minted.
 #[cfg_attr(feature = "verus", verus_verify)]
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]

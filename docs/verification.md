@@ -80,6 +80,9 @@ each error is returned exactly in its case. `value()` is a unit's raw integer.
 | `bow_normalised_attack` | `bow_normalised`'s spec, and `Ok` whenever it and the intermediate product fit |
 | `combat_power` | `combat_power`'s spec of the unwrapped inputs and class Final Damage list |
 | `Ratio::ZERO`, `Ratio::ONE` | built by `Ratio::from_int`, so in lowest terms and equal to 0 and 1 |
+| `Count::get`, `Count::of_count`, `Percent::pct` (every unit) | trait specs: the count or hundredths in is the count or hundredths out |
+| `+`, `+=` on every unit | `plus`: saturating addition, matching vstd's `Add`/`AddAssign` specs |
+| `breakdown_total` (generic over `Scalable`) | `implied_total`'s spec of the base, the percent's hundredths (0 if absent) and the flat value (0 if absent); `None` exactly on overflow |
 
 ### `policy.rs`: token rules
 
@@ -88,6 +91,8 @@ each error is returned exactly in its case. `value()` is a unit's raw integer.
 | `contains`, `minus`, `is_subset` | bit-level set semantics; `minus(a, b) = 0` exactly when `a ⊆ b` |
 | `check_mint` | an `Ok` grant has a non-empty subset of the parent's scopes. Its accounts are non-empty, all owned and all reachable. It is account-limited whenever the parent is, sits within the depth limit, and expires no later than the parent and within 30 days |
 | `chain_expiry` | a token works exactly when no token in its chain is revoked or expired, and then expires at the earliest expiry in the chain (or never, if none expire) |
+| `is_member`, `reaches` | byte-for-byte membership of an ID in a list; `reaches` is true for an unlimited token |
+| `account_checks` | one `AccountCheck` per requested ID, with `owned` its membership in the user's accounts and `reachable` its `reaches` under the parent's limit |
 | `next_id` | strictly greater than the last ID, and at least the time-based candidate |
 | `page_size` | 50 by default, else exactly 1-200 |
 
@@ -108,8 +113,8 @@ goes through a proven function.
 
 | Route | Decided by |
 | --- | --- |
-| every authenticated route | `chain_expiry` (is the token alive, and until when), `contains` (scope) |
-| `POST /v1/tokens` | `check_mint`, `length_ok` (label) |
+| every authenticated route | `chain_expiry` (is the token alive, and until when), `contains` (scope), `reaches` (account limit) |
+| `POST /v1/tokens` | `account_checks`, `check_mint`, `length_ok` (label) |
 | `GET` lists (`limit`) | `page_size` |
 | `POST`/`PATCH /v1/accounts` | `length_ok` (label, notes) |
 | `POST`/`PATCH /v1/characters…` | `in_range` (levels), `exp_rate_ok`, `length_ok` |
@@ -167,13 +172,13 @@ These parts are not proven. They are covered by tests instead.
 - **Code that only moves data between those and the proofs:** SQL query
   text and account ownership (a SQL query), JSON merge patch (`serde_json`
   values), the rusqlite-value conversions in `durable.rs`, turning ASCII bytes into
-  `String`s, and in `auth.rs` the mapping to `AccountCheck { owned, reachable }`.
+  `String`s, and in `auth.rs` viewing account-ID `String`s as their bytes
+  (`String::as_bytes`) for `account_checks` and `reaches`.
 - **Unit plumbing that is generic or a trait impl:** `StatBreakdown::implied_total`
-  in `stat.rs` (generic over the `Scalable` trait and its associated percent
-  type, which Verus cannot specify through; it calls the proven
-  `formula::implied_total`), the `AddAssign` and `Sum` impls (which call the
-  proven `plus`), and the `Count`, `Percent`, `Scalable`, `From`, `FromStr`,
-  `Display`, `Debug` and serde impls of the unit types.
+  passing its three fields to the proven `breakdown_total` (the struct derives
+  serde, so Verus does not see it), the `Sum` impls (std's `Iterator::fold`
+  over the proven `+`, since Verus cannot specify a generic iterator), and the
+  `From`, `FromStr`, `Display`, `Debug` and serde impls of the unit types.
 - **Spec against reality:** that the specs are the game's formulas and the
   RFCs' formats is checked by golden tests and known vectors, not proofs.
 - **The verifier itself:** Verus, Z3, and `vstd`'s specs of the standard

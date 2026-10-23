@@ -51,15 +51,61 @@ use crate::ratio::Ratio;
 #[cfg(feature = "verus")]
 use vstd::prelude::*;
 
+#[cfg(feature = "verus")]
+verus! {
+
+/// What a [`Count`] stands for, for specs.
+pub trait CountSpec {
+    /// The count.
+    spec fn count(self) -> int;
+}
+
+/// What a [`Percent`] stands for, for specs.
+pub trait PercentSpec {
+    /// The percentage in hundredths.
+    spec fn pct_raw(self) -> int;
+}
+
+} // verus!
+
+// Each trait is declared twice: with Verus, it also carries the spec its
+// methods are checked against. The signatures are the same, so every impl
+// below compiles against both.
+
 /// A unit stored as a plain count.
+#[cfg(not(feature = "verus"))]
 pub trait Count: Copy {
     /// The count.
     fn get(self) -> u64;
+    /// The unit holding `n`.
+    fn of_count(n: u64) -> Self;
+}
+
+/// A unit stored as a plain count.
+#[cfg(feature = "verus")]
+#[verus_verify]
+pub trait Count: Copy + CountSpec {
+    /// The count.
+    #[verus_spec(r => ensures r as int == self.count())]
+    fn get(self) -> u64;
+    /// The unit holding `n`.
+    #[verus_spec(r => ensures r.count() == n as int)]
+    fn of_count(n: u64) -> Self;
 }
 
 /// A unit stored as a two-decimal percentage.
+#[cfg(not(feature = "verus"))]
 pub trait Percent: Copy {
     /// The percentage.
+    fn pct(self) -> Pct;
+}
+
+/// A unit stored as a two-decimal percentage.
+#[cfg(feature = "verus")]
+#[verus_verify]
+pub trait Percent: Copy + PercentSpec {
+    /// The percentage.
+    #[verus_spec(r => ensures r.value() == self.pct_raw())]
     fn pct(self) -> Pct;
 }
 
@@ -67,6 +113,7 @@ pub trait Percent: Copy {
 ///
 /// The associated [`Scalable::Percent`] ties each stat to its own percentage,
 /// so a STR breakdown cannot be given an ATT% by mistake.
+#[cfg_attr(feature = "verus", verus_verify)]
 pub trait Scalable: Count + From<u64> {
     /// The percentage that scales this stat.
     type Percent: Percent;
@@ -100,6 +147,16 @@ macro_rules! flat {
                 pub closed spec fn value(self) -> int {
                     self.0 as int
                 }
+
+                /// The saturating sum `plus` computes, for specs.
+                pub open spec fn plus_value(self, rhs: Self) -> int {
+                    if self.value() + rhs.value() > u64::MAX { u64::MAX as int } else { self.value() + rhs.value() }
+                }
+
+                /// The unit `plus` returns, for specs.
+                pub closed spec fn plus_spec(self, rhs: Self) -> Self {
+                    Self(self.plus_value(rhs) as u64)
+                }
             }
         }
 
@@ -124,16 +181,32 @@ macro_rules! flat {
             /// would be silently wrong.
             #[must_use]
             #[cfg_attr(feature = "verus", verus_spec(r =>
-                ensures r.value() == if self.value() + rhs.value() > u64::MAX { u64::MAX as int } else { self.value() + rhs.value() }
+                ensures
+                    r.value() == if self.value() + rhs.value() > u64::MAX { u64::MAX as int } else { self.value() + rhs.value() },
+                    r == self.plus_spec(rhs),
             ))]
             pub const fn plus(self, rhs: Self) -> Self {
                 Self(self.0.saturating_add(rhs.0))
             }
         }
 
+        #[cfg(feature = "verus")]
+        verus! {
+            impl CountSpec for $name {
+                open spec fn count(self) -> int {
+                    self.value()
+                }
+            }
+        }
+
+        #[cfg_attr(feature = "verus", verus_verify)]
         impl Count for $name {
             fn get(self) -> u64 {
                 self.0
+            }
+
+            fn of_count(n: u64) -> Self {
+                Self(n)
             }
         }
 
@@ -159,17 +232,52 @@ macro_rules! flat {
 
 macro_rules! additive {
     ($($name:ident),*) => {$(
-        // Delegates to the checked `plus`; vstd's `Add` spec is not this one.
+        // `+` and `+=` are `plus`, which is what vstd's operator specs say.
+        #[cfg(feature = "verus")]
+        verus! {
+            impl vstd::std_specs::ops::AddSpecImpl for $name {
+                open spec fn obeys_add_spec() -> bool {
+                    true
+                }
+
+                open spec fn add_req(self, rhs: Self) -> bool {
+                    true
+                }
+
+                open spec fn add_spec(self, rhs: Self) -> Self {
+                    self.plus_spec(rhs)
+                }
+            }
+
+            impl vstd::std_specs::ops::AddAssignSpecImpl for $name {
+                open spec fn obeys_add_assign_spec() -> bool {
+                    true
+                }
+
+                open spec fn add_assign_req(&self, rhs: Self) -> bool {
+                    true
+                }
+
+                open spec fn add_assign_spec(&self, rhs: Self) -> &Self {
+                    &self.plus_spec(rhs)
+                }
+            }
+        }
+
+        #[cfg_attr(feature = "verus", verus_verify)]
         impl Add for $name {
             type Output = Self;
+            #[cfg_attr(feature = "verus", verus_spec(r => ensures r.value() == self.plus_value(rhs)))]
             fn add(self, rhs: Self) -> Self {
                 self.plus(rhs)
             }
         }
 
+        #[cfg_attr(feature = "verus", verus_verify)]
         impl AddAssign for $name {
+            #[cfg_attr(feature = "verus", verus_spec(ensures final(self).value() == old(self).plus_value(rhs)))]
             fn add_assign(&mut self, rhs: Self) {
-                *self = *self + rhs;
+                *self = self.plus(rhs);
             }
         }
 
@@ -209,6 +317,18 @@ macro_rules! percent {
                 pub closed spec fn value(self) -> int {
                     self.0.value()
                 }
+
+                /// The saturating sum `plus` computes, for specs.
+                pub open spec fn plus_value(self, rhs: Self) -> int {
+                    if self.value() + rhs.value() > i64::MAX { i64::MAX as int }
+                    else if self.value() + rhs.value() < i64::MIN { i64::MIN as int }
+                    else { self.value() + rhs.value() }
+                }
+
+                /// The unit `plus` returns, for specs.
+                pub closed spec fn plus_spec(self, rhs: Self) -> Self {
+                    Self(Pct::of_raw(self.plus_value(rhs) as i64))
+                }
             }
         }
 
@@ -241,7 +361,8 @@ macro_rules! percent {
             #[cfg_attr(feature = "verus", verus_spec(r =>
                 ensures r.value() == if self.value() + rhs.value() > i64::MAX { i64::MAX as int }
                     else if self.value() + rhs.value() < i64::MIN { i64::MIN as int }
-                    else { self.value() + rhs.value() }
+                    else { self.value() + rhs.value() },
+                    r == self.plus_spec(rhs),
             ))]
             pub const fn plus(self, rhs: Self) -> Self {
                 // `i64::saturating_add`, written out so Verus can check it.
@@ -260,6 +381,16 @@ macro_rules! percent {
         }
 
 
+        #[cfg(feature = "verus")]
+        verus! {
+            impl PercentSpec for $name {
+                open spec fn pct_raw(self) -> int {
+                    self.value()
+                }
+            }
+        }
+
+        #[cfg_attr(feature = "verus", verus_verify)]
         impl Percent for $name {
             fn pct(self) -> Pct {
                 self.0
@@ -410,24 +541,31 @@ additive!(
     Jump
 );
 
+#[cfg_attr(feature = "verus", verus_verify)]
 impl Scalable for Str {
     type Percent = StatPct;
 }
+#[cfg_attr(feature = "verus", verus_verify)]
 impl Scalable for Dex {
     type Percent = StatPct;
 }
+#[cfg_attr(feature = "verus", verus_verify)]
 impl Scalable for Int {
     type Percent = StatPct;
 }
+#[cfg_attr(feature = "verus", verus_verify)]
 impl Scalable for Luk {
     type Percent = StatPct;
 }
+#[cfg_attr(feature = "verus", verus_verify)]
 impl Scalable for MaxHp {
     type Percent = HpPct;
 }
+#[cfg_attr(feature = "verus", verus_verify)]
 impl Scalable for AttackPower {
     type Percent = AttackPct;
 }
+#[cfg_attr(feature = "verus", verus_verify)]
 impl Scalable for MagicAttack {
     type Percent = MagicAttackPct;
 }
