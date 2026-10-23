@@ -31,6 +31,7 @@ pub mod base32;
 pub mod calc;
 pub mod character;
 pub mod class;
+pub mod decimal;
 pub mod fixed;
 pub mod formula;
 pub mod policy;

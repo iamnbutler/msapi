@@ -4,6 +4,8 @@ use std::fmt;
 use std::str::FromStr;
 
 use serde::de::{self, Visitor};
+
+use crate::decimal::{DecimalError, parse_decimal};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 /// A decimal with exactly `DP` fractional digits, stored as an integer count
@@ -154,29 +156,11 @@ impl<const DP: u32> FromStr for Fixed<DP> {
     type Err = FixedError;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let invalid = || FixedError::Invalid(s.to_owned());
-        let (negative, body) = match s.strip_prefix('-') {
-            Some(rest) => (true, rest),
-            None => (false, s),
-        };
-        let (whole, frac) = body.split_once('.').unwrap_or((body, ""));
-        if whole.is_empty() || !whole.bytes().all(|b| b.is_ascii_digit()) || !frac.bytes().all(|b| b.is_ascii_digit()) {
-            return Err(invalid());
-        }
-        if body.contains('.') && frac.is_empty() {
-            return Err(invalid());
-        }
-        let frac_len = u32::try_from(frac.len()).map_err(|_| invalid())?;
-        if frac_len > DP {
-            return Err(FixedError::TooPrecise { max_decimals: DP });
-        }
-        let whole: i64 = whole.parse().map_err(|_| FixedError::OutOfRange)?;
-        let frac_value: i64 = if frac.is_empty() { 0 } else { frac.parse().map_err(|_| invalid())? };
-        let raw = whole
-            .checked_mul(Self::SCALE)
-            .and_then(|w| w.checked_add(frac_value * 10_i64.pow(DP - frac_len)))
-            .ok_or(FixedError::OutOfRange)?;
-        Ok(Self(if negative { -raw } else { raw }))
+        parse_decimal(s.as_bytes(), DP).map(Self).map_err(|e| match e {
+            DecimalError::Invalid => FixedError::Invalid(s.to_owned()),
+            DecimalError::TooPrecise => FixedError::TooPrecise { max_decimals: DP },
+            DecimalError::OutOfRange => FixedError::OutOfRange,
+        })
     }
 }
 
