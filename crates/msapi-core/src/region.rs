@@ -70,6 +70,25 @@ impl Region {
     }
 }
 
+// Each region's wire name is exactly the text `names::region` proves its
+// lookup over, and its tag is its position; the build fails otherwise
+// (rerun `scripts/name_keys.py`).
+// Normal builds run it; under `verus` the ghost code is not const-evaluable.
+#[cfg(not(feature = "verus"))]
+const _: () = {
+    use crate::names::{
+        region::{GROUP, LEN, text},
+        same,
+    };
+    assert!(GROUP == 1 && LEN == Region::ALL.len(), "run scripts/name_keys.py");
+    let mut r = 0;
+    while r < Region::ALL.len() {
+        assert!(same(Region::ALL[r].as_str().as_bytes(), text(r)), "run scripts/name_keys.py");
+        assert!(Region::ALL[r] as usize == r, "run scripts/name_keys.py");
+        r += 1;
+    }
+};
+
 impl fmt::Display for Region {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(self.as_str())

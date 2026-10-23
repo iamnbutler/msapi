@@ -229,6 +229,24 @@ pub static CLASSES: &[Class] = &[
     row("erel-light", "Erel Light", JobType::Warrior, &[MainStat::Str], &[MainStat::Dex], false, 14900, 90, false),
 ];
 
+// Each class's ID and name are exactly the texts `names::class` proves its
+// lookup over; the build fails otherwise (rerun `scripts/name_keys.py`).
+// Normal builds run it; under `verus` the ghost code is not const-evaluable.
+#[cfg(not(feature = "verus"))]
+const _: () = {
+    use crate::names::{
+        class::{GROUP, LEN, text},
+        same,
+    };
+    assert!(GROUP == 2 && LEN == 2 * CLASSES.len(), "run scripts/name_keys.py");
+    let mut r = 0;
+    while r < CLASSES.len() {
+        assert!(same(CLASSES[r].id.as_bytes(), text(2 * r)), "run scripts/name_keys.py");
+        assert!(same(CLASSES[r].name.as_bytes(), text(2 * r + 1)), "run scripts/name_keys.py");
+        r += 1;
+    }
+};
+
 /// Lowercases and keeps only ASCII letters and digits, so `"Night Walker"`,
 /// `"night-walker"` and `"nightwalker"` compare equal.
 fn fold(s: &str) -> Vec<u8> {
