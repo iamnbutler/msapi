@@ -334,14 +334,66 @@ proof fn lemma_within_widen(c: Cbor, lo: int, hi: int, lo2: int, hi2: int)
 
 } // verus!
 
-/// `data[start..end]`.
-#[cfg_attr(feature = "verus", verus_verify(external_body))]
+/// A copy of `data[start..end]`.
+#[cfg_attr(feature = "verus", verus_verify)]
 #[cfg_attr(feature = "verus", verus_spec(r =>
     requires start <= end <= data@.len(),
     ensures r@ == data@.subrange(start as int, end as int)
 ))]
-fn slice(data: &[u8], start: usize, end: usize) -> &[u8] {
-    &data[start..end]
+fn copy_range(data: &[u8], start: usize, end: usize) -> Vec<u8> {
+    let mut out: Vec<u8> = Vec::new();
+    let mut i = start;
+    #[cfg_attr(feature = "verus", verus_spec(
+        invariant
+            start <= i <= end <= data@.len(),
+            out@ == data@.subrange(start as int, i as int),
+        decreases end - i
+    ))]
+    while i < end {
+        proof! {
+            assert(data@.subrange(start as int, i + 1) =~= data@.subrange(start as int, i as int).push(data@[i as int]));
+        }
+        out.push(data[i]);
+        i += 1;
+    }
+    out
+}
+
+/// Whether `data[start..end]` equals `key`, without copying it.
+#[cfg_attr(feature = "verus", verus_verify)]
+#[cfg_attr(feature = "verus", verus_spec(r =>
+    requires start <= end <= data@.len(),
+    ensures r == (data@.subrange(start as int, end as int) == key@)
+))]
+fn range_eq(data: &[u8], start: usize, end: usize, key: &[u8]) -> bool {
+    if end - start != key.len() {
+        proof! {
+            assert(data@.subrange(start as int, end as int).len() != key@.len());
+        }
+        return false;
+    }
+    let mut i: usize = 0;
+    #[cfg_attr(feature = "verus", verus_spec(
+        invariant
+            start <= end <= data@.len(),
+            end - start == key@.len(),
+            i <= key@.len(),
+            forall|j: int| 0 <= j < i ==> data@[start + j] == key@[j],
+        decreases key@.len() - i
+    ))]
+    while i < key.len() {
+        if data[start + i] != key[i] {
+            proof! {
+                assert(data@.subrange(start as int, end as int)[i as int] != key@[i as int]);
+            }
+            return false;
+        }
+        i += 1;
+    }
+    proof! {
+        assert(data@.subrange(start as int, end as int) =~= key@);
+    }
+    true
 }
 
 #[cfg_attr(feature = "verus", verus_verify)]
@@ -409,7 +461,7 @@ impl Cbor {
                 lemma_map_entry(*entries, i as int, 0, data@.len() as int);
             }
             if let Self::Text(start, end) = entries[i] {
-                if bytes_eq(slice(data, start, end), key) {
+                if range_eq(data, start, end, key) {
                     proof! {
                         lemma_map_value(*entries, i + 1);
                     }
@@ -448,9 +500,9 @@ impl Cbor {
             r matches Some(b) ==> match *self { Cbor::Bytes(s, e) => b@ == data@.subrange(s as int, e as int), _ => false }
     ))]
     #[must_use]
-    pub fn as_bytes<'d>(&self, data: &'d [u8]) -> Option<&'d [u8]> {
+    pub fn as_bytes(&self, data: &[u8]) -> Option<Vec<u8>> {
         match *self {
-            Self::Bytes(start, end) => Some(slice(data, start, end)),
+            Self::Bytes(start, end) => Some(copy_range(data, start, end)),
             _ => None,
         }
     }
@@ -459,7 +511,8 @@ impl Cbor {
 /// Whether two byte strings are equal.
 #[cfg_attr(feature = "verus", verus_verify)]
 #[cfg_attr(feature = "verus", verus_spec(r => ensures r == (a@ == b@)))]
-fn bytes_eq(a: &[u8], b: &[u8]) -> bool {
+#[must_use]
+pub fn bytes_eq(a: &[u8], b: &[u8]) -> bool {
     if a.len() != b.len() {
         return false;
     }
@@ -600,33 +653,101 @@ fn decode_at(data: &[u8], at: usize, depth: u32) -> Option<(Cbor, usize)> {
 /// A credential public key, from its COSE encoding.
 #[cfg_attr(feature = "verus", verus_verify)]
 #[derive(Debug, PartialEq, Eq)]
-pub enum PublicKey<'a> {
+pub enum PublicKey {
     /// ES256: ECDSA on P-256 with SHA-256. The uncompressed point is `04 ‖ x ‖ y`.
     Es256 {
         /// The x coordinate, 32 bytes.
-        x: &'a [u8],
+        x: Vec<u8>,
         /// The y coordinate, 32 bytes.
-        y: &'a [u8],
+        y: Vec<u8>,
     },
     /// `EdDSA` with Ed25519.
     Ed25519 {
         /// The 32-byte public key.
-        x: &'a [u8],
+        x: Vec<u8>,
     },
     /// RS256: RSASSA-PKCS1-v1_5 with SHA-256.
     Rs256 {
         /// The modulus.
-        n: &'a [u8],
+        n: Vec<u8>,
         /// The exponent.
-        e: &'a [u8],
+        e: Vec<u8>,
     },
+}
+
+/// The client data's origin check: exactly this site's origin, and not
+/// relayed from another site's frame.
+#[cfg_attr(feature = "verus", verus_verify)]
+#[cfg_attr(feature = "verus", verus_spec(r => ensures r == (origin@ == expected@ && !cross_origin)))]
+#[must_use]
+pub fn origin_ok(origin: &[u8], expected: &[u8], cross_origin: bool) -> bool {
+    bytes_eq(origin, expected) && !cross_origin
+}
+
+/// Whether authenticator data starts with `rp_id_hash`, the SHA-256 of this
+/// site's relying-party ID.
+#[cfg_attr(feature = "verus", verus_verify)]
+#[cfg_attr(feature = "verus", verus_spec(r =>
+    ensures r == (auth_data@.len() >= rp_id_hash@.len() && auth_data@.take(rp_id_hash@.len() as int) == rp_id_hash@)
+))]
+#[must_use]
+pub fn rp_id_hash_ok(auth_data: &[u8], rp_id_hash: &[u8]) -> bool {
+    if auth_data.len() < rp_id_hash.len() {
+        return false;
+    }
+    let r = range_eq(auth_data, 0, rp_id_hash.len(), rp_id_hash);
+    proof! {
+        assert(auth_data@.subrange(0, rp_id_hash@.len() as int) =~= auth_data@.take(rp_id_hash@.len() as int));
+    }
+    r
+}
+
+/// The uncompressed P-256 point `04 ‖ x ‖ y`.
+#[cfg_attr(feature = "verus", verus_verify)]
+#[cfg_attr(feature = "verus", verus_spec(r => ensures r@ == seq![4u8] + x@ + y@))]
+#[must_use]
+pub fn es256_point(x: &[u8], y: &[u8]) -> Vec<u8> {
+    let mut out: Vec<u8> = Vec::new();
+    out.push(4);
+    let mut i: usize = 0;
+    #[cfg_attr(feature = "verus", verus_spec(
+        invariant i <= x@.len(), out@ == seq![4u8] + x@.take(i as int),
+        decreases x@.len() - i
+    ))]
+    while i < x.len() {
+        proof! {
+            assert(x@.take(i + 1) =~= x@.take(i as int).push(x@[i as int]));
+        }
+        out.push(x[i]);
+        i += 1;
+    }
+    let mut j: usize = 0;
+    proof! {
+        assert(x@.take(x@.len() as int) =~= x@);
+    }
+    #[cfg_attr(feature = "verus", verus_spec(
+        invariant j <= y@.len(), out@ == seq![4u8] + x@ + y@.take(j as int),
+        decreases y@.len() - j
+    ))]
+    while j < y.len() {
+        proof! {
+            assert(y@.take(j + 1) =~= y@.take(j as int).push(y@[j as int]));
+        }
+        out.push(y[j]);
+        j += 1;
+    }
+    proof! {
+        assert(y@.take(y@.len() as int) =~= y@);
+        assert(out@ =~= seq![4u8] + x@ + y@);
+    }
+    out
 }
 
 /// COSE algorithm numbers this server accepts, in order of preference.
 pub const ALGORITHMS: [i64; 3] = [-8, -7, -257];
 
 #[cfg_attr(feature = "verus", verus_verify)]
-impl<'a> PublicKey<'a> {
+impl PublicKey {
     /// Reads a COSE key decoded from `data`. `None` for any key type or
     /// algorithm not in [`ALGORITHMS`], or a malformed one.
     #[cfg_attr(feature = "verus", verus_verify)]
@@ -637,7 +758,7 @@ impl<'a> PublicKey<'a> {
             r matches Some(PublicKey::Ed25519 { x }) ==> x@.len() == 32,
     ))]
     #[must_use]
-    pub fn from_cose(key: &Cbor, data: &'a [u8]) -> Option<Self> {
+    pub fn from_cose(key: &Cbor, data: &[u8]) -> Option<Self> {
         let (Some(kty), Some(alg)) = (int_at(key, 1), int_at(key, 3)) else { return None };
         if kty == 2 && alg == -7 {
             // EC2, ES256, curve P-256.
@@ -675,7 +796,7 @@ fn int_at(key: &Cbor, label: i64) -> Option<i64> {
 /// The byte string under `label` in a COSE map decoded from `data`.
 #[cfg_attr(feature = "verus", verus_verify)]
 #[cfg_attr(feature = "verus", verus_spec(requires within(*key, 0, data@.len() as int)))]
-fn bytes_at<'d>(key: &Cbor, data: &'d [u8], label: i64) -> Option<&'d [u8]> {
+fn bytes_at(key: &Cbor, data: &[u8], label: i64) -> Option<Vec<u8>> {
     match key.get_int(label) {
         Some(v) => {
             proof! {
@@ -713,7 +834,7 @@ mod tests {
         key.push(0xf6); // trailing item
         let (cbor, end) = Cbor::decode(&key).unwrap();
         assert_eq!(&key[end..], &[0xf6]);
-        assert_eq!(PublicKey::from_cose(&cbor, &key), Some(PublicKey::Es256 { x: &[0; 32], y: &[0x11; 32] }));
+        assert_eq!(PublicKey::from_cose(&cbor, &key), Some(PublicKey::Es256 { x: vec![0; 32], y: vec![0x11; 32] }));
     }
 
     #[test]

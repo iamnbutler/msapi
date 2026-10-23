@@ -201,11 +201,11 @@ struct ClientData {
 fn client_data(json: &[u8], kind: &str) -> Result<Pending, ApiError> {
     let data: ClientData =
         serde_json::from_slice(json).map_err(|e| ApiError::bad_request(format!("clientDataJSON: {e}")))?;
-    if data.kind != kind {
+    if !webauthn::bytes_eq(data.kind.as_bytes(), kind.as_bytes()) {
         return Err(ApiError::bad_request(format!("clientDataJSON type is `{}`, expected `{kind}`", data.kind)));
     }
     let ceremony = finish(&b64url_decode(&data.challenge)?)?;
-    if data.origin != rp().origin || data.cross_origin {
+    if !webauthn::origin_ok(data.origin.as_bytes(), rp().origin.as_bytes(), data.cross_origin) {
         return Err(ApiError::unauthorized(format!("passkeys here are for {}, not {}", rp().origin, data.origin)));
     }
     Ok(ceremony)
@@ -215,7 +215,7 @@ fn client_data(json: &[u8], kind: &str) -> Result<Pending, ApiError> {
 fn check_auth_data(auth_data: &[u8]) -> Result<webauthn::AuthDataLayout, ApiError> {
     let layout = webauthn::auth_data_layout(auth_data)
         .ok_or_else(|| ApiError::bad_request("authenticator data is truncated"))?;
-    if auth_data[..32] != *digest(&SHA256, rp().id.as_bytes()).as_ref() {
+    if !webauthn::rp_id_hash_ok(auth_data, digest(&SHA256, rp().id.as_bytes()).as_ref()) {
         return Err(ApiError::unauthorized("the passkey is for a different site"));
     }
     if !webauthn::presence_ok(layout.flags) {
@@ -239,12 +239,12 @@ fn register_finish(conn: &mut Connection, req: &Request, request_id: &str) -> Re
         .get_text(&attestation, b"authData")
         .and_then(|v| v.as_bytes(&attestation))
         .ok_or_else(|| ApiError::bad_request("attestationObject has no authData"))?;
-    let layout = check_auth_data(auth_data)?;
+    let layout = check_auth_data(&auth_data)?;
     if layout.flags & webauthn::ATTESTED == 0 {
         return Err(ApiError::bad_request("authenticator data has no credential"));
     }
     let id = &auth_data[layout.id_start..layout.id_end];
-    if b64url(id) != credential.id {
+    if !webauthn::bytes_eq(&base64url::encode(id), credential.id.as_bytes()) {
         return Err(ApiError::bad_request("credential id does not match the authenticator data"));
     }
     let key_bytes = &auth_data[layout.id_end..];
@@ -328,13 +328,10 @@ fn login_finish(conn: &mut Connection, req: &Request, request_id: &str) -> Resul
     Ok(session.response(200, &display_name))
 }
 
-fn verify(key: &PublicKey<'_>, message: &[u8], sig: &[u8]) -> bool {
-    match *key {
+fn verify(key: &PublicKey, message: &[u8], sig: &[u8]) -> bool {
+    match key {
         PublicKey::Es256 { x, y } => {
-            let mut point = Vec::with_capacity(65);
-            point.push(4);
-            point.extend_from_slice(x);
-            point.extend_from_slice(y);
+            let point = webauthn::es256_point(x, y);
             UnparsedPublicKey::new(&signature::ECDSA_P256_SHA256_ASN1, point).verify(message, sig).is_ok()
         }
         PublicKey::Ed25519 { x } => UnparsedPublicKey::new(&signature::ED25519, x).verify(message, sig).is_ok(),

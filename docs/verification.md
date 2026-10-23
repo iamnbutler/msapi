@@ -93,7 +93,7 @@ goes through a proven function.
 | `POST`/`PATCH /v1/accounts` | `length_ok` (label, notes) |
 | `POST`/`PATCH /v1/characters…` | `in_range` (levels), `exp_rate_ok`, `length_ok` |
 | `PUT`/`PATCH …/stat` | `captured_at_ok`, `ignore_defense_ok`, `cooldown_reduction_ok`, `percentage_ok`, `range_ok`, and `implied_total` for tooltip warnings |
-| `/v1/auth/passkey/*` | `base64url::decode` (every binary field and the challenge), `Cbor::decode`, `PublicKey::from_cose`, `auth_data_layout`, `presence_ok`, `counter_ok`, `length_ok` (display name) |
+| `/v1/auth/passkey/*` | `base64url::decode` (every binary field and the challenge), `Cbor::decode`, `PublicKey::from_cose`, `bytes_eq` (type, credential ID), `origin_ok`, `rp_id_hash_ok`, `es256_point`, `auth_data_layout`, `presence_ok`, `counter_ok`, `length_ok` (display name) |
 | every query parameter | `percent_decode` |
 | stat fields with decimals | `parse_decimal` |
 | new IDs (audit and history order) | `next_id`, then `base32::encode_u128` (proven order-preserving) |
@@ -110,7 +110,11 @@ goes through a proven function.
 | `counter_ok` | a sign-in counter is accepted only if it grew, or if the authenticator keeps none (both 0) |
 | `presence_ok` | sign-in requires the user-present flag |
 | `Cbor::decode` | every item ends after it starts and within the buffer, and every byte and text string it returns lies inside its item. Nesting is capped at 8 and counts larger than the remaining bytes are refused, so it terminates without unbounded allocation |
-| `get_int`, `get_text`, `as_bytes`, `as_int` | a value found is one of the map's entries; `as_bytes` returns exactly the item's range of the buffer; `as_int` is the exact integer |
+| `get_int`, `get_text`, `as_bytes`, `as_int` | a value found is one of the map's entries; `get_text` compares the key's exact bytes; `as_bytes` returns exactly the item's range of the buffer; `as_int` is the exact integer |
+| `origin_ok` | the client data's origin is byte-for-byte this site's and `crossOrigin` is false |
+| `bytes_eq` | exact byte equality (the client data's type, the credential ID against the authenticator data) |
+| `rp_id_hash_ok` | the authenticator data starts with exactly the relying-party ID hash |
+| `es256_point` | the key handed to ECDSA is exactly `04 ‖ x ‖ y` |
 | `PublicKey::from_cose` | ES256 and Ed25519 keys come back with exactly 32-byte coordinates |
 
 ### Encodings and parsers
@@ -138,13 +142,11 @@ These parts are not proven. They are covered by tests instead.
   log (`deploy/src/index.ts`, TypeScript).
 - **Code that only moves data between those and the proofs:** SQL query
   text and account ownership (a SQL query), JSON merge patch (`serde_json`
-  values), string comparisons of the client data's type and origin, the
+  values), the
   rusqlite-value conversions in `durable.rs` and its iterator over frames, the
   `&` and `=` split in query strings, turning ASCII bytes into `String`s, the
   `units`, `calc` and `stat` wrappers that unwrap unit types, and in `auth.rs`
   the mapping to `AccountCheck { owned, reachable }`.
-- **One `external_body`:** `webauthn::slice`, which is `&data[start..end]`,
-  called only where the proof shows `start <= end <= len`.
 - **Hand-built constants:** `Ratio::ZERO` and `Ratio::ONE`.
 - **Spec against reality:** that the specs are the game's formulas and the
   RFCs' formats is checked by golden tests and known vectors, not proofs.
