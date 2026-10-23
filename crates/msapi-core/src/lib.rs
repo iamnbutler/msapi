@@ -27,6 +27,7 @@ macro_rules! proof {
 
 #[cfg(feature = "verus")]
 mod arith;
+pub mod base32;
 pub mod calc;
 pub mod character;
 pub mod class;

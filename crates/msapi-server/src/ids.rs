@@ -6,8 +6,6 @@ use ring::rand::{SecureRandom, SystemRandom};
 
 use msapi_core::Timestamp;
 
-const CROCKFORD: &[u8; 32] = b"0123456789abcdefghjkmnpqrstvwxyz";
-
 /// `N` bytes from the OS random number generator.
 ///
 /// # Panics
@@ -25,20 +23,7 @@ pub fn random<const N: usize>() -> [u8; N] {
 
 /// Lowercase Crockford base32 of `bytes`, most significant bits first.
 fn base32(bytes: &[u8]) -> String {
-    let mut out = String::with_capacity(bytes.len() * 8 / 5 + 1);
-    let (mut acc, mut bits) = (0u32, 0u32);
-    for &b in bytes {
-        acc = (acc << 8) | u32::from(b);
-        bits += 8;
-        while bits >= 5 {
-            bits -= 5;
-            out.push(char::from(CROCKFORD[((acc >> bits) & 31) as usize]));
-        }
-    }
-    if bits > 0 {
-        out.push(char::from(CROCKFORD[((acc << (5 - bits)) & 31) as usize]));
-    }
-    out
+    msapi_core::base32::encode(bytes).into_iter().map(char::from).collect()
 }
 
 /// The last ID value handed out, so IDs from this process strictly increase.
@@ -61,7 +46,9 @@ pub fn new_id(prefix: &str) -> String {
         *last = msapi_core::policy::next_id(*last, candidate);
         *last
     };
-    format!("{prefix}_{}", base32(&value.to_be_bytes()))
+    // encode_u128 is proven order-preserving, so ID strings sort as values do.
+    let text: String = msapi_core::base32::encode_u128(value).into_iter().map(char::from).collect();
+    format!("{prefix}_{text}")
 }
 
 /// A new bearer token: `msk_` followed by 256 random bits.
