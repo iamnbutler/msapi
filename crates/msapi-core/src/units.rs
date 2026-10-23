@@ -43,11 +43,13 @@ use std::iter::Sum;
 use std::ops::{Add, AddAssign};
 use std::str::FromStr;
 
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 use crate::fixed::{Fixed, FixedError, Pct};
 use crate::formula;
 use crate::ratio::Ratio;
+#[cfg(feature = "verus")]
+use vstd::prelude::*;
 
 /// A unit stored as a plain count.
 pub trait Count: Copy {
@@ -73,15 +75,59 @@ pub trait Scalable: Count + From<u64> {
 macro_rules! flat {
     ($($(#[$doc:meta])* $name:ident;)*) => {$(
         $(#[$doc])*
-        #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default, Serialize, Deserialize)]
-        #[serde(transparent)]
+        #[cfg_attr(feature = "verus", verus_verify)]
+        #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
         pub struct $name(u64);
 
+        // By hand rather than derived (Verus refuses serde's derive on a
+        // checked type); the same as `#[serde(transparent)]`.
+        impl Serialize for $name {
+            fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+                self.0.serialize(serializer)
+            }
+        }
+
+        impl<'de> Deserialize<'de> for $name {
+            fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+                u64::deserialize(deserializer).map(Self)
+            }
+        }
+
+        #[cfg(feature = "verus")]
+        verus! {
+            impl $name {
+                /// The count, for specs.
+                pub closed spec fn value(self) -> int {
+                    self.0 as int
+                }
+            }
+        }
+
+        #[cfg_attr(feature = "verus", verus_verify)]
         impl $name {
             /// Wraps a count.
             #[must_use]
+            #[cfg_attr(feature = "verus", verus_spec(r => ensures r.value() == n as int))]
             pub const fn new(n: u64) -> Self {
                 Self(n)
+            }
+
+            /// The count.
+            #[must_use]
+            #[cfg_attr(feature = "verus", verus_spec(r => ensures r as int == self.value()))]
+            pub const fn get(self) -> u64 {
+                self.0
+            }
+
+            /// The sum, saturating at `u64::MAX` as `Fixed`'s addition does:
+            /// no total a stat window shows is near it, and a wrapped one
+            /// would be silently wrong.
+            #[must_use]
+            #[cfg_attr(feature = "verus", verus_spec(r =>
+                ensures r.value() == if self.value() + rhs.value() > u64::MAX { u64::MAX as int } else { self.value() + rhs.value() }
+            ))]
+            pub const fn plus(self, rhs: Self) -> Self {
+                Self(self.0.saturating_add(rhs.0))
             }
         }
 
@@ -113,10 +159,11 @@ macro_rules! flat {
 
 macro_rules! additive {
     ($($name:ident),*) => {$(
+        // Delegates to the checked `plus`; vstd's `Add` spec is not this one.
         impl Add for $name {
             type Output = Self;
             fn add(self, rhs: Self) -> Self {
-                Self(self.0 + rhs.0)
+                self.plus(rhs)
             }
         }
 
@@ -137,17 +184,81 @@ macro_rules! additive {
 macro_rules! percent {
     ($($(#[$doc:meta])* $name:ident;)*) => {$(
         $(#[$doc])*
-        #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default, Serialize, Deserialize)]
-        #[serde(transparent)]
+        #[cfg_attr(feature = "verus", verus_verify)]
+        #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
         pub struct $name(Pct);
 
+        // By hand rather than derived (Verus refuses serde's derive on a
+        // checked type); the same as `#[serde(transparent)]`.
+        impl Serialize for $name {
+            fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+                self.0.serialize(serializer)
+            }
+        }
+
+        impl<'de> Deserialize<'de> for $name {
+            fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+                Pct::deserialize(deserializer).map(Self)
+            }
+        }
+
+        #[cfg(feature = "verus")]
+        verus! {
+            impl $name {
+                /// The raw percentage in hundredths, for specs.
+                pub closed spec fn value(self) -> int {
+                    self.0.value()
+                }
+            }
+        }
+
+        #[cfg_attr(feature = "verus", verus_verify)]
         impl $name {
             /// Wraps a percentage.
             #[must_use]
+            #[cfg_attr(feature = "verus", verus_spec(r => ensures r.value() == p.value()))]
             pub const fn new(p: Pct) -> Self {
                 Self(p)
             }
+
+            /// The percentage.
+            #[must_use]
+            #[cfg_attr(feature = "verus", verus_spec(r => ensures r.value() == self.value()))]
+            pub const fn pct(self) -> Pct {
+                self.0
+            }
+
+            /// The raw percentage in hundredths (`93.14%` is `9314`).
+            #[must_use]
+            #[cfg_attr(feature = "verus", verus_spec(r => ensures r as int == self.value()))]
+            pub const fn raw(self) -> i64 {
+                self.0.raw()
+            }
+
+            /// The sum within this pool, saturating at the ends of `i64` as
+            /// `Fixed`'s addition does.
+            #[must_use]
+            #[cfg_attr(feature = "verus", verus_spec(r =>
+                ensures r.value() == if self.value() + rhs.value() > i64::MAX { i64::MAX as int }
+                    else if self.value() + rhs.value() < i64::MIN { i64::MIN as int }
+                    else { self.value() + rhs.value() }
+            ))]
+            pub const fn plus(self, rhs: Self) -> Self {
+                // `i64::saturating_add`, written out so Verus can check it.
+                let sum = self.0.raw() as i128 + rhs.0.raw() as i128;
+                let raw = if sum > i64::MAX as i128 {
+                    i64::MAX
+                } else if sum < i64::MIN as i128 {
+                    i64::MIN
+                } else {
+                    #[allow(clippy::cast_possible_truncation, reason = "in range: the branches above cut off the rest")]
+                    let raw = sum as i64;
+                    raw
+                };
+                Self(Pct::from_raw(raw))
+            }
         }
+
 
         impl Percent for $name {
             fn pct(self) -> Pct {
@@ -325,10 +436,28 @@ impl Scalable for MagicAttack {
 pub type CooldownSeconds = Fixed<2>;
 
 /// `1 + p / 100` as an exact ratio.
+#[cfg_attr(feature = "verus", verus_verify)]
+#[cfg_attr(feature = "verus", verus_spec(r => ensures r.wf(), r.is(formula::one_plus(p.value()), 10_000)))]
 fn one_plus(p: Pct) -> Ratio {
     formula::one_plus_factor(p.raw())
 }
 
+#[cfg(feature = "verus")]
+verus! {
+
+/// The raw values of a list of percentages, for specs.
+pub open spec fn raws_fd(s: Seq<FinalDamage>) -> Seq<i64> {
+    s.map_values(|f: FinalDamage| f.value() as i64)
+}
+
+/// The raw values of a list of percentages, for specs.
+pub open spec fn raws_ied(s: Seq<IgnoreDefense>) -> Seq<i64> {
+    s.map_values(|f: IgnoreDefense| f.value() as i64)
+}
+
+} // verus!
+
+#[cfg_attr(feature = "verus", verus_verify)]
 impl DamagePct {
     /// The damage multiplier this pool contributes: `1 + d`.
     ///
@@ -339,14 +468,17 @@ impl DamagePct {
     /// # Ok::<(), msapi_core::FixedError>(())
     /// ```
     #[must_use]
+    #[cfg_attr(feature = "verus", verus_spec(r => ensures r.wf(), r.is(formula::one_plus(self.value()), 10_000)))]
     pub fn factor(self) -> Ratio {
         one_plus(self.0)
     }
 }
 
+#[cfg_attr(feature = "verus", verus_verify)]
 impl FinalDamage {
     /// The multiplier: `1 + f`.
     #[must_use]
+    #[cfg_attr(feature = "verus", verus_spec(r => ensures r.wf(), r.is(formula::one_plus(self.value()), 10_000)))]
     pub fn factor(self) -> Ratio {
         one_plus(self.0)
     }
@@ -357,19 +489,40 @@ impl FinalDamage {
     /// ```
     /// use msapi_core::units::FinalDamage;
     /// let sources: Vec<FinalDamage> = vec!["30".parse()?, "32".parse()?];
-    /// assert_eq!(FinalDamage::stack(sources).unwrap().to_string(), "429/250"); // 1.716
+    /// assert_eq!(FinalDamage::stack(&sources).unwrap().to_string(), "429/250"); // 1.716
     /// # Ok::<(), msapi_core::FixedError>(())
     /// ```
     #[must_use]
-    pub fn stack(sources: impl IntoIterator<Item = Self>) -> Option<Ratio> {
-        let raws: Vec<i64> = sources.into_iter().map(|s| s.0.raw()).collect();
+    #[cfg_attr(feature = "verus", verus_spec(r =>
+        ensures
+            r matches Some(r) ==> r.wf() && r.is(formula::stack_plus(raws_fd(sources@)), formula::whole_pow(sources@.len())),
+    ))]
+    pub fn stack(sources: &[Self]) -> Option<Ratio> {
+        let mut raws: Vec<i64> = Vec::new();
+        let mut i: usize = 0;
+        #[cfg_attr(feature = "verus", verus_spec(
+            invariant i <= sources@.len(), raws@ == raws_fd(sources@.take(i as int)),
+            decreases sources@.len() - i
+        ))]
+        while i < sources.len() {
+            proof! {
+                assert(raws_fd(sources@.take(i + 1)) =~= raws_fd(sources@.take(i as int)).push(sources@[i as int].value() as i64));
+            }
+            raws.push(sources[i].raw());
+            i += 1;
+        }
+        proof! {
+            assert(sources@.take(sources@.len() as int) =~= sources@);
+        }
         formula::stack_final_damage(&raws)
     }
 }
 
+#[cfg_attr(feature = "verus", verus_verify)]
 impl IgnoreDefense {
     /// The share of defense left after this source: `1 - i`.
     #[must_use]
+    #[cfg_attr(feature = "verus", verus_spec(r => ensures r.wf(), r.is(formula::one_minus(self.value()), 10_000)))]
     pub fn remaining(self) -> Ratio {
         formula::one_minus_factor(self.0.raw())
     }
@@ -382,12 +535,31 @@ impl IgnoreDefense {
     /// ```
     /// use msapi_core::units::IgnoreDefense;
     /// let twenty: IgnoreDefense = "20".parse()?;
-    /// assert_eq!(IgnoreDefense::stack([twenty, twenty]).unwrap().to_string(), "16/25"); // 0.64
+    /// assert_eq!(IgnoreDefense::stack(&[twenty, twenty]).unwrap().to_string(), "16/25"); // 0.64
     /// # Ok::<(), msapi_core::FixedError>(())
     /// ```
     #[must_use]
-    pub fn stack(sources: impl IntoIterator<Item = Self>) -> Option<Ratio> {
-        let raws: Vec<i64> = sources.into_iter().map(|s| s.0.raw()).collect();
+    #[cfg_attr(feature = "verus", verus_spec(r =>
+        ensures
+            r matches Some(r) ==> r.wf() && r.is(formula::stack_minus(raws_ied(sources@)), formula::whole_pow(sources@.len())),
+    ))]
+    pub fn stack(sources: &[Self]) -> Option<Ratio> {
+        let mut raws: Vec<i64> = Vec::new();
+        let mut i: usize = 0;
+        #[cfg_attr(feature = "verus", verus_spec(
+            invariant i <= sources@.len(), raws@ == raws_ied(sources@.take(i as int)),
+            decreases sources@.len() - i
+        ))]
+        while i < sources.len() {
+            proof! {
+                assert(raws_ied(sources@.take(i + 1)) =~= raws_ied(sources@.take(i as int)).push(sources@[i as int].value() as i64));
+            }
+            raws.push(sources[i].raw());
+            i += 1;
+        }
+        proof! {
+            assert(sources@.take(sources@.len() as int) =~= sources@);
+        }
         formula::stack_ignore_defense(&raws)
     }
 
@@ -402,24 +574,35 @@ impl IgnoreDefense {
     /// # Ok::<(), msapi_core::FixedError>(())
     /// ```
     #[must_use]
+    #[cfg_attr(feature = "verus", verus_spec(r =>
+        ensures r matches Some(r) ==> {
+            let p = if monster.value() < 0 { 0 } else if monster.value() > 50_000 { 50_000 } else { monster.value() };
+            &&& r.wf()
+            &&& r.is(formula::clamp0(100_000_000 - p * formula::one_minus(self.value())), 100_000_000)
+        },
+    ))]
     pub fn defense_factor(self, monster: DefenseRate) -> Option<Ratio> {
         formula::defense_factor(self.0.raw(), monster.0.raw())
     }
 }
 
+#[cfg_attr(feature = "verus", verus_verify)]
 impl CritDamage {
     /// The average critical multiplier on a crit: `1.35 + cd`.
     ///
     /// A crit rolls uniformly between `1.20 + cd` and `1.50 + cd`.
     #[must_use]
+    #[cfg_attr(feature = "verus", verus_spec(r => ensures r.wf(), r.is(formula::clamp0(13_500 + self.value()), 10_000)))]
     pub fn crit_factor(self) -> Ratio {
         formula::crit_factor(self.0.raw())
     }
 }
 
+#[cfg_attr(feature = "verus", verus_verify)]
 impl StatAttack {
     /// Wraps a displayed damage-range value.
     #[must_use]
+    #[cfg_attr(feature = "verus", verus_spec(r => ensures r.value() == n as int))]
     pub const fn displayed(n: u64) -> Self {
         Self(n)
     }

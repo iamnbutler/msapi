@@ -2,14 +2,21 @@
 
 use std::sync::LazyLock;
 
+#[cfg(not(feature = "verus"))]
 use serde::Serialize;
+#[cfg(feature = "verus")]
+use vstd::prelude::*;
 
 use crate::fixed::{Fixed, Pct};
 use crate::units::WeaponMastery;
 
 /// The five class archetypes, plus Xenon's hybrid.
-#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug, Serialize)]
-#[serde(rename_all = "kebab-case")]
+// Verus checks these types, and refuses serde's derive on a checked type, so
+// the derive is left out of the proof build; proofs never serialize.
+#[cfg_attr(feature = "verus", verus_verify)]
+#[cfg_attr(not(feature = "verus"), derive(Serialize))]
+#[cfg_attr(not(feature = "verus"), serde(rename_all = "kebab-case"))]
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub enum JobType {
     /// Warrior.
     Warrior,
@@ -26,8 +33,10 @@ pub enum JobType {
 }
 
 /// A stat that feeds a class's damage.
-#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug, Serialize)]
-#[serde(rename_all = "lowercase")]
+#[cfg_attr(feature = "verus", verus_verify)]
+#[cfg_attr(not(feature = "verus"), derive(Serialize))]
+#[cfg_attr(not(feature = "verus"), serde(rename_all = "lowercase"))]
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub enum MainStat {
     /// STR.
     Str,
@@ -42,7 +51,9 @@ pub enum MainStat {
 }
 
 /// One playable class.
-#[derive(Clone, Copy, PartialEq, Eq, Debug, Serialize)]
+#[cfg_attr(feature = "verus", verus_verify)]
+#[cfg_attr(not(feature = "verus"), derive(Serialize))]
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub struct Class {
     /// Stable kebab-case ID, e.g. `"night-walker"`.
     pub id: &'static str,
