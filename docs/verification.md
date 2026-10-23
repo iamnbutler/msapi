@@ -115,11 +115,11 @@ goes through a proven function.
 | `POST`/`PATCH /v1/characters…` | `in_range` (levels), `exp_rate_ok`, `length_ok` |
 | `PUT`/`PATCH …/stat` | `captured_at_ok`, `ignore_defense_ok`, `cooldown_reduction_ok`, `percentage_ok`, `range_ok`, and `implied_total` for tooltip warnings |
 | `/v1/auth/passkey/*` | `base64url::decode` (every binary field and the challenge), `Cbor::decode`, `PublicKey::from_cose`, `bytes_eq` (type, credential ID), `origin_ok`, `rp_id_hash_ok`, `es256_point`, `auth_data_layout`, `presence_ok`, `counter_ok`, `length_ok` (display name) |
-| every query parameter | `percent_decode` |
+| every query parameter | `parse_query` |
 | stat fields with decimals | `parse_decimal` |
 | new IDs (audit and history order) | `next_id`, then `base32::encode_u128` (proven order-preserving) |
 | token secrets | `base32::encode` |
-| every write (the durable log) | `encode_statement`; on restore `frame_at`, `decode_batch`, `next_batch_ok` |
+| every write (the durable log) | `encode_statement`; on restore `frames`, `decode_batch`, `next_batch_ok` |
 | calculators (`calc`, `units`) | the wrappers above, and through them `formula.rs` and `ratio.rs` |
 
 ### `webauthn.rs`: passkey bytes and rules
@@ -149,9 +149,11 @@ goes through a proven function.
 | `base32::digit_char` | equals the table `crockford()` for every digit below 32 |
 | `decimal::parse_decimal` (`Fixed` from text) | `Ok(v)` exactly when the text is `-?D+(.D+)?` with at most `dp` fraction digits and fits `i64`, and then `v` is its exact value scaled by `10^dp`; each error (`Invalid`, `TooPrecise`, `OutOfRange`) is returned exactly in its case; a string splits into whole and fraction one way only |
 | `query::percent_decode` | equals `decoded`: `+` is a space, `%XX` is that byte, anything else is itself |
+| `query::parse_query` | equals `pairs`: the `&`-separated segments in order, empty ones skipped, each split at its first `=` (none means an empty value) and both halves `decoded` |
 | `batch::encode_statement` | appends exactly the spec encoding when every length fits a `u32`, and refuses (appending nothing) otherwise |
 | `batch::decode_batch` | anything it accepts re-encodes to exactly its input, and the encoding of any statement list decodes back to that list; no read is out of bounds |
 | `batch::frame_at` | a frame is a big-endian sequence number and length, then the body; it returns exactly the frame at that offset |
+| `batch::frames` | whatever it returns re-encodes, frame after frame, to exactly the whole buffer; whenever the buffer is a run of frames it returns exactly those frames, so a truncated or padded tail is refused rather than dropped |
 
 ## What is trusted
 
@@ -164,8 +166,7 @@ These parts are not proven. They are covered by tests instead.
   log (`deploy/src/index.ts`, TypeScript).
 - **Code that only moves data between those and the proofs:** SQL query
   text and account ownership (a SQL query), JSON merge patch (`serde_json`
-  values), the rusqlite-value conversions in `durable.rs` and its iterator
-  over frames, the `&` and `=` split in query strings, turning ASCII bytes into
+  values), the rusqlite-value conversions in `durable.rs`, turning ASCII bytes into
   `String`s, and in `auth.rs` the mapping to `AccountCheck { owned, reachable }`.
 - **Unit plumbing that is generic or a trait impl:** `StatBreakdown::implied_total`
   in `stat.rs` (generic over the `Scalable` trait and its associated percent
