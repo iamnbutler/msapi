@@ -1,10 +1,10 @@
 //! What name lookups share: the key of a world's name ([`tagged_key`]), and
-//! the check that a table's keys are pairwise distinct.
+//! the check that names of different entries have different keys.
 //!
 //! The tables themselves, and the search over each, are in [`crate::names`].
 //! A table's distinctness is checked by evaluating [`all_distinct`] on its
-//! literal keys; [`lemma_all_distinct`] turns that into the statement every
-//! search relies on: no two positions hold equal keys.
+//! keys; [`lemma_all_distinct`] turns that into the statement every search
+//! relies on: two positions in different groups never hold equal keys.
 
 #[cfg(feature = "verus")]
 use vstd::prelude::*;
@@ -16,58 +16,43 @@ use crate::ascii::{lemma_same_folded_lowered, lowered, same_folded};
 #[cfg(feature = "verus")]
 verus! {
 
-/// `f(i)` differs from each of `f(0)` to `f(j - 1)`.
-pub open spec fn differs_from_all(f: spec_fn(int) -> Seq<u8>, i: int, j: int) -> bool
+/// `f(i)` differs from each of `f(0)` to `f(j - 1)` outside `i`'s group
+/// (positions `g * o` to `g * o + g - 1` form group `o`).
+pub open spec fn differs_from_all(f: spec_fn(int) -> Seq<u8>, g: int, i: int, j: int) -> bool
     decreases j,
 {
-    if j <= 0 { true } else { f(i) != f(j - 1) && differs_from_all(f, i, j - 1) }
+    if j <= 0 { true } else { (i / g == (j - 1) / g || f(i) != f(j - 1)) && differs_from_all(f, g, i, j - 1) }
 }
 
-/// `f(0)` to `f(n - 1)` are pairwise distinct. Written as a recursion so
-/// `by (compute_only)` can evaluate it on a literal table.
-pub open spec fn all_distinct(f: spec_fn(int) -> Seq<u8>, n: int) -> bool
+/// Among `f(0)` to `f(n - 1)`, keys in different groups of `g` differ.
+/// Written as a recursion so `by (compute_only)` can evaluate it on a
+/// literal table.
+pub open spec fn all_distinct(f: spec_fn(int) -> Seq<u8>, g: int, n: int) -> bool
     decreases n,
 {
-    if n <= 0 { true } else { differs_from_all(f, n - 1, n - 1) && all_distinct(f, n - 1) }
+    if n <= 0 { true } else { differs_from_all(f, g, n - 1, n - 1) && all_distinct(f, g, n - 1) }
 }
 
-/// `f(0)` to `f(n - 1)` are all below `m`.
-pub open spec fn all_below(f: spec_fn(int) -> usize, n: int, m: usize) -> bool
-    decreases n,
-{
-    if n <= 0 { true } else { f(n - 1) < m && all_below(f, n - 1, m) }
-}
-
-proof fn lemma_differs_from_all(f: spec_fn(int) -> Seq<u8>, i: int, j: int)
-    requires differs_from_all(f, i, j),
-    ensures forall|k: int| 0 <= k < j ==> f(i) != #[trigger] f(k),
+proof fn lemma_differs_from_all(f: spec_fn(int) -> Seq<u8>, g: int, i: int, j: int)
+    requires differs_from_all(f, g, i, j),
+    ensures forall|k: int| 0 <= k < j && i / g != k / g ==> f(i) != #[trigger] f(k),
     decreases j,
 {
     if j > 0 {
-        lemma_differs_from_all(f, i, j - 1);
+        lemma_differs_from_all(f, g, i, j - 1);
     }
 }
 
-/// What [`all_distinct`] means: no two of the first `n` positions hold equal keys.
-pub proof fn lemma_all_distinct(f: spec_fn(int) -> Seq<u8>, n: int)
-    requires all_distinct(f, n),
-    ensures forall|i: int, j: int| 0 <= i < n && 0 <= j < n && i != j ==> #[trigger] f(i) != #[trigger] f(j),
+/// What [`all_distinct`] means: of the first `n` positions, two in different
+/// groups never hold equal keys.
+pub proof fn lemma_all_distinct(f: spec_fn(int) -> Seq<u8>, g: int, n: int)
+    requires all_distinct(f, g, n),
+    ensures forall|i: int, j: int| 0 <= i < n && 0 <= j < n && i / g != j / g ==> #[trigger] f(i) != #[trigger] f(j),
     decreases n,
 {
     if n > 0 {
-        lemma_all_distinct(f, n - 1);
-        lemma_differs_from_all(f, n - 1, n - 1);
-    }
-}
-
-/// What [`all_below`] means.
-pub proof fn lemma_all_below(f: spec_fn(int) -> usize, n: int, m: usize)
-    requires all_below(f, n, m),
-    ensures forall|i: int| 0 <= i < n ==> #[trigger] f(i) < m,
-    decreases n,
-{
-    if n > 0 {
-        lemma_all_below(f, n - 1, m);
+        lemma_all_distinct(f, g, n - 1);
+        lemma_differs_from_all(f, g, n - 1, n - 1);
     }
 }
 

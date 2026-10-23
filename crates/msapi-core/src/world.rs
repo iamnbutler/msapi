@@ -109,6 +109,26 @@ pub static WORLDS: &[World] = &[
     },
 ];
 
+// Each world's key, name and region are exactly the texts and tags
+// `names::world` proves its lookup over; the build fails otherwise (rerun
+// `scripts/name_keys.py`).
+// Normal builds run it; under `verus` the ghost code is not const-evaluable.
+#[cfg(not(feature = "verus"))]
+const _: () = {
+    use crate::names::{
+        same,
+        world::{GROUP, LEN, tag, text},
+    };
+    assert!(GROUP == 2 && LEN == 2 * WORLDS.len(), "run scripts/name_keys.py");
+    let mut r = 0;
+    while r < WORLDS.len() {
+        assert!(same(WORLDS[r].key.as_bytes(), text(2 * r)), "run scripts/name_keys.py");
+        assert!(same(WORLDS[r].name.as_bytes(), text(2 * r + 1)), "run scripts/name_keys.py");
+        assert!(WORLDS[r].region as u8 == tag(r), "run scripts/name_keys.py");
+        r += 1;
+    }
+};
+
 /// Finds a world in `region` by key or display name, ignoring case.
 ///
 /// ```
