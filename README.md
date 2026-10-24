@@ -6,9 +6,9 @@ people and their agents enter what the game shows, and msapi keeps it typed,
 validated, versioned and audited.
 
 Today it holds accounts (region), characters (world, world type, class, level,
-and the rest of the character screen) and the stat window, with every write
-kept as a snapshot. Equipment, symbols, hyper stats and the rest are planned;
-their routes exist and answer 501.
+and the rest of the character screen), the stat window and the equipment
+window, with every write kept as a snapshot. Symbols, hyper stats and the rest
+are planned; their routes exist and answer 501.
 
 ## Run it
 

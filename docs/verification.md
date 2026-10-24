@@ -315,8 +315,14 @@ These parts are not proven. They are covered by tests instead.
   string-to-enum lookups, `ring` (SHA-256 and signature checks), the OS random
   number generator, and the Cloudflare Worker and Durable Object that keep the
   log (`deploy/src/index.ts`, TypeScript).
-- **Calls into those libraries, and nothing else:** every unverified function
-  in both crates is either I/O (`io`: SQL, sockets, the clock, randomness,
+- **Checks of individual game data:** the equipment window's checks
+  (`ItemEquipment::check` and its helpers, category `data`) look at one
+  recorded item at a time: whether its tooltip's parts add up to its total,
+  two items in one slot, more stars than the item shows. They are tested,
+  not proven. Proofs stay on the formulas and formats; proving facts about
+  particular items would grow without end as items are added.
+- **Calls into those libraries, and nothing else:** every other unverified
+  function in both crates is either I/O (`io`: SQL, sockets, the clock, randomness,
   logging, `io::Error`) or a hand-off to an outside library Verus has no spec
   for (`lib`): `Formatter::write_str` in the `Display`/`Debug` impls (each
   writes the text of a proven function), serde and `serde_json` (hand-written

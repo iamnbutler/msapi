@@ -266,11 +266,67 @@ fn users_cannot_see_each_other() {
 }
 
 #[test]
+fn item_equipment_snapshots_and_validation() {
+    let (mut api, root) = Api::new();
+    let acc = account(&mut api, &root);
+    let chr = character(&mut api, &root, &acc, "Lutoren");
+    let eq = format!("/v1/characters/{chr}/item-equipment");
+
+    let (status, body) = api.call(&root, Method::Get, &eq, None);
+    assert_eq!(status, 200);
+    assert_eq!(body["equipment"], Value::Null);
+
+    let belt = json!({
+        "item_equipment_slot": "belt",
+        "item_name": "Superior Engraved Gollux Belt",
+        "starforce": 18, "starforce_max": 30,
+        "item_total_option": { "str": 149, "all_stat": 4 },
+        "item_base_option": { "str": 60, "base_equipment_level": 150 },
+        "item_enhancement_option": { "str": 73 },
+        "item_add_option": { "str": 15, "all_stat": 4 },
+        "potential_option_grade": "unique",
+        "potential_option_1": "STR: +9%"
+    });
+    let (status, body) = api.call(&root, Method::Put, &eq, Some(json!({ "item_equipment": [belt] })));
+    assert_eq!(status, 200, "{body}");
+    let item = &body["snapshot"]["equipment"]["item_equipment"][0];
+    assert_eq!(item["item_total_option"]["all_stat"], 4.00);
+    assert_eq!(item["item_total_option"].get("dex"), None, "absent stays absent");
+    // A misread digit is recorded with a warning.
+    assert_eq!(body["warnings"][0]["field"], "str");
+
+    // Impossible windows are refused with the issues listed.
+    let ring = json!({ "item_equipment_slot": "ring-1", "item_name": "Ring", "starforce": 18, "starforce_max": 17 });
+    let (status, body) = api.call(&root, Method::Put, &eq, Some(json!({ "item_equipment": [ring, ring] })));
+    assert_eq!(status, 422);
+    assert_eq!(body["error"]["details"]["issues"][0]["field"], "starforce");
+    for bad in [
+        json!({ "item_equipment": [{ "item_equipment_slot": "ring-5", "item_name": "A" }] }),
+        json!({ "item_equipment": [{ "item_equipment_slot": "hat", "item_name": "A", "stars": 1 }] }),
+        json!({ "items": [] }),
+    ] {
+        assert_eq!(api.call(&root, Method::Put, &eq, Some(bad.clone())).0, 400, "{bad}");
+    }
+
+    let (status, _) = api.call(&root, Method::Put, &eq, Some(json!({ "item_equipment": [] })));
+    assert_eq!(status, 200);
+    let (_, body) = api.call(&root, Method::Get, &eq, None);
+    assert_eq!(body["equipment"]["item_equipment"], json!([]));
+    let (_, body) = api.call(&root, Method::Get, &format!("{eq}/history?limit=1"), None);
+    let cursor = body["next_before"].as_str().unwrap();
+    let (_, body) = api.call(&root, Method::Get, &format!("{eq}/history?before={cursor}"), None);
+    assert_eq!(body["history"][0]["equipment"]["item_equipment"][0]["item_name"], "Superior Engraved Gollux Belt");
+
+    let (_, body) = api.call(&root, Method::Get, "/v1/audit?action=equipment.replace", None);
+    assert_eq!(body["events"].as_array().unwrap().len(), 2);
+}
+
+#[test]
 fn planned_resources_answer_501() {
     let (mut api, root) = Api::new();
     let acc = account(&mut api, &root);
     let chr = character(&mut api, &root, &acc, "Lutoren");
-    let (status, body) = api.call(&root, Method::Get, &format!("/v1/characters/{chr}/item-equipment"), None);
+    let (status, body) = api.call(&root, Method::Get, &format!("/v1/characters/{chr}/symbol-equipment"), None);
     assert_eq!(status, 501);
     assert_eq!(body["error"]["name"], "not_implemented");
 }

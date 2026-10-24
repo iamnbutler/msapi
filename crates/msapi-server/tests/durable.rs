@@ -85,7 +85,9 @@ fn dump(path: &std::path::Path) -> Vec<String> {
     // Token use times are bookkeeping, deliberately not logged.
     conn.execute("UPDATE tokens SET last_used_at = NULL", []).unwrap();
     let mut out = Vec::new();
-    for table in ["users", "tokens", "accounts", "characters", "stat_snapshots", "audit_events"] {
+    for table in
+        ["users", "tokens", "accounts", "characters", "stat_snapshots", "item_equipment_snapshots", "audit_events"]
+    {
         let mut stmt = conn.prepare(&format!("SELECT * FROM {table} ORDER BY id")).unwrap();
         let columns = stmt.column_count();
         let rows = stmt
