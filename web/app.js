@@ -399,6 +399,7 @@ function tooltip(item) {
   };
   return h("div", { class: "tip" },
     stars(item),
+    icon(item, "tip-icon"),
     h("div", { class: "tip-name" }, item.item_name, item.scroll_upgrade ? ` (+${item.scroll_upgrade})` : ""),
     item.item_set_name ? h("div", { class: "tip-set" }, item.item_set_name) : null,
     h("div", { class: "tip-meta" },
@@ -411,6 +412,12 @@ function tooltip(item) {
     item.item_description ? h("p", { class: "tip-desc" }, item.item_description) : null,
     item.notes ? h("p", { class: "tip-desc" }, item.notes) : null,
   );
+}
+
+/** An item's icon from /assets, or null when it has none. */
+function icon(item, cls) {
+  if (!item.item_icon) return null;
+  return h("img", { class: cls, src: `/assets/${item.item_icon}`, alt: "", loading: "lazy", decoding: "async" });
 }
 
 function equipmentPanel(c, snapshot) {
@@ -426,10 +433,12 @@ function equipmentPanel(c, snapshot) {
       class: `eq-slot${item ? " filled" : ""} ${item?.potential_option_grade || ""}`,
       style: `grid-row:${row};grid-column:${col}`,
       title: item ? item.item_name : SLOT_LABEL[slot],
+      "aria-label": item ? item.item_name : null,
       "aria-pressed": item ? "false" : null,
     },
       item
-        ? [h("span", { class: "eq-name" }, item.item_name), item.starforce ? h("span", { class: "eq-sf" }, `★${item.starforce}`) : null]
+        ? [icon(item, "eq-icon") ?? h("span", { class: "eq-name" }, item.item_name),
+           item.starforce ? h("span", { class: "eq-sf" }, `★${item.starforce}`) : null]
         : h("span", { class: "eq-empty" }, SLOT_LABEL[slot]));
     if (item) {
       cell.addEventListener("click", () => {

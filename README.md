@@ -32,6 +32,10 @@ the Durable Object's SQLite before the transaction commits, and a booting
 container rebuilds its database from the latest snapshot plus the writes after
 it. See `deploy/` and `crates/msapi-server/src/durable.rs`.
 
+Item icons live in an R2 bucket, `msapi-assets`, that only maintainers write
+to (`bun deploy/upload-icons.ts icons/*.png`). The Worker serves them read-only
+at `/assets/item/icon/{sha256}.png`, and items store that key.
+
 ```sh
 cd deploy
 bun install

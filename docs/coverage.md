@@ -12,14 +12,14 @@ whether Verus checks it:
 
 | crate | spec | checked | unverified |
 |---|---:|---:|---:|
-| `msapi-core` | 309 | 2 | 49 |
+| `msapi-core` | 309 | 2 | 50 |
 | `msapi-server` | 68 | 5 | 134 |
 
 ## Unverified functions by reason
 
 | reason | functions |
 |---|---:|
-| checks one recorded item or window at run time; proofs cover formulas, not individual game data | 7 |
+| checks one recorded item or window at run time; proofs cover formulas, not individual game data | 8 |
 | I/O: SQL, HTTP, clock, randomness, process | 93 |
 | hands data to or from an outside library (serde, rusqlite, ring, tiny_http) | 83 |
 
@@ -132,12 +132,13 @@ whether Verus checks it:
 | `push_all` | `crates/msapi-core/src/decimal.rs:834` | spec |  |
 | `format_decimal` | `crates/msapi-core/src/decimal.rs:869` | spec |  |
 | `Slot::name` | `crates/msapi-core/src/equipment.rs:95` | unverified | a slot's wire name, the same table as its serde names (a test pins them) |
-| `ItemEquipment::check` | `crates/msapi-core/src/equipment.rs:328` | unverified | checks one recorded equipment window at run time; proofs cover formulas, not individual items |
-| `Item::check` | `crates/msapi-core/src/equipment.rs:345` | unverified | checks one recorded item at run time; proofs cover formulas, not individual items |
-| `Item::check_sums` | `crates/msapi-core/src/equipment.rs:409` | unverified | checks one recorded item at run time; proofs cover formulas, not individual items |
-| `sum` | `crates/msapi-core/src/equipment.rs:439` | unverified | checks one recorded item at run time; proofs cover formulas, not individual items |
-| `error` | `crates/msapi-core/src/equipment.rs:456` | unverified | builds an Issue for the run-time item checks |
-| `warning` | `crates/msapi-core/src/equipment.rs:460` | unverified | builds an Issue for the run-time item checks |
+| `ItemEquipment::check` | `crates/msapi-core/src/equipment.rs:332` | unverified | checks one recorded equipment window at run time; proofs cover formulas, not individual items |
+| `Item::check` | `crates/msapi-core/src/equipment.rs:349` | unverified | checks one recorded item at run time; proofs cover formulas, not individual items |
+| `Item::check_sums` | `crates/msapi-core/src/equipment.rs:421` | unverified | checks one recorded item at run time; proofs cover formulas, not individual items |
+| `sum` | `crates/msapi-core/src/equipment.rs:451` | unverified | checks one recorded item at run time; proofs cover formulas, not individual items |
+| `is_icon_key` | `crates/msapi-core/src/equipment.rs:470` | unverified | checks the form of one recorded item's icon key at run time |
+| `error` | `crates/msapi-core/src/equipment.rs:477` | unverified | builds an Issue for the run-time item checks |
+| `warning` | `crates/msapi-core/src/equipment.rs:481` | unverified | builds an Issue for the run-time item checks |
 | `Fixed::from_raw` | `crates/msapi-core/src/fixed.rs:82` | spec |  |
 | `Fixed::raw` | `crates/msapi-core/src/fixed.rs:89` | spec |  |
 | `FixedError::message` | `crates/msapi-core/src/fixed.rs:120` | spec |  |

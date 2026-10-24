@@ -7,12 +7,17 @@
 // http://log.internal from inside the container) before it commits. On boot
 // the server rebuilds its database from the latest snapshot and the batches
 // after it. See crates/msapi-server/src/durable.rs for the other side.
+//
+// Game art (item icons) lives in the R2 bucket bound as GAME_ASSETS and is
+// served read-only at /assets/{key}. Only we put objects there (deploy/
+// upload-icons.ts); keys are content hashes, so responses never change.
 
 import { DurableObject, WorkerEntrypoint } from "cloudflare:workers";
 
 interface Env {
   API: DurableObjectNamespace<Api>;
   ASSETS: Fetcher;
+  GAME_ASSETS: R2Bucket;
   MSAPI_RP_ID: string;
   MSAPI_ORIGIN: string;
   /** Secret for `/__ops/*`. Unset disables those routes. */
@@ -25,6 +30,8 @@ const INACTIVITY_TIMEOUT_MS = 30 * 60 * 1000;
 const READY_TIMEOUT_MS = 90 * 1000;
 // Durable Object SQLite rows hold at most 2 MB; snapshots are stored in chunks.
 const CHUNK = 1024 * 1024;
+// The only asset keys served: item/icon/{sha256}.png.
+const ASSET_KEY = /^item\/icon\/[0-9a-f]{64}\.png$/;
 
 export default {
   async fetch(request, env): Promise<Response> {
@@ -40,9 +47,33 @@ export default {
     if (url.pathname === "/health" || url.pathname === "/v1" || url.pathname.startsWith("/v1/")) {
       return env.API.getByName("main").fetch(request);
     }
+    if (url.pathname.startsWith("/assets/")) {
+      return asset(request, env, url.pathname.slice("/assets/".length));
+    }
     return env.ASSETS.fetch(request);
   },
 } satisfies ExportedHandler<Env>;
+
+/** An object from GAME_ASSETS. Content-addressed, so cached for good. */
+async function asset(request: Request, env: Env, key: string): Promise<Response> {
+  if (request.method !== "GET" && request.method !== "HEAD") {
+    return new Response("method not allowed", { status: 405, headers: { allow: "GET, HEAD" } });
+  }
+  if (!ASSET_KEY.test(key)) return new Response("not found", { status: 404 });
+  const object = await env.GAME_ASSETS.get(key);
+  if (!object) return new Response("not found", { status: 404, headers: { "cache-control": "no-store" } });
+  const headers = new Headers({
+    "content-type": "image/png",
+    "content-length": String(object.size),
+    "cache-control": "public, max-age=31536000, immutable",
+    etag: object.httpEtag,
+    "x-content-type-options": "nosniff",
+    "content-security-policy": "default-src 'none'",
+    "access-control-allow-origin": "*",
+  });
+  if (request.headers.get("if-none-match") === object.httpEtag) return new Response(null, { status: 304, headers });
+  return new Response(request.method === "HEAD" ? null : object.body, { headers });
+}
 
 export class Api extends DurableObject<Env> {
   private starting: Promise<void> | undefined;

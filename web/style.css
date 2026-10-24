@@ -228,6 +228,18 @@ details[open] summary { margin-bottom: 10px; }
 .eq-slot.unique { border-left-color: var(--grade-unique); }
 .eq-slot.legendary { border-left-color: var(--grade-legendary); }
 .eq-name { font-size: 10px; line-height: 1.2; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+.eq-slot:has(.eq-icon) { padding: 0; position: relative; }
+.eq-icon { width: 100%; height: 100%; object-fit: cover; border-radius: 4px; }
+.eq-slot:has(.eq-icon) .eq-sf {
+  position: absolute;
+  right: 2px;
+  bottom: 2px;
+  padding: 0 3px;
+  border-radius: 3px;
+  background: var(--tip-bg);
+  color: var(--tip-enh);
+}
+.tip-icon { display: block; width: 64px; height: 64px; margin: 8px auto 0; border-radius: 6px; }
 .eq-sf { font-size: 10px; color: var(--warn); font-family: var(--mono); }
 @media (max-width: 480px) {
   .eq-name { font-size: 9px; -webkit-line-clamp: 2; }
