@@ -35,6 +35,10 @@ try {
   });
   page.on("pageerror", (e) => console.error("page error:", e.message));
 
+  const missing = await fetch(`${base}/assets/item/icon/${"0".repeat(64)}.png`);
+  const odd = await fetch(`${base}/assets/item/icon/x.svg`);
+  check(missing.status === 404 && odd.status === 404, "assets answer 404 for unknown and malformed keys");
+
   await page.goto(base);
   await page.getByLabel("Display name").fill(name);
   await page.getByRole("button", { name: "Create account with a passkey" }).click();

@@ -44,6 +44,7 @@ crates/msapi-core/src/equipment.rs::ItemEquipment::check | data | checks one rec
 crates/msapi-core/src/equipment.rs::Item::check | data | checks one recorded item at run time; proofs cover formulas, not individual items
 crates/msapi-core/src/equipment.rs::Item::check_sums | data | checks one recorded item at run time; proofs cover formulas, not individual items
 crates/msapi-core/src/equipment.rs::sum | data | checks one recorded item at run time; proofs cover formulas, not individual items
+crates/msapi-core/src/equipment.rs::is_icon_key | data | checks the form of one recorded item's icon key at run time
 crates/msapi-core/src/equipment.rs::error | data | builds an Issue for the run-time item checks
 crates/msapi-core/src/equipment.rs::warning | data | builds an Issue for the run-time item checks
 crates/msapi-core/src/wire.rs::serde::Serialize for $ty::serialize | lib | hands serde the proven wire name as a unit variant, as the derive did

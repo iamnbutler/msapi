@@ -234,8 +234,8 @@ Slots: `ring-1` to `ring-4` (top to bottom), `pocket`, `pendant-1`,
 `weapon`, `secondary`, `emblem`, `badge`, `medal`, `heart`, `android` and
 `familiar-manager`. Leave out an empty slot.
 
-The other item fields: `item_equipment_part` (the item type, such as
-`Sword`), `item_description`, `item_set_name`, `starforce` (stars filled),
+The other item fields: `item_icon` (see below), `item_equipment_part` (the
+item type, such as `Sword`), `item_description`, `item_set_name`, `starforce` (stars filled),
 `starforce_max` (stars shown, filled or not; `0` when the item takes none),
 `potential_option_grade` and `additional_potential_option_grade` (`rare`,
 `epic`, `unique`, `legendary`), `potential_option_1` to `_3` and
@@ -247,6 +247,14 @@ The other item fields: `item_equipment_part` (the item type, such as
 Errors (422) are things that cannot be true: two items in one slot, more stars
 than the item shows, text too long. Warnings flag a stat whose parts do not
 add up to its total, which usually means a misread digit, so look again.
+
+### Icons
+
+`item_icon` is an asset key, `item/icon/{sha256}.png`, not a URL: fetch the
+image at `/assets/{item_icon}` on this host. Keys are the SHA-256 of the
+image, so an image never changes under its key and is cached for good. The
+maintainers upload icons; there is no upload API. Leave `item_icon` out when
+you do not know the key.
 
 ## Planned
 

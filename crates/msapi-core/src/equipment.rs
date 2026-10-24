@@ -216,6 +216,10 @@ pub struct Item {
     pub item_equipment_part: Option<String>,
     /// The name as the tooltip shows it.
     pub item_name: String,
+    /// The item's icon: an asset key, `item/icon/{sha256}.png`, served at
+    /// `/assets/{key}`. A key rather than a URL, so the host can change.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub item_icon: Option<String>,
     /// The tooltip's description text.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub item_description: Option<String>,
@@ -347,6 +351,14 @@ impl Item {
         if name.is_empty() {
             out.push(error("item_name", format!("`{slot}` has no item name")));
         }
+        if let Some(icon) = &self.item_icon
+            && !is_icon_key(icon)
+        {
+            out.push(error(
+                "item_icon",
+                format!("`{slot}` item_icon must be an asset key like `item/icon/{{sha256}}.png`"),
+            ));
+        }
         let texts: [(&'static str, Option<&str>, usize); 13] = [
             ("item_name", Some(&self.item_name), NAME_MAX),
             ("item_equipment_part", self.item_equipment_part.as_deref(), NAME_MAX),
@@ -453,6 +465,15 @@ where
     }
 }
 
+/// Whether `key` names an item icon: `item/icon/`, the image's SHA-256 in
+/// lowercase hex, `.png`.
+#[must_use]
+pub fn is_icon_key(key: &str) -> bool {
+    key.strip_prefix("item/icon/")
+        .and_then(|k| k.strip_suffix(".png"))
+        .is_some_and(|h| h.len() == 64 && h.bytes().all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b)))
+}
+
 fn error(field: &'static str, message: String) -> Issue {
     Issue { severity: Severity::Error, field, message }
 }
@@ -505,6 +526,21 @@ mod tests {
                 (Severity::Warning, "dex", "`ring-1` dex has parts but no total".to_owned()),
             ]
         );
+    }
+
+    #[test]
+    fn icons_are_asset_keys() {
+        let hash = "0123456789abcdef".repeat(4);
+        assert!(is_icon_key(&format!("item/icon/{hash}.png")));
+        for bad in [
+            format!("/assets/item/icon/{hash}.png"),
+            format!("https://example.com/item/icon/{hash}.png"),
+            format!("item/icon/{}.png", hash.to_uppercase()),
+            format!("item/icon/{hash}.svg"),
+            "item/icon/../x.png".to_owned(),
+        ] {
+            assert!(!is_icon_key(&bad), "{bad}");
+        }
     }
 
     #[test]
