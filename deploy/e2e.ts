@@ -75,6 +75,19 @@ try {
     check(after === 2, `history survived a cold start (${after} rows)`);
   }
 
+  await page.getByRole("link", { name: "API tokens" }).click();
+  await page.getByRole("heading", { name: "API tokens" }).waitFor();
+  await page.getByLabel("Label").fill("e2e reader");
+  await page.getByRole("button", { name: "Create token" }).click();
+  const secret = await page.getByLabel("New token").inputValue();
+  const me = await fetch(`${base}/v1/me`, { headers: { authorization: `Bearer ${secret}` } }).then((r) => r.json());
+  check(me.token?.label === "e2e reader" && me.token.scopes.join() === "accounts:read,characters:read", "minted a read-only token in the UI");
+  page.once("dialog", (d) => d.accept());
+  await page.locator("li", { hasText: "e2e reader" }).getByRole("button", { name: "Revoke" }).click();
+  await page.locator("li", { hasText: "e2e reader" }).getByText("revoked").waitFor();
+  const after = await fetch(`${base}/v1/me`, { headers: { authorization: `Bearer ${secret}` } });
+  check(after.status === 401, "revoked it in the UI");
+
   await page.getByRole("button", { name: "Sign out" }).click();
   await page.getByRole("button", { name: "Sign in with a passkey" }).click();
   await page.getByRole("heading", { name: "Accounts" }).waitFor();

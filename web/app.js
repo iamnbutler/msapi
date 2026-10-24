@@ -174,6 +174,7 @@ function renderSession() {
   sessionNav.replaceChildren();
   if (!session) return;
   sessionNav.append(
+    h("a", { href: "#/tokens" }, "API tokens"),
     h("span", {}, session.display_name),
     h("button", {
       class: "quiet",
@@ -391,6 +392,129 @@ async function characterPage(id) {
   );
 }
 
+// Every scope a token can hold, with what it lets the holder do.
+const SCOPES = [
+  ["accounts:read", "Read accounts"],
+  ["accounts:write", "Add and edit accounts"],
+  ["characters:read", "Read characters and stats"],
+  ["characters:write", "Add and edit characters, log stats"],
+  ["delete", "Delete accounts and characters"],
+  ["tokens:read", "List tokens"],
+  ["tokens:write", "Mint and revoke tokens"],
+  ["audit:read", "Read the audit log"],
+];
+const DEFAULT_SCOPES = new Set(["accounts:read", "characters:read"]);
+
+const LIFETIMES = [
+  [3600, "1 hour"],
+  [86400, "1 day"],
+  [7 * 86400, "7 days"],
+  [30 * 86400, "30 days"],
+];
+
+function tokenState(t) {
+  if (t.revoked_at) return `revoked ${fmtDate(t.revoked_at)}`;
+  if (t.expires_at && Date.parse(t.expires_at) <= Date.now()) return `expired ${fmtDate(t.expires_at)}`;
+  return t.expires_at ? `expires ${fmtDate(t.expires_at)}` : "never expires";
+}
+
+async function tokensPage() {
+  const [{ tokens }, { account_list: accounts }] = await Promise.all([api("GET", "/v1/tokens"), api("GET", "/v1/accounts")]);
+  const minted = h("div");
+
+  const form = bind(
+    h("form", {},
+      h("label", {}, "Label", h("input", { name: "label", required: true, maxlength: 100, placeholder: "e.g. gear planner" })),
+      h("fieldset", { class: "checks" },
+        h("legend", {}, "Scopes"),
+        SCOPES.map(([scope, text]) =>
+          h("label", {}, h("input", { type: "checkbox", name: "scopes", value: scope, checked: DEFAULT_SCOPES.has(scope) }),
+            h("span", {}, h("code", {}, scope), " ", text)))),
+      accounts.length
+        ? h("fieldset", { class: "checks" },
+            h("legend", {}, "Accounts (none ticked means all, including ones added later)"),
+            accounts.map((a) =>
+              h("label", {}, h("input", { type: "checkbox", name: "account_ids", value: a.id }),
+                h("span", {}, `${a.label || a.region.toUpperCase()} `, h("span", { class: "meta" }, a.region.toUpperCase())))))
+        : null,
+      h("label", {}, "Expires after",
+        h("select", { name: "expires_in_seconds" }, LIFETIMES.map(([s, text]) => h("option", { value: s, selected: s === 86400 }, text)))),
+      h("button", { type: "submit" }, "Create token"),
+    ),
+    async (data) => {
+      const scopes = data.getAll("scopes");
+      if (!scopes.length) throw new Error("Pick at least one scope.");
+      const ids = data.getAll("account_ids");
+      const res = await api("POST", "/v1/tokens", {
+        label: String(data.get("label")).trim(),
+        scopes,
+        account_ids: ids.length ? ids : null,
+        expires_in_seconds: Number(data.get("expires_in_seconds")),
+      });
+      // The secret is shown once; keep it out of storage and the URL.
+      const secret = h("input", { readonly: true, value: res.token, class: "secret", "aria-label": "New token" });
+      const copy = h("button", { type: "button", class: "quiet" }, "Copy");
+      copy.addEventListener("click", async () => {
+        try { await navigator.clipboard.writeText(res.token); copy.textContent = "Copied"; }
+        catch { secret.select(); }
+      });
+      const list = await tokenList();
+      minted.replaceChildren(
+        h("div", { class: "notice ok" },
+          h("p", {}, `Created “${res.details.label}”. Copy it now: this is the only time it is shown.`),
+          h("div", { class: "actions" }, secret, copy)));
+      listPanel.replaceChildren(h("h2", {}, "Your tokens"), list);
+      form.reset();
+    },
+  );
+
+  async function tokenList(rows) {
+    rows ??= (await api("GET", "/v1/tokens")).tokens;
+    if (!rows.length) return h("p", { class: "empty" }, "No tokens.");
+    return h("ul", { class: "list" }, rows.map((t) => {
+      const live = !t.revoked_at && !(t.expires_at && Date.parse(t.expires_at) <= Date.now());
+      const self = t.id === session.token_id;
+      return h("li", {}, h("div", { class: "row" },
+        h("div", {},
+          h("div", {}, t.label, self ? h("span", { class: "meta" }, " · this browser") : null),
+          h("div", { class: "meta" }, `${t.kind} · ${t.scopes.join(", ")}`),
+          h("div", { class: "meta" },
+            `${t.account_ids ? `${t.account_ids.length} account${t.account_ids.length === 1 ? "" : "s"}` : "all accounts"} · created ${fmtDate(t.created_at)} · ${tokenState(t)}`
+              + (t.last_used_at ? ` · last used ${fmtDate(t.last_used_at)}` : ""))),
+        live && !self
+          ? h("button", {
+              class: "quiet",
+              onclick: async (e) => {
+                if (!confirm(`Revoke “${t.label}” and every token minted from it?`)) return;
+                e.target.disabled = true;
+                try {
+                  await api("DELETE", `/v1/tokens/${t.id}`);
+                  listPanel.replaceChildren(h("h2", {}, "Your tokens"), await tokenList());
+                } catch (err) {
+                  e.target.disabled = false;
+                  listPanel.prepend(notice("error", errorText(err)));
+                }
+              },
+            }, "Revoke")
+          : null));
+    }));
+  }
+
+  const listPanel = h("div", { class: "panel" }, h("h2", {}, "Your tokens"), await tokenList(tokens));
+  return h("section", {},
+    h("div", { class: "crumbs" }, h("a", { href: "#/" }, "Accounts"), " / "),
+    h("h1", {}, "API tokens"),
+    h("p", { class: "sub" },
+      "Give a tool or agent its own token, with only the scopes and accounts it needs. Every write it makes is audited under its label. ",
+      "A token cannot outlive the one that made it: this browser's session ends ", fmtDate(session.expires_at), "."),
+    minted,
+    h("div", { class: "grid" },
+      h("div", { class: "panel" }, h("h2", {}, "New token"), form),
+      listPanel,
+    ),
+  );
+}
+
 // ---------- router ----------
 
 async function render() {
@@ -400,6 +524,7 @@ async function render() {
   try {
     if (!session) page = welcome();
     else if (path === "/") page = await home();
+    else if (path === "/tokens") page = await tokensPage();
     else if (path.startsWith("/accounts/")) page = await accountPage(path.split("/")[2]);
     else if (path.startsWith("/characters/")) page = await characterPage(path.split("/")[2]);
     else page = h("p", {}, "Not found. ", h("a", { href: "#/" }, "Go home"));
