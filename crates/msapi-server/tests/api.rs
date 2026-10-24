@@ -207,7 +207,10 @@ fn delegated_tokens_narrow_and_are_audited() {
     // It reaches only its account, and only with its scopes.
     let (_, body) = api.call(&agent, Method::Get, "/v1/characters", None);
     assert_eq!(body["character_list"].as_array().unwrap().len(), 1);
-    assert_eq!(api.call(&agent, Method::Get, &format!("/v1/characters/{hidden}"), None).0, 403);
+    let (status, body) = api.call(&agent, Method::Get, &format!("/v1/characters/{hidden}"), None);
+    assert_eq!(status, 200, "another account's public character reads as anyone's would");
+    assert!(body.get("account_id").is_none());
+    assert_eq!(api.call(&agent, Method::Patch, &format!("/v1/characters/{hidden}"), Some(json!({}))).0, 403);
     assert_eq!(api.call(&agent, Method::Get, "/v1/accounts", None).0, 403);
     assert_eq!(api.call(&agent, Method::Delete, &format!("/v1/characters/{chr}"), None).0, 403);
     let (status, _) =
@@ -234,7 +237,13 @@ fn delegated_tokens_narrow_and_are_audited() {
         .collect();
     assert_eq!(
         actions,
-        [("token.mint", 200), ("token.mint", 403), ("character.update", 200), ("character.delete", 403)],
+        [
+            ("token.mint", 200),
+            ("token.mint", 403),
+            ("character.update", 200),
+            ("character.delete", 403),
+            ("character.update", 403)
+        ],
         "newest first; refused writes are recorded too"
     );
     let update = &body["events"][2];
@@ -256,13 +265,70 @@ fn users_cannot_see_each_other() {
     let (_, bob) = auth::create_user(&mut api.conn, "bob").unwrap();
     let acc = account(&mut api, &alice);
     let chr = character(&mut api, &alice, &acc, "Lutoren");
-    assert_eq!(api.call(&bob, Method::Get, &format!("/v1/characters/{chr}"), None).0, 404);
+    let private = Some(json!({ "visibility": "private" }));
+    assert_eq!(api.call(&alice, Method::Patch, &format!("/v1/characters/{chr}"), private).0, 200);
+    for path in ["", "/stat", "/stat/history", "/item-equipment", "/item-equipment/history"] {
+        assert_eq!(api.call(&bob, Method::Get, &format!("/v1/characters/{chr}{path}"), None).0, 404, "{path}");
+    }
     assert_eq!(api.call(&bob, Method::Get, &format!("/v1/accounts/{acc}"), None).0, 404);
+    let (_, body) = api.call(&bob, Method::Get, "/v1/characters", None);
+    assert_eq!(body["character_list"], json!([]));
     let (_, body) = api.call(&bob, Method::Get, "/v1/audit", None);
     assert_eq!(body["events"], json!([]));
     // A different user may use the same name in the same world: ownership is not verifiable.
     let bobs = account(&mut api, &bob);
     character(&mut api, &bob, &bobs, "Lutoren");
+}
+
+#[test]
+fn public_characters_read_without_a_token() {
+    let (mut api, owner) = Api::new();
+    let (_, stranger) = auth::create_user(&mut api.conn, "stranger").unwrap();
+    let acc = account(&mut api, &owner);
+    let chr = character(&mut api, &owner, &acc, "Lutoren");
+    let notes = Some(json!({ "notes": "main bosser" }));
+    assert_eq!(api.call(&owner, Method::Patch, &format!("/v1/characters/{chr}"), notes).0, 200);
+    let stat = Some(json!({ "combat_power": 123_456_789 }));
+    assert_eq!(api.call(&owner, Method::Put, &format!("/v1/characters/{chr}/stat"), stat).0, 200);
+    let get = |api: &mut Api, path: &str| {
+        let res = routes::handle(&mut api.conn, &Request::new(Method::Get, path));
+        (res.status, if res.body.is_empty() { Value::Null } else { res.json_body().unwrap() })
+    };
+
+    // New characters are public: anyone reads them, minus the owner's own fields.
+    let (status, body) = get(&mut api, &format!("/v1/characters/{chr}"));
+    assert_eq!(status, 200, "{body}");
+    assert_eq!(body["character_name"], "Lutoren");
+    assert_eq!(body["visibility"], "public");
+    assert!(body.get("account_id").is_none() && body.get("notes").is_none(), "{body}");
+    let (_, body) = api.call(&stranger, Method::Get, &format!("/v1/characters/{chr}"), None);
+    assert!(body.get("account_id").is_none() && body.get("notes").is_none(), "{body}");
+    let (_, body) = api.call(&owner, Method::Get, &format!("/v1/characters/{chr}"), None);
+    assert_eq!(body["notes"], "main bosser");
+    assert_eq!(body["account_id"], acc.as_str());
+
+    let (status, body) = get(&mut api, &format!("/v1/characters/{chr}/stat"));
+    assert_eq!((status, &body["stat"]["combat_power"]), (200, &json!(123_456_789)));
+    assert_eq!(get(&mut api, &format!("/v1/characters/{chr}/stat/history")).0, 200);
+    assert_eq!(get(&mut api, &format!("/v1/characters/{chr}/item-equipment")).0, 200);
+    assert_eq!(get(&mut api, &format!("/v1/characters/{chr}/item-equipment/history")).0, 200);
+
+    // Reading is all a stranger gets; a bad token is still refused.
+    assert_eq!(get(&mut api, "/v1/characters").0, 401);
+    assert_eq!(get(&mut api, &format!("/v1/characters/{chr}/symbol-equipment")).0, 401);
+    let stat = Some(json!({ "combat_power": 1 }));
+    assert_eq!(api.call(&stranger, Method::Put, &format!("/v1/characters/{chr}/stat"), stat).0, 404);
+    assert_eq!(api.call("msk_nope", Method::Get, &format!("/v1/characters/{chr}"), None).0, 401);
+
+    // A private character is 404 to anyone but its owner.
+    let private = Some(json!({ "visibility": "private" }));
+    let (_, body) = api.call(&owner, Method::Patch, &format!("/v1/characters/{chr}"), private);
+    assert_eq!(body["visibility"], "private");
+    assert_eq!(get(&mut api, &format!("/v1/characters/{chr}")).0, 404);
+    assert_eq!(get(&mut api, &format!("/v1/characters/{chr}/stat")).0, 404);
+    assert_eq!(api.call(&owner, Method::Get, &format!("/v1/characters/{chr}/stat"), None).0, 200);
+    let bad = Some(json!({ "visibility": "friends" }));
+    assert_eq!(api.call(&owner, Method::Patch, &format!("/v1/characters/{chr}"), bad).0, 400);
 }
 
 #[test]

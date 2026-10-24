@@ -293,7 +293,7 @@ proven functions and the handlers call them:
 | `routes::opt_bytes` | the UTF-8 of the field, or `None` |
 | `http::segments`, `http::words` | the path's segments equal `segments_spec`, which reads the bytes left to right and ends a segment at each `/`, dropping empty ones (what `split('/').filter(..)` gave); `words` is each segment's bytes |
 | `routes::plan` | for the path's segments, `Ok` carries the route `api::route_spec` finds, its `Stage`, and segment 2 (or `""`) as the ID; `Err` is the 405 for `NotAllowed` and the 404 naming the path for `NotFound` |
-| `routes::stage` | the six public routes and the four passkey steps are answered without a token, and every other route authenticates first (`stage_spec`) |
+| `routes::stage` | the six public routes and the four passkey steps are answered without a token, the five character reads take a token only if one is sent, and every other route authenticates first (`stage_spec`) |
 | `routes::context` | the audit context carries the principal, request ID, method and path as given, and the route's `api::action_spec` name (`""` when it has none) |
 | `routes::audits_refusal` | a refusal is audited exactly when it is a 403 to a writing method |
 | `AccountInput::validate`, `CharacterInput::validate`, `MintRequest::validate`, `CharacterView::to_input` | the proven `check_account`, `check_character` and `check_mint` on the request's fields (`MintRequest::validate` takes the clock reading from its caller); `to_input` copies a stored character's fields back into an input for `PATCH` |

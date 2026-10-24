@@ -12,7 +12,7 @@ use msapi_core::{Timestamp, api, rules};
 
 use super::{characters, corrupt, page};
 use crate::audit::{Ctx, Target, Write};
-use crate::auth::Scope;
+use crate::auth::{Principal, Scope};
 use crate::error::ApiError;
 use crate::http::{Request, Response};
 use crate::json::merge_patch;
@@ -47,9 +47,8 @@ fn latest(conn: &Connection, character_id: &str) -> rusqlite::Result<Option<Snap
 }
 
 /// `GET /v1/characters/{id}/stat`: the latest window, or `{"stat": null}`.
-pub fn get(conn: &Connection, ctx: &Ctx, id: &str) -> Result<Response, ApiError> {
-    ctx.principal.require(Scope::CharactersRead)?;
-    characters::find(conn, &ctx.principal, id)?;
+pub fn get(conn: &Connection, principal: Option<&Principal>, id: &str) -> Result<Response, ApiError> {
+    characters::find_readable(conn, principal, id)?;
     Ok(match latest(conn, id)? {
         Some(snapshot) => Response::json(200, &snapshot),
         None => Response::json(200, &json!({ "character_id": id, "stat": null })),
@@ -110,9 +109,13 @@ fn record(conn: &mut Connection, ctx: &Ctx, id: &str, mut window: StatWindow) ->
 }
 
 /// `GET /v1/characters/{id}/stat/history?limit=&before=`, newest first.
-pub fn history(conn: &Connection, ctx: &Ctx, req: &Request, id: &str) -> Result<Response, ApiError> {
-    ctx.principal.require(Scope::CharactersRead)?;
-    characters::find(conn, &ctx.principal, id)?;
+pub fn history(
+    conn: &Connection,
+    principal: Option<&Principal>,
+    req: &Request,
+    id: &str,
+) -> Result<Response, ApiError> {
+    characters::find_readable(conn, principal, id)?;
     let (limit, before) = page(req)?;
     let mut stmt = conn
         .prepare(&format!("{SELECT} WHERE character_id = ?1 AND (?2 IS NULL OR id < ?2) ORDER BY id DESC LIMIT ?3"))?;

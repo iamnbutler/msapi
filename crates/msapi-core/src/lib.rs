@@ -58,7 +58,7 @@ pub mod webauthn;
 mod wire;
 pub mod world;
 
-pub use character::{CharacterName, ClassLevel, Gender, Level, Liberation};
+pub use character::{CharacterName, ClassLevel, Gender, Level, Liberation, Visibility};
 pub use class::{Class, JobType, MainStat};
 pub use fixed::{ExpRate, Fixed, FixedError, Pct};
 pub use ratio::Ratio;

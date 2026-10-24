@@ -10,6 +10,7 @@ const MIGRATIONS: &[&str] = &[
     include_str!("../migrations/0001_init.sql"),
     include_str!("../migrations/0002_passkeys.sql"),
     include_str!("../migrations/0003_item_equipment.sql"),
+    include_str!("../migrations/0004_character_visibility.sql"),
 ];
 
 /// Opens (creating if needed) the database at `path` and brings it up to date.
