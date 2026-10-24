@@ -1,4 +1,17 @@
 :root {
+  /* The item tooltip keeps the game's dark look in both themes. */
+  --tip-bg: #11141a;
+  --tip-line: #3a4150;
+  --tip-ink: #e8e6e1;
+  --tip-muted: #9aa0ab;
+  --tip-up: #66d9ff;
+  --tip-enh: #f5d547;
+  --tip-add: #7ee06a;
+  --tip-exc: #ff8fd0;
+  --grade-rare: #5fc8ff;
+  --grade-epic: #b580ff;
+  --grade-unique: #f5c542;
+  --grade-legendary: #7ee06a;
   --bg: #f6f5f1;
   --panel: #ffffff;
   --ink: #1d1c1a;
@@ -162,3 +175,93 @@ th:first-child, td:first-child { text-align: left; }
 th { color: var(--muted); font-weight: 500; font-size: 12px; }
 td { font-family: var(--mono); }
 .scroll { overflow-x: auto; }
+
+textarea.mono { font-family: var(--mono); font-size: 13px; resize: vertical; }
+details summary { cursor: pointer; color: var(--accent); font-size: 14px; margin-top: 4px; }
+details[open] summary { margin-bottom: 10px; }
+
+.eq { display: grid; gap: 16px; grid-template-columns: minmax(0, 472px) minmax(0, 1fr); align-items: start; }
+@media (max-width: 720px) { .eq { grid-template-columns: minmax(0, 1fr); } }
+.eq-window {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 4px;
+  width: 100%;
+  max-width: 472px;
+}
+.eq-figure {
+  border: 1px dashed var(--line);
+  border-radius: 8px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  font-weight: 600;
+  text-align: center;
+  min-width: 0;
+}
+.eq-figure img { max-width: 80%; max-height: 60%; object-fit: contain; }
+.eq-slot {
+  font: inherit;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  min-width: 0;
+  padding: 4px;
+  border-radius: 6px;
+  border: 1px solid var(--line);
+  background: var(--bg);
+  color: var(--ink);
+  text-align: left;
+  font-weight: 400;
+  overflow: hidden;
+  aspect-ratio: 1;
+  width: 100%;
+  justify-self: stretch;
+}
+.eq-slot.filled { cursor: pointer; background: var(--panel); border-left: 3px solid var(--muted); }
+.eq-slot.filled:hover { border-color: var(--accent); }
+.eq-slot[aria-pressed="true"] { outline: 2px solid var(--accent); outline-offset: 0; }
+.eq-slot.rare { border-left-color: var(--grade-rare); }
+.eq-slot.epic { border-left-color: var(--grade-epic); }
+.eq-slot.unique { border-left-color: var(--grade-unique); }
+.eq-slot.legendary { border-left-color: var(--grade-legendary); }
+.eq-name { font-size: 10px; line-height: 1.2; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+.eq-sf { font-size: 10px; color: var(--warn); font-family: var(--mono); }
+@media (max-width: 480px) {
+  .eq-name { font-size: 9px; -webkit-line-clamp: 2; }
+  .eq-slot { padding: 3px; }
+}
+.eq-empty { font-size: 10px; color: var(--muted); opacity: 0.7; margin: auto; text-align: center; }
+.eq-detail { min-width: 0; }
+
+.tip {
+  background: var(--tip-bg);
+  color: var(--tip-ink);
+  border: 1px solid var(--tip-line);
+  border-radius: 8px;
+  padding: 12px 14px;
+  font-size: 13px;
+  max-width: 340px;
+}
+.tip .stars { display: flex; gap: 6px; justify-content: center; font-size: 11px; line-height: 1.1; }
+.tip .star { color: #4b5160; }
+.tip .star.on { color: var(--tip-enh); }
+.tip-name { font-weight: 700; font-size: 15px; text-align: center; margin: 6px 0 2px; }
+.tip-set { text-align: center; color: var(--tip-add); font-size: 12px; }
+.tip-meta { text-align: center; color: var(--tip-muted); font-size: 12px; margin-bottom: 8px; }
+.tip-stats { border-top: 1px dashed var(--tip-line); padding-top: 8px; display: grid; gap: 1px; }
+.tip .line { font-family: var(--mono); font-size: 12px; }
+.tip .line.up { color: var(--tip-up); }
+.tip .base { color: var(--tip-ink); }
+.tip .enh { color: var(--tip-enh); }
+.tip .add { color: var(--tip-add); }
+.tip .exc { color: var(--tip-exc); }
+.tip .pot { border-top: 1px dashed var(--tip-line); margin-top: 8px; padding-top: 8px; display: grid; gap: 1px; }
+.tip .pot-title { font-weight: 600; color: var(--tip-muted); }
+.tip .pot.rare .pot-title { color: var(--grade-rare); }
+.tip .pot.epic .pot-title { color: var(--grade-epic); }
+.tip .pot.unique .pot-title { color: var(--grade-unique); }
+.tip .pot.legendary .pot-title { color: var(--grade-legendary); }
+.tip-desc { white-space: pre-line; color: var(--tip-muted); font-size: 12px; margin: 8px 0 0; border-top: 1px dashed var(--tip-line); padding-top: 8px; }

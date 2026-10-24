@@ -1,5 +1,6 @@
 // Drives the hosted web app in Chrome with a virtual passkey authenticator:
-// sign up, add an account and a character, log stats twice, sign out, sign in
+// sign up, add an account and a character, log stats twice and equipment once,
+// sign out, sign in
 // again, and (with OPS_TOKEN set) restart the container to check the data
 // survives a cold start.
 //
@@ -64,6 +65,26 @@ try {
   await page.waitForFunction(() => document.querySelectorAll("tbody tr").length === 2);
   const rows = await page.locator("tbody tr").count();
   check(rows === 2, `logged stats twice (${rows} history rows)`);
+
+  await page.getByText("Record equipment").click();
+  await page.locator("textarea[name=json]").fill(JSON.stringify({
+    item_equipment: [{
+      item_equipment_slot: "belt",
+      item_name: "Superior Engraved Gollux Belt",
+      starforce: 18,
+      starforce_max: 30,
+      item_total_option: { str: 149 },
+      item_base_option: { str: 60 },
+      item_enhancement_option: { str: 73 },
+      item_add_option: { str: 16 },
+      potential_option_grade: "unique",
+      potential_option_1: "STR: +9%",
+    }],
+  }));
+  await page.getByRole("button", { name: "Save equipment" }).click();
+  await page.getByText("Saved.").waitFor();
+  await page.getByRole("button", { name: "Superior Engraved Gollux Belt" }).click();
+  check(await page.locator(".tip").textContent().then((t) => t?.includes("STR: +149 (60 +73 +16)")), "recorded equipment and read its tooltip");
   const characterUrl = page.url();
 
   if (process.env.OPS_TOKEN) {
@@ -73,6 +94,7 @@ try {
     await page.getByRole("heading", { name: character }).waitFor({ timeout: 120_000 });
     const after = await page.locator("tbody tr").count();
     check(after === 2, `history survived a cold start (${after} rows)`);
+    check(await page.getByRole("button", { name: "Superior Engraved Gollux Belt" }).count() === 1, "equipment survived a cold start");
   }
 
   await page.getByRole("link", { name: "API tokens" }).click();

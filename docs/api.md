@@ -1,8 +1,8 @@
 # msapi: guide for agents and tools
 
-msapi records MapleStory accounts, characters and the character screen's stat
-window. Nothing here is fetched from Nexon: a person (or an agent acting for
-them) enters what the game shows. Your job is usually to read values off a
+msapi records MapleStory accounts, characters, the character screen's stat
+window and the equipment window. Nothing here is fetched from Nexon: a person
+(or an agent acting for them) enters what the game shows. Your job is usually to read values off a
 screenshot or out of a conversation and write them here exactly.
 
 Base URL: wherever this was served from. Every path below starts with `/v1`.
@@ -32,7 +32,7 @@ limited to (`account_ids`, `null` meaning all) and when it expires. Call it
 first.
 
 Scopes: `accounts:read`, `accounts:write`, `characters:read`,
-`characters:write` (also covers the stat window), `delete`, `tokens:read`,
+`characters:write` (also covers the stat and equipment windows), `delete`, `tokens:read`,
 `tokens:write`, `audit:read`.
 
 Every write you make is recorded with your token's label, the request, and the
@@ -170,11 +170,89 @@ such as ignore defense of 100 or more or a minimum range above the maximum.
 `captured_at` is when the screen showed these values; it defaults to now and
 may not be more than five minutes in the future.
 
+## Equipment
+
+| Method | Path | |
+|---|---|---|
+| GET | `/v1/characters/{id}/item-equipment` | the latest window, or `{"equipment": null}` |
+| PUT | `/v1/characters/{id}/item-equipment` | record the whole window |
+| GET | `/v1/characters/{id}/item-equipment/history?limit=&before=` | every recorded window, newest first |
+
+Field names follow the Nexon Open API's `character/item-equipment`. Read each
+item off its tooltip. Every write appends a snapshot of the whole window, so to
+change one item, GET the window, edit that item and PUT it back.
+
+```json
+{
+  "captured_at": "2026-10-24T09:50:00.000Z",
+  "item_equipment": [
+    {
+      "item_equipment_slot": "belt",
+      "item_equipment_part": "Belt",
+      "item_name": "Superior Engraved Gollux Belt",
+      "item_set_name": "Superior Gollux Set",
+      "starforce": 18, "starforce_max": 30,
+      "item_total_option":       { "str": 149, "dex": 133, "all_stat": 4, "attack_power": 65 },
+      "item_base_option":        { "str": 60, "dex": 60, "all_stat": 0, "attack_power": 35, "base_equipment_level": 150 },
+      "item_enhancement_option": { "str": 73, "dex": 73, "attack_power": 30 },
+      "item_add_option":         { "str": 16, "all_stat": 4 },
+      "potential_option_grade": "unique",
+      "potential_option_1": "STR: +9%",
+      "potential_option_2": "Max HP +6%",
+      "potential_option_3": "Max MP +6%"
+    }
+  ]
+}
+```
+
+**The tooltip's colours.** GMS shows a stat as `total (base + enhancement +
+bonus)`:
+
+| Colour | Field | What |
+|---|---|---|
+| white | `item_base_option` | the item's own stats |
+| yellow | `item_enhancement_option` | scrolls and star force together (msapi's field; Nexon splits it) |
+| green | `item_add_option` | bonus stats (flames) |
+| pink | `item_exceptional_option` | exceptional enhancement |
+
+Put the number before the brackets in `item_total_option`. When the tooltip
+shows a stat with no brackets, record only its total. When one of the
+bracketed numbers is missing (say `36 (0 + 36)` with no yellow part), leave
+that part out.
+
+Option fields: `str`, `dex`, `int`, `luk`, `max_hp`, `max_mp`,
+`attack_power`, `magic_power` (Magic ATT), `armor` (Defense), `speed`,
+`jump`, `boss_damage`, `ignore_monster_armor` (Enemy DEF Ignored),
+`all_stat` (All Stats %), `damage`, `max_hp_rate` (Max HP %), `max_mp_rate`,
+`base_equipment_level` (base only) and `equipment_level_decrease` (a flame
+that lowers the required level; bonus only). Percentages are written as the
+number shown (`4`, not `0.04`).
+
+Slots: `ring-1` to `ring-4` (top to bottom), `pocket`, `pendant-1`,
+`pendant-2`, `belt`, `hat`, `face-accessory`, `eye-accessory`, `earrings`,
+`top` (also an overall), `bottom`, `shoes`, `gloves`, `cape`, `shoulder`,
+`weapon`, `secondary`, `emblem`, `badge`, `medal`, `heart`, `android` and
+`familiar-manager`. Leave out an empty slot.
+
+The other item fields: `item_equipment_part` (the item type, such as
+`Sword`), `item_description`, `item_set_name`, `starforce` (stars filled),
+`starforce_max` (stars shown, filled or not; `0` when the item takes none),
+`potential_option_grade` and `additional_potential_option_grade` (`rare`,
+`epic`, `unique`, `legendary`), `potential_option_1` to `_3` and
+`additional_potential_option_1` to `_3` (each line as shown),
+`scroll_upgrade`, `scroll_upgradeable_count`, `scroll_resilience_count`,
+`cuttable_count`, `golden_hammer_flag`, `soul_name`, `soul_option`,
+`special_ring_level` and `notes` for anything else.
+
+Errors (422) are things that cannot be true: two items in one slot, more stars
+than the item shows, text too long. Warnings flag a stat whose parts do not
+add up to its total, which usually means a misread digit, so look again.
+
 ## Planned
 
-`/v1/characters/{id}/item-equipment`, `symbol-equipment`, `hyper-stat`,
-`ability`, `link-skill`, `vmatrix` and `hexamatrix` exist and answer 501 until
-they are built. `GET /v1` lists them.
+`/v1/characters/{id}/symbol-equipment`, `hyper-stat`, `ability`,
+`link-skill`, `vmatrix` and `hexamatrix` exist and answer 501 until they are
+built. `GET /v1` lists them.
 
 ## Audit
 
@@ -182,8 +260,8 @@ they are built. `GET /v1` lists them.
 
 A root token sees every event of its user; a delegated token sees its own and
 those of tokens minted below it. Each event has `action` (such as
-`character.update` or `stat.replace`), `status`, `token_label`, `request_id`,
-and `before`/`after` snapshots of the data.
+`character.update`, `stat.replace` or `equipment.replace`), `status`,
+`token_label`, `request_id`, and `before`/`after` snapshots of the data.
 
 ## Errors
 

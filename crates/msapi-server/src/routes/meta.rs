@@ -57,6 +57,8 @@ fn index() -> serde_json::Value {
             "GET    /v1/characters/{id}   PATCH /v1/characters/{id}   DELETE /v1/characters/{id}",
             "GET    /v1/characters/{id}/stat   PUT /v1/characters/{id}/stat   PATCH /v1/characters/{id}/stat",
             "GET    /v1/characters/{id}/stat/history",
+            "GET    /v1/characters/{id}/item-equipment   PUT /v1/characters/{id}/item-equipment",
+            "GET    /v1/characters/{id}/item-equipment/history",
         ],
         "planned": (0..api::PLANNED.len()).filter_map(super::planned_at).map(|(name, what)| json!({ "path": format!("/v1/characters/{{id}}/{name}"), "what": what })).collect::<Vec<_>>(),
     })

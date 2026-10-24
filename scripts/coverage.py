@@ -80,6 +80,7 @@ def items(path):
     stack = [("file", "", False, False)]
     header, start = [], None
     attr = 0  # bracket depth inside a `#[...]` attribute
+    depth = 0  # paren and bracket depth: `[T; 4]` in a signature does not end it
     prev = ""
     for c, line in lex(src):
         if attr:
@@ -92,7 +93,13 @@ def items(path):
             prev += c
             continue
         prev = (prev + c)[-2:] if not c.isspace() else prev
-        if c in "{;}":
+        if c in "([":
+            depth += 1
+        elif c in ")]":
+            depth = max(depth - 1, 0)
+        if c == ";" and depth and FN.search("".join(header)):
+            header.append(c)
+        elif c in "{;}":
             text = "".join(header)
             if c == "{":
                 kind, verified, skip = classify(text, stack)
@@ -102,7 +109,7 @@ def items(path):
                 stack.append((kind, text, verified, skip))
             elif c == "}" and len(stack) > 1:
                 stack.pop()
-            header, start = [], None
+            header, start, depth = [], None, 0
         else:
             if start is None and not c.isspace():
                 start = line
@@ -235,6 +242,7 @@ CATEGORY = {
     "lib": "hands data to or from an outside library (serde, rusqlite, ring, tiny_http)",
     "shim": "trait shim forwarding to a proven function (`Display`, `FromStr`, serde)",
     "glue": "moves data between a proven function and the server's types",
+    "data": "checks one recorded item or window at run time; proofs cover formulas, not individual game data",
     "test": "test or example support",
 }
 

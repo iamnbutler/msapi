@@ -562,6 +562,8 @@ percent! {
     StatPct;
     /// Max HP %.
     HpPct;
+    /// Max MP %.
+    MpPct;
     /// ATT %.
     AttackPct;
     /// Magic ATT %.
@@ -609,6 +611,7 @@ percent! {
 additive!(
     StatPct,
     HpPct,
+    MpPct,
     AttackPct,
     MagicAttackPct,
     DamagePct,

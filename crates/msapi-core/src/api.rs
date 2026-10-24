@@ -138,6 +138,10 @@ pub enum Word {
     StatReplace,
     /// `stat.update`.
     StatUpdate,
+    /// `equipment.read`.
+    EquipmentRead,
+    /// `equipment.replace`.
+    EquipmentReplace,
     /// `user.create`.
     UserCreate,
     /// `session.create`.
@@ -214,6 +218,8 @@ pub open spec fn word(w: Word) -> Seq<u8> {
         Word::StatRead => seq![115u8, 116u8, 97u8, 116u8, 46u8, 114u8, 101u8, 97u8, 100u8],
         Word::StatReplace => seq![115u8, 116u8, 97u8, 116u8, 46u8, 114u8, 101u8, 112u8, 108u8, 97u8, 99u8, 101u8],
         Word::StatUpdate => seq![115u8, 116u8, 97u8, 116u8, 46u8, 117u8, 112u8, 100u8, 97u8, 116u8, 101u8],
+        Word::EquipmentRead => seq![101u8, 113u8, 117u8, 105u8, 112u8, 109u8, 101u8, 110u8, 116u8, 46u8, 114u8, 101u8, 97u8, 100u8],
+        Word::EquipmentReplace => seq![101u8, 113u8, 117u8, 105u8, 112u8, 109u8, 101u8, 110u8, 116u8, 46u8, 114u8, 101u8, 112u8, 108u8, 97u8, 99u8, 101u8],
         Word::UserCreate => seq![117u8, 115u8, 101u8, 114u8, 46u8, 99u8, 114u8, 101u8, 97u8, 116u8, 101u8],
         Word::SessionCreate => seq![115u8, 101u8, 115u8, 115u8, 105u8, 111u8, 110u8, 46u8, 99u8, 114u8, 101u8, 97u8, 116u8, 101u8],
         Word::Json => seq![97u8, 112u8, 112u8, 108u8, 105u8, 99u8, 97u8, 116u8, 105u8, 111u8, 110u8, 47u8, 106u8, 115u8, 111u8, 110u8],
@@ -285,6 +291,8 @@ pub fn word_bytes(w: Word) -> &'static [u8] {
         Word::StatRead => &[115u8, 116u8, 97u8, 116u8, 46u8, 114u8, 101u8, 97u8, 100u8],
         Word::StatReplace => &[115u8, 116u8, 97u8, 116u8, 46u8, 114u8, 101u8, 112u8, 108u8, 97u8, 99u8, 101u8],
         Word::StatUpdate => &[115u8, 116u8, 97u8, 116u8, 46u8, 117u8, 112u8, 100u8, 97u8, 116u8, 101u8],
+        Word::EquipmentRead => &[101u8, 113u8, 117u8, 105u8, 112u8, 109u8, 101u8, 110u8, 116u8, 46u8, 114u8, 101u8, 97u8, 100u8],
+        Word::EquipmentReplace => &[101u8, 113u8, 117u8, 105u8, 112u8, 109u8, 101u8, 110u8, 116u8, 46u8, 114u8, 101u8, 112u8, 108u8, 97u8, 99u8, 101u8],
         Word::UserCreate => &[117u8, 115u8, 101u8, 114u8, 46u8, 99u8, 114u8, 101u8, 97u8, 116u8, 101u8],
         Word::SessionCreate => &[115u8, 101u8, 115u8, 115u8, 105u8, 111u8, 110u8, 46u8, 99u8, 114u8, 101u8, 97u8, 116u8, 101u8],
         Word::Json => &[97u8, 112u8, 112u8, 108u8, 105u8, 99u8, 97u8, 116u8, 105u8, 111u8, 110u8, 47u8, 106u8, 115u8, 111u8, 110u8],
@@ -474,6 +482,12 @@ pub enum Route {
     UpdateStat,
     /// `GET /v1/characters/{id}/stat/history`.
     StatHistory,
+    /// `GET /v1/characters/{id}/item-equipment`.
+    GetItemEquipment,
+    /// `PUT /v1/characters/{id}/item-equipment`.
+    ReplaceItemEquipment,
+    /// `GET /v1/characters/{id}/item-equipment/history`.
+    ItemEquipmentHistory,
     /// `GET /v1/characters/{id}/{resource}` for a resource in [`PLANNED`],
     /// by its position there.
     Planned(u8),
@@ -494,15 +508,8 @@ pub enum Routed {
 /// Character resources the Nexon Open API has that msapi will add later, in
 /// the order [`Route::Planned`] numbers them.
 #[cfg_attr(feature = "verus", verus_verify)]
-pub const PLANNED: [Word; 7] = [
-    Word::ItemEquipment,
-    Word::SymbolEquipment,
-    Word::HyperStat,
-    Word::Ability,
-    Word::LinkSkill,
-    Word::Vmatrix,
-    Word::Hexamatrix,
-];
+pub const PLANNED: [Word; 6] =
+    [Word::SymbolEquipment, Word::HyperStat, Word::Ability, Word::LinkSkill, Word::Vmatrix, Word::Hexamatrix];
 
 #[cfg(feature = "verus")]
 verus! {
@@ -514,20 +521,18 @@ pub open spec fn at(s: Seq<&[u8]>, i: int, w: Word) -> bool {
 
 /// The planned resource `r` names, by position in [`PLANNED`].
 pub open spec fn planned_spec(r: Seq<u8>) -> Option<u8> {
-    if r == word(Word::ItemEquipment) {
+    if r == word(Word::SymbolEquipment) {
         Some(0)
-    } else if r == word(Word::SymbolEquipment) {
-        Some(1)
     } else if r == word(Word::HyperStat) {
-        Some(2)
+        Some(1)
     } else if r == word(Word::Ability) {
-        Some(3)
+        Some(2)
     } else if r == word(Word::LinkSkill) {
-        Some(4)
+        Some(3)
     } else if r == word(Word::Vmatrix) {
-        Some(5)
+        Some(4)
     } else if r == word(Word::Hexamatrix) {
-        Some(6)
+        Some(5)
     } else {
         None
     }
@@ -615,6 +620,10 @@ pub open spec fn api_spec(m: Method, s: Seq<&[u8]>) -> Routed {
         three(m, Method::Get, Route::GetStat, Method::Put, Route::ReplaceStat, Method::Patch, Route::UpdateStat)
     } else if n == 5 && at(s, 1, Word::Characters) && at(s, 3, Word::Stat) && at(s, 4, Word::History) {
         one(m, Method::Get, Route::StatHistory)
+    } else if n == 4 && at(s, 1, Word::Characters) && at(s, 3, Word::ItemEquipment) {
+        two(m, Method::Get, Route::GetItemEquipment, Method::Put, Route::ReplaceItemEquipment)
+    } else if n == 5 && at(s, 1, Word::Characters) && at(s, 3, Word::ItemEquipment) && at(s, 4, Word::History) {
+        one(m, Method::Get, Route::ItemEquipmentHistory)
     } else if n == 4 && at(s, 1, Word::Characters) {
         match planned_spec(s[3]@) {
             Some(k) => one(m, Method::Get, Route::Planned(k)),
@@ -653,7 +662,7 @@ pub open spec fn method_of(r: Route) -> Method {
         | Route::MintToken | Route::CreateAccount | Route::CreateCharacter => Method::Post,
         Route::RevokeToken | Route::DeleteAccount | Route::DeleteCharacter => Method::Delete,
         Route::UpdateAccount | Route::UpdateCharacter | Route::UpdateStat => Method::Patch,
-        Route::ReplaceStat => Method::Put,
+        Route::ReplaceStat | Route::ReplaceItemEquipment => Method::Put,
         _ => Method::Get,
     }
 }
@@ -690,13 +699,15 @@ pub open spec fn action_spec(r: Route) -> Option<Word> {
         Route::GetStat | Route::StatHistory => Some(Word::StatRead),
         Route::ReplaceStat => Some(Word::StatReplace),
         Route::UpdateStat => Some(Word::StatUpdate),
+        Route::GetItemEquipment | Route::ItemEquipmentHistory => Some(Word::EquipmentRead),
+        Route::ReplaceItemEquipment => Some(Word::EquipmentReplace),
     }
 }
 
 /// Whether an audit action only reads.
 pub open spec fn reads(a: Word) -> bool {
     a == Word::MeRead || a == Word::TokenRead || a == Word::AuditRead || a == Word::AccountRead
-        || a == Word::CharacterRead || a == Word::StatRead
+        || a == Word::CharacterRead || a == Word::StatRead || a == Word::EquipmentRead
 }
 
 /// A route is only reached with its own method; a `405` path is one some
@@ -760,20 +771,18 @@ fn seg_is(s: &[&[u8]], i: usize, w: Word) -> bool {
 #[cfg_attr(feature = "verus", verus_spec(k => ensures k == planned_spec(r@)))]
 #[must_use]
 pub fn planned(r: &[u8]) -> Option<u8> {
-    if is(r, Word::ItemEquipment) {
+    if is(r, Word::SymbolEquipment) {
         Some(0)
-    } else if is(r, Word::SymbolEquipment) {
-        Some(1)
     } else if is(r, Word::HyperStat) {
-        Some(2)
+        Some(1)
     } else if is(r, Word::Ability) {
-        Some(3)
+        Some(2)
     } else if is(r, Word::LinkSkill) {
-        Some(4)
+        Some(3)
     } else if is(r, Word::Vmatrix) {
-        Some(5)
+        Some(4)
     } else if is(r, Word::Hexamatrix) {
-        Some(6)
+        Some(5)
     } else {
         None
     }
@@ -846,6 +855,14 @@ fn api(m: Method, s: &[&[u8]]) -> Routed {
         pick3(m, Get, Route::GetStat, Put, Route::ReplaceStat, Patch, Route::UpdateStat)
     } else if n == 5 && seg_is(s, 1, Word::Characters) && seg_is(s, 3, Word::Stat) && seg_is(s, 4, Word::History) {
         pick1(m, Get, Route::StatHistory)
+    } else if n == 4 && seg_is(s, 1, Word::Characters) && seg_is(s, 3, Word::ItemEquipment) {
+        pick2(m, Get, Route::GetItemEquipment, Put, Route::ReplaceItemEquipment)
+    } else if n == 5
+        && seg_is(s, 1, Word::Characters)
+        && seg_is(s, 3, Word::ItemEquipment)
+        && seg_is(s, 4, Word::History)
+    {
+        pick1(m, Get, Route::ItemEquipmentHistory)
     } else if n == 4 && seg_is(s, 1, Word::Characters) {
         match planned(s[3]) {
             Some(k) => pick1(m, Get, Route::Planned(k)),
@@ -921,6 +938,8 @@ pub const fn action(r: Route) -> Option<Word> {
         Route::GetStat | Route::StatHistory => Some(Word::StatRead),
         Route::ReplaceStat => Some(Word::StatReplace),
         Route::UpdateStat => Some(Word::StatUpdate),
+        Route::GetItemEquipment | Route::ItemEquipmentHistory => Some(Word::EquipmentRead),
+        Route::ReplaceItemEquipment => Some(Word::EquipmentReplace),
     }
 }
 
@@ -1283,7 +1302,7 @@ mod tests {
     }
 
     /// Every word, kept complete by the exhaustive match below.
-    const ALL_WORDS: [Word; 59] = [
+    const ALL_WORDS: [Word; 61] = [
         Word::V1,
         Word::Me,
         Word::Tokens,
@@ -1334,6 +1353,8 @@ mod tests {
         Word::StatRead,
         Word::StatReplace,
         Word::StatUpdate,
+        Word::EquipmentRead,
+        Word::EquipmentReplace,
         Word::UserCreate,
         Word::SessionCreate,
         Word::Json,
@@ -1399,6 +1420,8 @@ mod tests {
                 | Word::StatRead
                 | Word::StatReplace
                 | Word::StatUpdate
+                | Word::EquipmentRead
+                | Word::EquipmentReplace
                 | Word::UserCreate
                 | Word::SessionCreate
                 | Word::Json
@@ -1428,7 +1451,13 @@ mod tests {
     #[test]
     fn routes() {
         assert_eq!(r(Method::Patch, "/v1/characters/chr_x"), Routed::Found(Route::UpdateCharacter));
-        assert_eq!(r(Method::Get, "/v1/characters/chr_x/hyper-stat"), Routed::Found(Route::Planned(2)));
+        assert_eq!(r(Method::Get, "/v1/characters/chr_x/hyper-stat"), Routed::Found(Route::Planned(1)));
+        assert_eq!(r(Method::Put, "/v1/characters/chr_x/item-equipment"), Routed::Found(Route::ReplaceItemEquipment));
+        assert_eq!(
+            r(Method::Get, "/v1/characters/chr_x/item-equipment/history"),
+            Routed::Found(Route::ItemEquipmentHistory)
+        );
+        assert_eq!(r(Method::Patch, "/v1/characters/chr_x/item-equipment"), Routed::NotAllowed);
         assert_eq!(r(Method::Put, "/v1/characters"), Routed::NotAllowed);
         assert_eq!(r(Method::Get, "/v1/nope"), Routed::NotFound);
         assert_eq!(r(Method::Get, "/v1/characters/chr_x/nope"), Routed::NotFound);

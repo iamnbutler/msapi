@@ -380,6 +380,20 @@ pub fn word(w: Word) -> &'static str {
             }
             "stat.update"
         }
+        Word::EquipmentRead => {
+            proof! {
+                reveal_strlit("equipment.read");
+                assert("equipment.read"@ =~= msapi_core::msg::chars(api::word(w)));
+            }
+            "equipment.read"
+        }
+        Word::EquipmentReplace => {
+            proof! {
+                reveal_strlit("equipment.replace");
+                assert("equipment.replace"@ =~= msapi_core::msg::chars(api::word(w)));
+            }
+            "equipment.replace"
+        }
         Word::UserCreate => {
             proof! {
                 reveal_strlit("user.create");
@@ -994,6 +1008,8 @@ mod tests {
             Word::StatRead,
             Word::StatReplace,
             Word::StatUpdate,
+            Word::EquipmentRead,
+            Word::EquipmentReplace,
             Word::UserCreate,
             Word::SessionCreate,
             Word::Json,

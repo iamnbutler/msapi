@@ -22,6 +22,7 @@ crates/msapi-core/src/stat.rs::tooltip | lib | reads the fields of serde-derived
 crates/msapi-core/src/stat.rs::Serialize for Severity::serialize | lib | hands serde the lowercase wire name
 crates/msapi-core/src/stat.rs::Serialize for Issue::serialize | lib | hands serde the issue's fields
 crates/msapi-core/src/stat.rs::StatWindow::check | lib | reads the fields of serde-derived StatWindow into the proven issues; Verus panics on serde's Deserialize derive, so the type cannot be checked
+crates/msapi-core/src/stat.rs::StatWindow::percentages | lib | reads the fields of serde-derived StatWindow for check; Verus panics on serde's Deserialize derive, so the type cannot be checked
 crates/msapi-core/src/time.rs::Timestamp::now | io | reads the system clock
 crates/msapi-core/src/time.rs::fmt::Display for Timestamp::fmt | lib | writes the proven Timestamp::to_rfc3339 to the std Formatter; vstd has no spec for Formatter::write_str
 crates/msapi-core/src/time.rs::Serialize for Timestamp::serialize | lib | hands serde the Display text
@@ -38,6 +39,13 @@ crates/msapi-core/src/character.rs::Serialize for Gender::serialize | lib | hand
 crates/msapi-core/src/character.rs::Deserialize for Gender::deserialize | lib | parses through a derived twin, so the wire format and error messages stay those of the derive Verus cannot take on a checked type
 crates/msapi-core/src/character.rs::Serialize for Liberation::serialize | lib | hands serde the lowercase wire name
 crates/msapi-core/src/character.rs::Deserialize for Liberation::deserialize | lib | parses through a derived twin, so the wire format and error messages stay those of the derive Verus cannot take on a checked type
+crates/msapi-core/src/equipment.rs::Slot::name | data | a slot's wire name, the same table as its serde names (a test pins them)
+crates/msapi-core/src/equipment.rs::ItemEquipment::check | data | checks one recorded equipment window at run time; proofs cover formulas, not individual items
+crates/msapi-core/src/equipment.rs::Item::check | data | checks one recorded item at run time; proofs cover formulas, not individual items
+crates/msapi-core/src/equipment.rs::Item::check_sums | data | checks one recorded item at run time; proofs cover formulas, not individual items
+crates/msapi-core/src/equipment.rs::sum | data | checks one recorded item at run time; proofs cover formulas, not individual items
+crates/msapi-core/src/equipment.rs::error | data | builds an Issue for the run-time item checks
+crates/msapi-core/src/equipment.rs::warning | data | builds an Issue for the run-time item checks
 crates/msapi-core/src/wire.rs::serde::Serialize for $ty::serialize | lib | hands serde the proven wire name as a unit variant, as the derive did
 crates/msapi-core/src/wire.rs::serde::Deserialize for $ty::deserialize | lib | serde's enum protocol with the derive's messages, over the proven from_index and as_str
 crates/msapi-core/src/world.rs::Serialize for World::serialize | lib | hands serde the world's fields, as the derive did
@@ -92,6 +100,7 @@ crates/msapi-server/src/http.rs::parse_query | lib | std's String::from_utf8_los
 crates/msapi-server/src/http.rs::Response::json | lib | serializes the body with serde_json
 crates/msapi-server/src/http.rs::Response::json_body | lib | parses the body with serde_json (tests)
 crates/msapi-server/src/ids.rs::new_id | io | reads the clock and OS randomness; the order rule is the proven policy::next_id and encode_u128
+crates/msapi-server/src/ids.rs::random | io | OS randomness from ring
 crates/msapi-server/src/ids.rs::new_token_secret | io | OS randomness through the proven base32::encode
 crates/msapi-server/src/ids.rs::hash_token | lib | SHA-256 from ring
 crates/msapi-server/src/json.rs::merge_patch | lib | converts serde_json values around the proven json::merge
@@ -141,6 +150,11 @@ crates/msapi-server/src/routes/characters.rs::delete | io | route handler: SQL a
 crates/msapi-server/src/routes/characters.rs::Serialize for CharacterInput::serialize | lib | writes through a derived twin, so the wire format and error messages stay those of the derive Verus cannot take on a checked type
 crates/msapi-server/src/routes/characters.rs::Deserialize for CharacterInput::deserialize | lib | parses through a derived twin, so the wire format and error messages stay those of the derive Verus cannot take on a checked type
 crates/msapi-server/src/routes/characters.rs::Serialize for CharacterView::serialize | lib | writes through a derived twin, so the wire format and error messages stay those of the derive Verus cannot take on a checked type
+crates/msapi-server/src/routes/equipment.rs::from_row | lib | reads a rusqlite row into the view
+crates/msapi-server/src/routes/equipment.rs::latest | io | route handler: SQL against SQLite around the proven checks, then the audit row
+crates/msapi-server/src/routes/equipment.rs::get | io | route handler: SQL against SQLite around the proven checks, then the audit row
+crates/msapi-server/src/routes/equipment.rs::replace | io | route handler: SQL against SQLite around the proven checks, then the audit row
+crates/msapi-server/src/routes/equipment.rs::history | io | route handler: SQL against SQLite around the proven checks, then the audit row
 crates/msapi-server/src/routes/meta.rs::public | lib | builds serde_json responses (json!) for the public routes
 crates/msapi-server/src/routes/meta.rs::index | lib | a serde_json (json!) index of the routes
 crates/msapi-server/src/routes/mod.rs::run | io | one match from the proven route to its handler; every handler runs SQL against SQLite

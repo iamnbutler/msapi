@@ -122,7 +122,7 @@ function h(tag, attrs = {}, ...children) {
     else if (k === "class") el.className = v;
     else el.setAttribute(k, v === true ? "" : v);
   }
-  for (const c of children.flat()) if (c != null && c !== false) el.append(c.nodeType ? c : String(c));
+  for (const c of children.flat(Infinity)) if (c != null && c !== false) el.append(c.nodeType ? c : String(c));
   return el;
 }
 
@@ -212,7 +212,7 @@ function welcome() {
   );
   return h("section", { class: "hero" },
     h("h1", {}, "Your MapleStory characters, in one place."),
-    h("p", { class: "sub" }, "Add your accounts and characters, then log their stat windows over time. Tools you trust can read them through the msapi API with tokens you control."),
+    h("p", { class: "sub" }, "Add your accounts and characters, then log their stats and equipment over time. Tools you trust can read them through the msapi API with tokens you control."),
     supported ? null : notice("error", "This browser does not support passkeys."),
     h("div", { class: "panel" }, h("h2", {}, "New here"), signUpForm),
     h("div", { class: "panel" }, h("h2", {}, "Been here before"), signInForm),
@@ -318,11 +318,163 @@ const STAT_FIELDS = [
   ["sacred_power", "Sacred Power", "int"],
 ];
 
+// ---------- equipment ----------
+
+// Where each slot sits in the game's equipment window: [slot, row, column].
+const SLOT_GRID = [
+  ["ring-1", 1, 1], ["ring-2", 2, 1], ["ring-3", 3, 1], ["ring-4", 4, 1], ["belt", 5, 1], ["pocket", 6, 1],
+  ["face-accessory", 1, 2], ["eye-accessory", 2, 2], ["earrings", 3, 2], ["pendant-1", 4, 2], ["pendant-2", 5, 2], ["familiar-manager", 6, 2],
+  ["weapon", 5, 3], ["secondary", 5, 4], ["emblem", 5, 5],
+  ["hat", 1, 6], ["top", 2, 6], ["bottom", 3, 6], ["shoulder", 4, 6], ["android", 5, 6],
+  ["cape", 1, 7], ["gloves", 2, 7], ["shoes", 3, 7], ["medal", 4, 7], ["heart", 5, 7], ["badge", 6, 7],
+];
+
+const SLOT_LABEL = {
+  "ring-1": "Ring", "ring-2": "Ring", "ring-3": "Ring", "ring-4": "Ring", belt: "Belt", pocket: "Pocket",
+  "face-accessory": "Face", "eye-accessory": "Eye", earrings: "Earrings", "pendant-1": "Pendant", "pendant-2": "Pendant",
+  "familiar-manager": "Familiar", weapon: "Weapon", secondary: "Secondary", emblem: "Emblem", hat: "Hat", top: "Top",
+  bottom: "Bottom", shoulder: "Shoulder", android: "Android", cape: "Cape", gloves: "Gloves", shoes: "Shoes",
+  medal: "Medal", heart: "Heart", badge: "Badge",
+};
+
+// Tooltip stat lines in the game's order: [field, label, percent?].
+const OPTION_LINES = [
+  ["str", "STR"], ["dex", "DEX"], ["int", "INT"], ["luk", "LUK"],
+  ["max_hp", "Max HP"], ["max_mp", "Max MP"],
+  ["attack_power", "Attack Power"], ["magic_power", "Magic ATT"], ["armor", "Defense"],
+  ["speed", "Speed"], ["jump", "Jump"],
+  ["boss_damage", "Boss Damage", true], ["ignore_monster_armor", "Enemy DEF Ignored", true],
+  ["damage", "Damage", true], ["all_stat", "All Stats", true], ["max_hp_rate", "Max HP", true], ["max_mp_rate", "Max MP", true],
+];
+
+// The tooltip's colours: [field, class].
+const OPTION_PARTS = [
+  ["item_base_option", "base"],
+  ["item_enhancement_option", "enh"],
+  ["item_add_option", "add"],
+  ["item_exceptional_option", "exc"],
+];
+
+const GRADE_LABEL = { rare: "Rare", epic: "Epic", unique: "Unique", legendary: "Legendary" };
+
+function fmtOpt(v, pct) {
+  const n = Number(v);
+  return (Number.isInteger(n) ? nf.format(n) : String(n)) + (pct ? "%" : "");
+}
+
+function stars(item) {
+  const max = item.starforce_max ?? (item.starforce ? Math.max(item.starforce, 15) : 0);
+  if (!max) return null;
+  const filled = item.starforce ?? 0;
+  const rows = [];
+  for (let r = 0; r < max; r += 15) {
+    const row = [];
+    for (let i = r; i < Math.min(r + 15, max); i += 5) {
+      row.push(h("span", { class: "group" }, Array.from({ length: Math.min(5, max - i) }, (_, k) => h("span", { class: i + k < filled ? "star on" : "star" }, "★"))));
+    }
+    rows.push(h("div", { class: "stars" }, row));
+  }
+  return h("div", { "aria-label": `${filled} of ${max} stars` }, rows);
+}
+
+function tooltip(item) {
+  const total = item.item_total_option || {};
+  const lines = OPTION_LINES.filter(([key]) => total[key] != null || OPTION_PARTS.some(([p]) => item[p]?.[key] != null)).map(([key, label, pct]) => {
+    const parts = OPTION_PARTS.filter(([p]) => item[p]?.[key] != null);
+    const broken = parts.length > 1 || parts.some(([p]) => p !== "item_base_option");
+    return h("div", { class: broken ? "line up" : "line" },
+      `${label}: `, total[key] != null ? `+${fmtOpt(total[key], pct)}` : "?",
+      broken
+        ? [" (", parts.map(([p, cls], i) => h("span", { class: cls }, (i ? " +" : "") + fmtOpt(item[p][key], pct))), ")"]
+        : null);
+  });
+  const level = item.item_base_option?.base_equipment_level;
+  const decrease = item.item_add_option?.equipment_level_decrease;
+  const potential = (grade, prefix, title) => {
+    const opts = [1, 2, 3].map((n) => item[`${prefix}_${n}`]).filter(Boolean);
+    if (!grade && !opts.length) return null;
+    return h("div", { class: `pot ${grade || ""}` },
+      h("div", { class: "pot-title" }, title, grade ? ` (${GRADE_LABEL[grade]})` : ""),
+      opts.map((o) => h("div", {}, o)));
+  };
+  return h("div", { class: "tip" },
+    stars(item),
+    h("div", { class: "tip-name" }, item.item_name, item.scroll_upgrade ? ` (+${item.scroll_upgrade})` : ""),
+    item.item_set_name ? h("div", { class: "tip-set" }, item.item_set_name) : null,
+    h("div", { class: "tip-meta" },
+      [item.item_equipment_part, level != null ? `Req Lv. ${decrease ? `${level - decrease} (${level} - ${decrease})` : level}` : null].filter(Boolean).join(" · ")),
+    lines.length ? h("div", { class: "tip-stats" }, lines) : null,
+    item.scroll_upgradeable_count != null ? h("div", { class: "line" }, `Remaining Enhancements: ${item.scroll_upgradeable_count}`) : null,
+    potential(item.potential_option_grade, "potential_option", "Potential"),
+    potential(item.additional_potential_option_grade, "additional_potential_option", "Bonus Potential"),
+    item.soul_name ? h("div", { class: "pot" }, h("div", { class: "pot-title" }, item.soul_name), item.soul_option ? h("div", {}, item.soul_option) : null) : null,
+    item.item_description ? h("p", { class: "tip-desc" }, item.item_description) : null,
+    item.notes ? h("p", { class: "tip-desc" }, item.notes) : null,
+  );
+}
+
+function equipmentPanel(c, snapshot) {
+  const id = c.id;
+  const equipment = snapshot?.equipment ?? null;
+  const bySlot = new Map((equipment?.item_equipment || []).map((it) => [it.item_equipment_slot, it]));
+  const detail = h("div", { class: "eq-detail" }, h("p", { class: "empty" }, bySlot.size ? "Pick an item to see its tooltip." : "No equipment logged yet."));
+  let selected = null;
+  const cells = SLOT_GRID.map(([slot, row, col]) => {
+    const item = bySlot.get(slot);
+    const cell = h(item ? "button" : "div", {
+      type: item ? "button" : null,
+      class: `eq-slot${item ? " filled" : ""} ${item?.potential_option_grade || ""}`,
+      style: `grid-row:${row};grid-column:${col}`,
+      title: item ? item.item_name : SLOT_LABEL[slot],
+      "aria-pressed": item ? "false" : null,
+    },
+      item
+        ? [h("span", { class: "eq-name" }, item.item_name), item.starforce ? h("span", { class: "eq-sf" }, `★${item.starforce}`) : null]
+        : h("span", { class: "eq-empty" }, SLOT_LABEL[slot]));
+    if (item) {
+      cell.addEventListener("click", () => {
+        selected?.setAttribute("aria-pressed", "false");
+        selected = cell;
+        cell.setAttribute("aria-pressed", "true");
+        detail.replaceChildren(tooltip(item));
+      });
+    }
+    return cell;
+  });
+  const grid = h("div", { class: "eq-window" }, cells,
+    h("div", { class: "eq-figure", style: "grid-row:1/5;grid-column:3/6" },
+      c.character_image ? h("img", { src: c.character_image, alt: "" }) : null,
+      h("span", {}, c.character_name), h("span", { class: "meta" }, `Lv. ${c.character_level} ${c.character_class}`)));
+
+  const importForm = bind(
+    h("form", {},
+      h("p", { class: "meta" }, "Paste an equipment window as JSON (", h("code", {}, '{"item_equipment": […]}'), "); see ", h("a", { href: "/v1/docs" }, "the API guide"), ". Saving replaces the whole window; the old one stays in history."),
+      h("textarea", { name: "json", rows: 6, spellcheck: "false", class: "mono", placeholder: '{"item_equipment": []}' }),
+      h("button", { type: "submit" }, "Save equipment"),
+    ),
+    async (data) => {
+      let body;
+      try { body = JSON.parse(String(data.get("json"))); } catch { throw new Error("That is not valid JSON."); }
+      const res = await api("PUT", `/v1/characters/${id}/item-equipment`, body);
+      sessionStorage.setItem("msapi.flash", JSON.stringify(res.warnings || []));
+      render();
+    },
+  );
+
+  return h("div", { class: "panel" },
+    h("h2", {}, "Equipment"),
+    h("div", { class: "eq" }, grid, detail),
+    equipment ? h("p", { class: "meta" }, `Captured ${fmtDate(equipment.captured_at)}`) : null,
+    h("details", {}, h("summary", {}, "Record equipment"), importForm),
+  );
+}
+
 async function characterPage(id) {
-  const [c, latest, history] = await Promise.all([
+  const [c, latest, history, equipment] = await Promise.all([
     api("GET", `/v1/characters/${id}`),
     api("GET", `/v1/characters/${id}/stat`),
     api("GET", `/v1/characters/${id}/stat/history?limit=20`),
+    api("GET", `/v1/characters/${id}/item-equipment`),
   ]);
   const current = latest.snapshot?.stat ?? latest.stat ?? null;
   const result = h("div");
@@ -376,6 +528,7 @@ async function characterPage(id) {
         ? [h("dl", { class: "stats" }, shown.map(([key, label]) => h("div", {}, h("dt", {}, label), h("dd", {}, fmtNum(current[key]))))),
            h("p", { class: "meta" }, `Captured ${fmtDate(current.captured_at)}`)]
         : h("p", { class: "empty" }, "No stats logged yet.")),
+    equipmentPanel(c, equipment.equipment ? equipment : null),
     h("div", { class: "panel" }, h("h2", {}, "Log the stat window"), form),
     h("div", { class: "panel" },
       h("h2", {}, "History"),
@@ -396,8 +549,8 @@ async function characterPage(id) {
 const SCOPES = [
   ["accounts:read", "Read accounts"],
   ["accounts:write", "Add and edit accounts"],
-  ["characters:read", "Read characters and stats"],
-  ["characters:write", "Add and edit characters, log stats"],
+  ["characters:read", "Read characters, stats and equipment"],
+  ["characters:write", "Add and edit characters, log stats and equipment"],
   ["delete", "Delete accounts and characters"],
   ["tokens:read", "List tokens"],
   ["tokens:write", "Mint and revoke tokens"],

@@ -12,6 +12,7 @@
 mod accounts;
 mod audit_log;
 mod characters;
+mod equipment;
 mod meta;
 mod stats;
 mod tokens;
@@ -39,8 +40,7 @@ use vstd::utf8::encode_utf8;
 /// What each of [`api::PLANNED`] is, in the same order.
 #[cfg_attr(feature = "verus", verus_verify)]
 #[allow(clippy::redundant_static_lifetimes, reason = "Verus needs the lifetime spelled out")]
-const PLANNED_WHAT: [&'static str; 7] = [
-    "equipment: items, star force, potentials, flames",
+const PLANNED_WHAT: [&'static str; 6] = [
     "Arcane and Sacred symbols",
     "hyper stat presets",
     "Inner Ability presets",
@@ -53,8 +53,8 @@ const PLANNED_WHAT: [&'static str; 7] = [
 #[cfg_attr(feature = "verus", verus_verify)]
 #[cfg_attr(feature = "verus", verus_spec(r =>
     ensures
-        k < 7 ==> (r matches Some((name, _)) && name@ == msapi_core::msg::chars(api::word(api::PLANNED[k as int]))),
-        k >= 7 ==> r is None,
+        k < 6 ==> (r matches Some((name, _)) && name@ == msapi_core::msg::chars(api::word(api::PLANNED[k as int]))),
+        k >= 6 ==> r is None,
 ))]
 fn planned_at(k: usize) -> Option<(&'static str, &'static str)> {
     if k < api::PLANNED.len() { Some((http::word(api::PLANNED[k]), PLANNED_WHAT[k])) } else { None }
@@ -104,6 +104,9 @@ fn run(route: Route, id: &str, conn: &mut Connection, ctx: &Ctx, req: &Request) 
         Route::ReplaceStat => stats::replace(conn, ctx, req, id),
         Route::UpdateStat => stats::update(conn, ctx, req, id),
         Route::StatHistory => stats::history(conn, ctx, req, id),
+        Route::GetItemEquipment => equipment::get(conn, ctx, id),
+        Route::ReplaceItemEquipment => equipment::replace(conn, ctx, req, id),
+        Route::ItemEquipmentHistory => equipment::history(conn, ctx, req, id),
         Route::Planned(k) => {
             characters::find(conn, &ctx.principal, id)?;
             Err(planned_error(k, id))
@@ -404,13 +407,10 @@ mod tests {
 
     #[test]
     fn planned_names_line_up_with_core() {
-        let names: Vec<_> = (0..8).filter_map(planned_at).map(|(name, _)| name).collect();
+        let names: Vec<_> = (0..7).filter_map(planned_at).map(|(name, _)| name).collect();
+        assert_eq!(names, ["symbol-equipment", "hyper-stat", "ability", "link-skill", "vmatrix", "hexamatrix"]);
         assert_eq!(
-            names,
-            ["item-equipment", "symbol-equipment", "hyper-stat", "ability", "link-skill", "vmatrix", "hexamatrix"]
-        );
-        assert_eq!(
-            planned_error(1, "chr_1").message,
+            planned_error(0, "chr_1").message,
             "`symbol-equipment` (Arcane and Sacred symbols) is planned but not built yet; the stat window is at /v1/characters/chr_1/stat"
         );
     }
