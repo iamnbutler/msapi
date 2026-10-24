@@ -97,22 +97,22 @@ fn run(route: Route, id: &str, conn: &mut Connection, ctx: &Ctx, req: &Request) 
         Route::ListAccountCharacters => characters::list(conn, ctx, req, Some(id)),
         Route::CreateCharacter => characters::create(conn, ctx, req, id),
         Route::ListCharacters => characters::list(conn, ctx, req, None),
-        Route::GetCharacter => characters::get(conn, ctx, id),
         Route::UpdateCharacter => characters::update(conn, ctx, req, id),
         Route::DeleteCharacter => characters::delete(conn, ctx, id),
-        Route::GetStat => stats::get(conn, ctx, id),
         Route::ReplaceStat => stats::replace(conn, ctx, req, id),
         Route::UpdateStat => stats::update(conn, ctx, req, id),
-        Route::StatHistory => stats::history(conn, ctx, req, id),
-        Route::GetItemEquipment => equipment::get(conn, ctx, id),
         Route::ReplaceItemEquipment => equipment::replace(conn, ctx, req, id),
-        Route::ItemEquipmentHistory => equipment::history(conn, ctx, req, id),
         Route::Planned(k) => {
             characters::find(conn, &ctx.principal, id)?;
             Err(planned_error(k, id))
         }
-        // Public and passkey routes are answered before authentication.
-        Route::Health
+        // Public, open and passkey routes are answered by their own stages.
+        Route::GetCharacter
+        | Route::GetStat
+        | Route::StatHistory
+        | Route::GetItemEquipment
+        | Route::ItemEquipmentHistory
+        | Route::Health
         | Route::Index
         | Route::Docs
         | Route::RefRegions
@@ -122,6 +122,25 @@ fn run(route: Route, id: &str, conn: &mut Connection, ctx: &Ctx, req: &Request) 
         | Route::RegisterFinish
         | Route::LoginStart
         | Route::LoginFinish => Err(ApiError::not_found_route(&req.path)),
+    }
+}
+
+/// Runs a route that reads a character, for its owner or, if the character
+/// is public, for anyone: `principal` is `None` without a token.
+fn read(
+    route: Route,
+    id: &str,
+    conn: &Connection,
+    principal: Option<&Principal>,
+    req: &Request,
+) -> Result<Response, ApiError> {
+    match route {
+        Route::GetCharacter => characters::get(conn, principal, id),
+        Route::GetStat => stats::get(conn, principal, id),
+        Route::StatHistory => stats::history(conn, principal, req, id),
+        Route::GetItemEquipment => equipment::get(conn, principal, id),
+        Route::ItemEquipmentHistory => equipment::history(conn, principal, req, id),
+        _ => Err(ApiError::not_found_route(&req.path)),
     }
 }
 
@@ -155,6 +174,9 @@ enum Stage {
     Public,
     /// A passkey ceremony, answered without a token.
     Passkey,
+    /// A character read: a token is checked if sent, but none is needed for
+    /// a public character.
+    Open,
     /// Everything else: authenticate, then [`run`].
     Authed,
 }
@@ -168,6 +190,11 @@ const fn stage(route: Route) -> Stage {
             Stage::Public
         }
         Route::RegisterStart | Route::RegisterFinish | Route::LoginStart | Route::LoginFinish => Stage::Passkey,
+        Route::GetCharacter
+        | Route::GetStat
+        | Route::StatHistory
+        | Route::GetItemEquipment
+        | Route::ItemEquipmentHistory => Stage::Open,
         _ => Stage::Authed,
     }
 }
@@ -268,7 +295,8 @@ const fn audits_refusal(status: u16, method: Method) -> bool {
 }
 
 /// Answers a request along its proven [`plan`]: the public and passkey
-/// handlers, or authentication and then [`run`], auditing a refused write.
+/// handlers, a character [`read`] with any token sent, or authentication and
+/// then [`run`], auditing a refused write.
 fn dispatch(conn: &mut Connection, req: &Request, request_id: &str) -> Result<Outcome, (ApiError, Option<String>)> {
     let plan = plan(req.method, &req.path).map_err(|e| (e, None))?;
     match plan.stage {
@@ -281,6 +309,18 @@ fn dispatch(conn: &mut Connection, req: &Request, request_id: &str) -> Result<Ou
             Some(Err(e)) => Err((e, None)),
             None => Err((ApiError::not_found_route(&req.path), None)),
         },
+        Stage::Open => {
+            // A bad token is refused even here, so a client learns it has expired.
+            let principal = match req.header("authorization") {
+                Some(header) => Some(auth::authenticate(conn, Some(header)).map_err(|e| (e, None))?),
+                None => None,
+            };
+            let token = principal.as_ref().map(|p| p.token_id.clone());
+            match read(plan.route, plan.id, conn, principal.as_ref(), req) {
+                Ok(response) => Ok((response, token)),
+                Err(err) => Err((err, token)),
+            }
+        }
         Stage::Authed => {
             let principal = auth::authenticate(conn, req.header("authorization")).map_err(|e| (e, None))?;
             let token = Some(principal.token_id.clone());
@@ -302,11 +342,13 @@ fn dispatch(conn: &mut Connection, req: &Request, request_id: &str) -> Result<Ou
 verus! {
 
 /// The public routes are answered without a token, as are the passkey
-/// ceremonies; every other route authenticates first.
+/// ceremonies; the character reads take a token if one is sent; every other
+/// route authenticates first.
 spec fn stage_spec(route: Route) -> Stage {
     match route {
         Route::Health | Route::Index | Route::Docs | Route::RefRegions | Route::RefWorlds | Route::RefClasses => Stage::Public,
         Route::RegisterStart | Route::RegisterFinish | Route::LoginStart | Route::LoginFinish => Stage::Passkey,
+        Route::GetCharacter | Route::GetStat | Route::StatHistory | Route::GetItemEquipment | Route::ItemEquipmentHistory => Stage::Open,
         _ => Stage::Authed,
     }
 }

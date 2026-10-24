@@ -172,7 +172,10 @@ function go(hash) {
 
 function renderSession() {
   sessionNav.replaceChildren();
-  if (!session) return;
+  if (!session) {
+    if (location.hash.startsWith("#/characters/")) sessionNav.append(h("a", { href: "#/" }, "Sign in"));
+    return;
+  }
   sessionNav.append(
     h("a", { href: "#/tokens" }, "API tokens"),
     h("span", {}, session.display_name),
@@ -422,6 +425,8 @@ function icon(item, cls) {
 
 function equipmentPanel(c, snapshot) {
   const id = c.id;
+  // Only the owner is sent `account_id`.
+  const owner = c.account_id != null;
   const equipment = snapshot?.equipment ?? null;
   const bySlot = new Map((equipment?.item_equipment || []).map((it) => [it.item_equipment_slot, it]));
   const detail = h("div", { class: "eq-detail" }, h("p", { class: "empty" }, bySlot.size ? "Pick an item to see its tooltip." : "No equipment logged yet."));
@@ -474,7 +479,7 @@ function equipmentPanel(c, snapshot) {
     h("h2", {}, "Equipment"),
     h("div", { class: "eq" }, grid, detail),
     equipment ? h("p", { class: "meta" }, `Captured ${fmtDate(equipment.captured_at)}`) : null,
-    h("details", {}, h("summary", {}, "Record equipment"), importForm),
+    owner ? h("details", {}, h("summary", {}, "Record equipment"), importForm) : null,
   );
 }
 
@@ -487,6 +492,21 @@ async function characterPage(id) {
   ]);
   const current = latest.snapshot?.stat ?? latest.stat ?? null;
   const result = h("div");
+  const owner = c.account_id != null;
+  const isPublic = c.visibility === "public";
+
+  const visibility = bind(
+    h("form", { class: "visibility" },
+      h("p", {}, isPublic
+        ? "Public: anyone with the link can see this character, its stats and its equipment. Your notes and accounts stay private."
+        : "Private: only you can see this character."),
+      h("button", { type: "submit", class: "quiet" }, isPublic ? "Make private" : "Make public"),
+    ),
+    async () => {
+      await api("PATCH", `/v1/characters/${id}`, { visibility: isPublic ? "private" : "public" });
+      render();
+    },
+  );
 
   const form = bind(
     h("form", {},
@@ -527,10 +547,11 @@ async function characterPage(id) {
   const shown = STAT_FIELDS.filter(([key]) => current?.[key] != null);
   const rows = history.history || [];
   return h("section", {},
-    h("div", { class: "crumbs" }, h("a", { href: "#/" }, "Accounts"), " / ", h("a", { href: `#/accounts/${c.account_id}` }, "Account"), " / "),
+    owner ? h("div", { class: "crumbs" }, h("a", { href: "#/" }, "Accounts"), " / ", h("a", { href: `#/accounts/${c.account_id}` }, "Account"), " / ") : null,
     h("h1", {}, c.character_name),
     h("p", { class: "sub" }, `Lv. ${c.character_level} ${c.character_class} · ${c.world_name} (${c.world_type})`),
     result,
+    owner ? h("div", { class: "panel" }, h("h2", {}, "Who can see this"), visibility) : null,
     h("div", { class: "panel" },
       h("h2", {}, "Current stats"),
       current
@@ -538,7 +559,7 @@ async function characterPage(id) {
            h("p", { class: "meta" }, `Captured ${fmtDate(current.captured_at)}`)]
         : h("p", { class: "empty" }, "No stats logged yet.")),
     equipmentPanel(c, equipment.equipment ? equipment : null),
-    h("div", { class: "panel" }, h("h2", {}, "Log the stat window"), form),
+    owner ? h("div", { class: "panel" }, h("h2", {}, "Log the stat window"), form) : null,
     h("div", { class: "panel" },
       h("h2", {}, "History"),
       rows.length
@@ -550,7 +571,7 @@ async function characterPage(id) {
               h("td", {}, fmtNum(r.stat.final_damage)),
               h("td", {}, fmtNum(r.stat.boss_damage)),
               h("td", {}, fmtNum(r.stat.ignore_defense)))))))
-        : h("p", { class: "empty" }, "Every save is kept; your history will show here.")),
+        : h("p", { class: "empty" }, owner ? "Every save is kept; your history will show here." : "No history yet.")),
   );
 }
 
@@ -684,14 +705,15 @@ async function render() {
   const path = location.hash.replace(/^#/, "") || "/";
   let page;
   try {
-    if (!session) page = welcome();
+    // Anyone may open a public character's page.
+    if (path.startsWith("/characters/")) page = await characterPage(path.split("/")[2]);
+    else if (!session) page = welcome();
     else if (path === "/") page = await home();
     else if (path === "/tokens") page = await tokensPage();
     else if (path.startsWith("/accounts/")) page = await accountPage(path.split("/")[2]);
-    else if (path.startsWith("/characters/")) page = await characterPage(path.split("/")[2]);
     else page = h("p", {}, "Not found. ", h("a", { href: "#/" }, "Go home"));
   } catch (err) {
-    page = h("section", {}, notice("error", errorText(err)), h("a", { href: "#/" }, "Back to accounts"));
+    page = h("section", {}, notice("error", errorText(err)), h("a", { href: "#/" }, session ? "Back to accounts" : "Go to msapi"));
   }
   app.replaceChildren(page);
 }

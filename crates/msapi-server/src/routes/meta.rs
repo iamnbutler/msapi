@@ -43,7 +43,7 @@ fn index() -> serde_json::Value {
         "name": "msapi",
         "version": env!("CARGO_PKG_VERSION"),
         "docs": "/v1/docs",
-        "auth": "Authorization: Bearer msk_…  (everything below except /health, /v1, /v1/docs and /v1/ref/*)",
+        "auth": "Authorization: Bearer msk_…  (everything below except /health, /v1, /v1/docs, /v1/ref/* and GETs of a public character)",
         "routes": [
             "GET    /v1/ref/regions | /v1/ref/worlds | /v1/ref/classes",
             "GET    /v1/me",

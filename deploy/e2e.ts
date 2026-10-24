@@ -1,6 +1,6 @@
 // Drives the hosted web app in Chrome with a virtual passkey authenticator:
 // sign up, add an account and a character, log stats twice and equipment once,
-// sign out, sign in
+// view it signed out while public and private, sign out, sign in
 // again, and (with OPS_TOKEN set) restart the container to check the data
 // survives a cold start.
 //
@@ -90,6 +90,23 @@ try {
   await page.getByRole("button", { name: "Superior Engraved Gollux Belt" }).click();
   check(await page.locator(".tip").textContent().then((t) => t?.includes("STR: +149 (60 +73 +16)")), "recorded equipment and read its tooltip");
   const characterUrl = page.url();
+
+  // A new context is an incognito window: no session, no token.
+  const stranger = await (await browser.newContext()).newPage();
+  await stranger.goto(characterUrl);
+  await stranger.getByRole("heading", { name: character }).waitFor();
+  check(
+    await stranger.getByRole("button", { name: "Superior Engraved Gollux Belt" }).count() === 1
+      && await stranger.getByRole("button", { name: "Log stats" }).count() === 0,
+    "a signed-out visitor sees the public character, read-only",
+  );
+  await page.getByRole("button", { name: "Make private" }).click();
+  await page.getByRole("button", { name: "Make public" }).waitFor();
+  await stranger.reload();
+  await stranger.getByText("not found").waitFor();
+  check(true, "made it private and the visitor lost it");
+  await page.getByRole("button", { name: "Make public" }).click();
+  await page.getByRole("button", { name: "Make private" }).waitFor();
 
   if (process.env.OPS_TOKEN) {
     const res = await fetch(`${base}/__ops/restart`, { method: "POST", headers: { authorization: `Bearer ${process.env.OPS_TOKEN}` } });

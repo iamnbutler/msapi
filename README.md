@@ -58,6 +58,10 @@ everything below it. Every write, and every refused write, is recorded with
 the token's label and the data before and after, so the owner can see what an
 agent did. People sign in with a passkey, which gives them a 30-day root token.
 
+Characters are public by default: anyone can read a public character, its stat
+window and its equipment without a token, but not its notes or account. A
+character set to `private` is visible only to its owner.
+
 ## Layout
 
 - `crates/msapi-core`: the domain. Units, exact decimals, reference data

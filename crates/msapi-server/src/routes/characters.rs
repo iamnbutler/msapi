@@ -20,8 +20,8 @@ use serde_json::json;
 use msapi_core::api::{self, CharacterRefusal};
 use msapi_core::class::Class;
 use msapi_core::{
-    CharacterName, ClassLevel, DataCenter, ExpRate, Gender, JobType, Level, Liberation, Region, Timestamp, World,
-    WorldType, class, world,
+    CharacterName, ClassLevel, DataCenter, ExpRate, Gender, JobType, Level, Liberation, Region, Timestamp, Visibility,
+    World, WorldType, class, world,
 };
 
 use super::{corrupt, enum_from_sql, enum_to_sql, in_list, is_unique_violation, opt_bytes};
@@ -52,6 +52,7 @@ struct CharacterInput {
     liberation: Option<Liberation>,
     character_image: Option<String>,
     notes: Option<String>,
+    visibility: Visibility,
 }
 
 /// A [`CharacterInput`] whose references resolved and whose values are in range.
@@ -103,6 +104,7 @@ impl Serialize for CharacterInput {
             liberation: &'a Option<Liberation>,
             character_image: &'a Option<String>,
             notes: &'a Option<String>,
+            visibility: &'a Visibility,
         }
         Wire {
             character_name: &self.character_name,
@@ -118,6 +120,7 @@ impl Serialize for CharacterInput {
             liberation: &self.liberation,
             character_image: &self.character_image,
             notes: &self.notes,
+            visibility: &self.visibility,
         }
         .serialize(s)
     }
@@ -150,6 +153,8 @@ impl<'de> Deserialize<'de> for CharacterInput {
             character_image: Option<String>,
             #[serde(default)]
             notes: Option<String>,
+            #[serde(default)]
+            visibility: Visibility,
         }
         let CharacterInput {
             character_name,
@@ -165,6 +170,7 @@ impl<'de> Deserialize<'de> for CharacterInput {
             liberation,
             character_image,
             notes,
+            visibility,
         } = CharacterInput::deserialize(d)?;
         Ok(Self {
             character_name,
@@ -180,6 +186,7 @@ impl<'de> Deserialize<'de> for CharacterInput {
             liberation,
             character_image,
             notes,
+            visibility,
         })
     }
 }
@@ -282,6 +289,10 @@ pub struct CharacterView {
     liberation: Option<Liberation>,
     character_image: Option<String>,
     notes: Option<String>,
+    visibility: Visibility,
+    /// Whether the reader owns it. Only the owner is shown `account_id` and
+    /// `notes`.
+    owner: bool,
     /// When the latest stat window was captured; `null` if none has been recorded.
     stat_captured_at: Option<Timestamp>,
     created_at: Timestamp,
@@ -305,19 +316,21 @@ impl CharacterView {
             liberation: self.liberation,
             character_image: self.character_image.clone(),
             notes: self.notes.clone(),
+            visibility: self.visibility,
         }
     }
 }
 
 // Verus checks `CharacterView` and cannot take serde's derive on a checked
 // type, so it serializes through a derived twin with the same fields in the
-// same order.
+// same order, leaving out the owner's own fields for anyone else.
 impl Serialize for CharacterView {
     fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
         #[derive(Serialize)]
         struct Wire<'a> {
             id: &'a String,
-            account_id: &'a String,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            account_id: Option<&'a String>,
             region: &'a Region,
             character_name: &'a CharacterName,
             world_name: &'a &'static str,
@@ -335,14 +348,16 @@ impl Serialize for CharacterView {
             popularity: &'a Option<i32>,
             liberation: &'a Option<Liberation>,
             character_image: &'a Option<String>,
-            notes: &'a Option<String>,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            notes: Option<&'a Option<String>>,
+            visibility: &'a Visibility,
             stat_captured_at: &'a Option<Timestamp>,
             created_at: &'a Timestamp,
             updated_at: &'a Timestamp,
         }
         Wire {
             id: &self.id,
-            account_id: &self.account_id,
+            account_id: self.owner.then_some(&self.account_id),
             region: &self.region,
             character_name: &self.character_name,
             world_name: &self.world_name,
@@ -360,7 +375,8 @@ impl Serialize for CharacterView {
             popularity: &self.popularity,
             liberation: &self.liberation,
             character_image: &self.character_image,
-            notes: &self.notes,
+            notes: self.owner.then_some(&self.notes),
+            visibility: &self.visibility,
             stat_captured_at: &self.stat_captured_at,
             created_at: &self.created_at,
             updated_at: &self.updated_at,
@@ -372,7 +388,8 @@ impl Serialize for CharacterView {
 const SELECT: &str = "SELECT c.id, c.account_id, a.region, c.character_name, c.world_key, c.class_id, c.class_level,
         c.level, c.exp, c.exp_rate, c.gender, c.guild_name, c.popularity, c.liberation, c.image_url, c.notes,
         c.created_at, c.updated_at,
-        (SELECT s.captured_at FROM stat_snapshots s WHERE s.character_id = c.id ORDER BY s.id DESC LIMIT 1)
+        (SELECT s.captured_at FROM stat_snapshots s WHERE s.character_id = c.id ORDER BY s.id DESC LIMIT 1),
+        c.visibility
     FROM characters c JOIN accounts a ON a.id = c.account_id";
 
 fn from_row(r: &Row<'_>) -> rusqlite::Result<CharacterView> {
@@ -410,6 +427,8 @@ fn from_row(r: &Row<'_>) -> rusqlite::Result<CharacterView> {
         created_at: Timestamp::from_millis(r.get(16)?),
         updated_at: Timestamp::from_millis(r.get(17)?),
         stat_captured_at: r.get::<_, Option<i64>>(18)?.map(Timestamp::from_millis),
+        visibility: enum_from_sql(19, r.get(19)?)?.ok_or_else(|| corrupt(19, "missing visibility".into()))?,
+        owner: true,
     })
 }
 
@@ -420,6 +439,24 @@ pub fn find(conn: &Connection, principal: &Principal, id: &str) -> Result<Charac
         .optional()?
         .ok_or_else(|| ApiError::not_found_id("character", id))?;
     principal.require_account(&view.account_id)?;
+    Ok(view)
+}
+
+/// Loads a character for reading: in full if `principal` may read it as its
+/// owner, else without the owner's fields if it is public. A private
+/// character is 404 to anyone else, as if it did not exist.
+pub fn find_readable(conn: &Connection, principal: Option<&Principal>, id: &str) -> Result<CharacterView, ApiError> {
+    if let Some(p) = principal
+        && p.require(Scope::CharactersRead).is_ok()
+        && let Ok(view) = find(conn, p, id)
+    {
+        return Ok(view);
+    }
+    let mut view = conn
+        .query_row(&format!("{SELECT} WHERE c.id = ?1 AND c.visibility = 'public'"), params![id], from_row)
+        .optional()?
+        .ok_or_else(|| ApiError::not_found_id("character", id))?;
+    view.owner = false;
     Ok(view)
 }
 
@@ -479,10 +516,9 @@ pub fn list(conn: &Connection, ctx: &Ctx, req: &Request, account_id: Option<&str
     Ok(Response::json(200, &json!({ "character_list": characters })))
 }
 
-/// `GET /v1/characters/{id}`.
-pub fn get(conn: &Connection, ctx: &Ctx, id: &str) -> Result<Response, ApiError> {
-    ctx.principal.require(Scope::CharactersRead)?;
-    Ok(Response::json(200, &find(conn, &ctx.principal, id)?))
+/// `GET /v1/characters/{id}`, with or without a token.
+pub fn get(conn: &Connection, principal: Option<&Principal>, id: &str) -> Result<Response, ApiError> {
+    Ok(Response::json(200, &find_readable(conn, principal, id)?))
 }
 
 /// `POST /v1/accounts/{id}/characters`.
@@ -496,8 +532,9 @@ pub fn create(conn: &mut Connection, ctx: &Ctx, req: &Request, account_id: &str)
     let write = Write::begin(conn, ctx)?;
     let inserted = write.execute(
         "INSERT INTO characters (id, user_id, account_id, character_name, name_key, world_key, class_id, class_level,
-             level, exp, exp_rate, gender, guild_name, popularity, liberation, image_url, notes, created_at, updated_at)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?18)",
+             level, exp, exp_rate, gender, guild_name, popularity, liberation, image_url, notes, visibility,
+             created_at, updated_at)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?19)",
         params![
             id,
             ctx.principal.user_id,
@@ -516,6 +553,7 @@ pub fn create(conn: &mut Connection, ctx: &Ctx, req: &Request, account_id: &str)
             valid.input.liberation.as_ref().and_then(enum_to_sql),
             valid.input.character_image,
             valid.input.notes,
+            valid.input.visibility.as_str(),
             now,
         ],
     );
@@ -542,7 +580,7 @@ pub fn update(conn: &mut Connection, ctx: &Ctx, req: &Request, id: &str) -> Resu
     let updated = write.execute(
         "UPDATE characters SET character_name = ?2, name_key = ?3, world_key = ?4, class_id = ?5, class_level = ?6,
              level = ?7, exp = ?8, exp_rate = ?9, gender = ?10, guild_name = ?11, popularity = ?12, liberation = ?13,
-             image_url = ?14, notes = ?15, updated_at = ?16
+             image_url = ?14, notes = ?15, visibility = ?16, updated_at = ?17
          WHERE id = ?1",
         params![
             id,
@@ -560,6 +598,7 @@ pub fn update(conn: &mut Connection, ctx: &Ctx, req: &Request, id: &str) -> Resu
             valid.input.liberation.as_ref().and_then(enum_to_sql),
             valid.input.character_image,
             valid.input.notes,
+            valid.input.visibility.as_str(),
             Timestamp::now().millis(),
         ],
     );
@@ -593,7 +632,7 @@ mod wire {
         for (json, err) in [
             (
                 r#"{"character_name":"Abc","world_name":"Bera","character_class":"Hero","character_level":200,"bogus":1}"#,
-                r"unknown field `bogus`, expected one of `character_name`, `world_name`, `character_class`, `character_level`, `character_class_level`, `character_exp`, `character_exp_rate`, `character_gender`, `character_guild_name`, `popularity`, `liberation`, `character_image`, `notes` at line 1 column 98",
+                r"unknown field `bogus`, expected one of `character_name`, `world_name`, `character_class`, `character_level`, `character_class_level`, `character_exp`, `character_exp_rate`, `character_gender`, `character_guild_name`, `popularity`, `liberation`, `character_image`, `notes`, `visibility` at line 1 column 98",
             ),
             (
                 r#"{"world_name":"Bera","character_class":"Hero","character_level":200}"#,
@@ -640,7 +679,7 @@ mod wire {
         let out = serde_json::to_string(&input).unwrap();
         assert_eq!(
             out,
-            r#"{"character_name":"Abc","world_name":"Bera","character_class":"Hero","character_level":2,"character_class_level":null,"character_exp":null,"character_exp_rate":1.500,"character_gender":"male","character_guild_name":null,"popularity":null,"liberation":"genesis","character_image":null,"notes":null}"#
+            r#"{"character_name":"Abc","world_name":"Bera","character_class":"Hero","character_level":2,"character_class_level":null,"character_exp":null,"character_exp_rate":1.500,"character_gender":"male","character_guild_name":null,"popularity":null,"liberation":"genesis","character_image":null,"notes":null,"visibility":"public"}"#
         );
         assert_eq!(serde_json::to_string(&serde_json::from_str::<CharacterInput>(&out).unwrap()).unwrap(), out);
     }

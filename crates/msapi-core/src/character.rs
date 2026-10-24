@@ -425,7 +425,34 @@ pub enum Liberation {
     Destiny,
 }
 
-// Verus checks `Gender` and `Liberation` and cannot take serde's derives on a
+/// Who may read a character. Anyone may read a public one, its stat window
+/// and its equipment; only its owner sees its notes and account.
+#[cfg_attr(feature = "verus", verus_verify)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug, Default)]
+pub enum Visibility {
+    /// Readable without a token. The default.
+    #[default]
+    Public,
+    /// Readable only by its owner.
+    Private,
+}
+
+#[cfg_attr(feature = "verus", verus_verify)]
+impl Visibility {
+    /// The wire and database name.
+    #[cfg_attr(feature = "verus", verus_spec(r =>
+        ensures r@ == match self { Self::Public => "public"@, Self::Private => "private"@ },
+    ))]
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Public => "public",
+            Self::Private => "private",
+        }
+    }
+}
+
+// Verus checks `Gender`, `Liberation` and `Visibility` and cannot take serde's derives on a
 // checked type, so they serialize by hand and deserialize through derived
 // twins: the same wire names and the same error messages.
 
@@ -476,6 +503,27 @@ impl<'de> Deserialize<'de> for Liberation {
             Liberation::None => Self::None,
             Liberation::Genesis => Self::Genesis,
             Liberation::Destiny => Self::Destiny,
+        })
+    }
+}
+
+impl Serialize for Visibility {
+    fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        s.serialize_str(self.as_str())
+    }
+}
+
+impl<'de> Deserialize<'de> for Visibility {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        #[derive(Deserialize)]
+        #[serde(rename_all = "lowercase")]
+        enum Visibility {
+            Public,
+            Private,
+        }
+        Ok(match Visibility::deserialize(d)? {
+            Visibility::Public => Self::Public,
+            Visibility::Private => Self::Private,
         })
     }
 }

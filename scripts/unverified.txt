@@ -39,6 +39,8 @@ crates/msapi-core/src/character.rs::Serialize for Gender::serialize | lib | hand
 crates/msapi-core/src/character.rs::Deserialize for Gender::deserialize | lib | parses through a derived twin, so the wire format and error messages stay those of the derive Verus cannot take on a checked type
 crates/msapi-core/src/character.rs::Serialize for Liberation::serialize | lib | hands serde the lowercase wire name
 crates/msapi-core/src/character.rs::Deserialize for Liberation::deserialize | lib | parses through a derived twin, so the wire format and error messages stay those of the derive Verus cannot take on a checked type
+crates/msapi-core/src/character.rs::Serialize for Visibility::serialize | lib | hands serde the proven Visibility::as_str
+crates/msapi-core/src/character.rs::Deserialize for Visibility::deserialize | lib | parses through a derived twin, so the wire format and error messages stay those of the derive Verus cannot take on a checked type
 crates/msapi-core/src/equipment.rs::Slot::name | data | a slot's wire name, the same table as its serde names (a test pins them)
 crates/msapi-core/src/equipment.rs::ItemEquipment::check | data | checks one recorded equipment window at run time; proofs cover formulas, not individual items
 crates/msapi-core/src/equipment.rs::Item::check | data | checks one recorded item at run time; proofs cover formulas, not individual items
@@ -142,6 +144,7 @@ crates/msapi-server/src/routes/audit_log.rs::from_row | lib | reads a rusqlite r
 crates/msapi-server/src/routes/audit_log.rs::list | io | route handler: SQL against SQLite around the proven checks, then the audit row
 crates/msapi-server/src/routes/characters.rs::from_row | lib | reads a rusqlite row into the view
 crates/msapi-server/src/routes/characters.rs::find | io | route handler: SQL against SQLite around the proven checks, then the audit row
+crates/msapi-server/src/routes/characters.rs::find_readable | io | SQL against SQLite: the owner's row through find, else the row if it is public
 crates/msapi-server/src/routes/characters.rs::account_region | io | route handler: SQL against SQLite around the proven checks, then the audit row
 crates/msapi-server/src/routes/characters.rs::list | io | route handler: SQL against SQLite around the proven checks, then the audit row
 crates/msapi-server/src/routes/characters.rs::get | io | route handler: SQL against SQLite around the proven checks, then the audit row
@@ -159,8 +162,9 @@ crates/msapi-server/src/routes/equipment.rs::history | io | route handler: SQL a
 crates/msapi-server/src/routes/meta.rs::public | lib | builds serde_json responses (json!) for the public routes
 crates/msapi-server/src/routes/meta.rs::index | lib | a serde_json (json!) index of the routes
 crates/msapi-server/src/routes/mod.rs::run | io | one match from the proven route to its handler; every handler runs SQL against SQLite
+crates/msapi-server/src/routes/mod.rs::read | io | one match from a proven character-read route to its handler; every handler runs SQL against SQLite
 crates/msapi-server/src/routes/mod.rs::handle | io | reads the clock and the random request ID, calls dispatch and writes the log line
-crates/msapi-server/src/routes/mod.rs::dispatch | io | sequences the proven plan, context and audits_refusal with the database calls: meta::public (serde_json), passkey::handle, auth::authenticate, run and audit::record_refused
+crates/msapi-server/src/routes/mod.rs::dispatch | io | sequences the proven plan, context and audits_refusal with the database calls: meta::public (serde_json), passkey::handle, auth::authenticate, read, run and audit::record_refused
 crates/msapi-server/src/routes/mod.rs::enum_to_sql | lib | serde_json wire string of an enum
 crates/msapi-server/src/routes/mod.rs::enum_from_sql | lib | serde_json parse of a stored enum
 crates/msapi-server/src/routes/mod.rs::corrupt | lib | builds a rusqlite error

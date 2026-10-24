@@ -10,7 +10,9 @@ Base URL: wherever this was served from. Every path below starts with `/v1`.
 ## Authentication
 
 Send `Authorization: Bearer msk_…` on every request except `/health`, `/v1`,
-`/v1/docs`, `/v1/ref/*` and `/v1/auth/*`.
+`/v1/docs`, `/v1/ref/*` and `/v1/auth/*`, and reads of public characters (see
+[Who can read a character](#who-can-read-a-character)). A token you send is
+checked even where none is needed: an expired one is 401.
 
 People get a root token by signing in with a passkey; the web app at `/` does
 this. The four calls, all `POST`, use the browser's WebAuthn JSON forms
@@ -103,7 +105,8 @@ Field names follow the Nexon Open API's `character/basic`.
   "popularity": 12,
   "liberation": "genesis",
   "character_image": "https://…",
-  "notes": null
+  "notes": null,
+  "visibility": "public"
 }
 ```
 
@@ -112,6 +115,20 @@ Required: `character_name`, `world_name`, `character_class`, `character_level`
 than guessing. `character_exp_rate` takes up to three decimals, as the game
 shows it. `liberation` is `none`, `genesis` or `destiny`. A name may be used
 once per world per user (409 otherwise). Unknown fields are rejected.
+
+### Who can read a character
+
+`visibility` is `public` (the default) or `private`. Anyone, with or without a
+token, can read a public character with these `GET`s:
+
+- `/v1/characters/{id}`
+- `/v1/characters/{id}/stat` and `/stat/history`
+- `/v1/characters/{id}/item-equipment` and `/item-equipment/history`
+
+Anyone other than the owner gets the character without `account_id` and
+`notes`; those keys are left out, not `null`. Writes, the character lists and
+everything else still need the owner's token. A private character answers 404
+to anyone but its owner, as if it did not exist.
 
 ## The stat window
 
