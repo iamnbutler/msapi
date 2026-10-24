@@ -1,0 +1,12 @@
+---
+id: 01M5Q6503EPXEGJT34YE7DZ16F
+anchor: '@file'
+created: 2026-10-24T14:48:31Z
+norm: '1'
+sig: e3b0c44298fc1c14
+body_hash: 49dee73446937188
+raw_hash: 67b75fd1201fe533
+lines: 1-226
+---
+
+/assets serves only keys matching item/icon/{sha256}.png; keys are content hashes, so responses are cached immutably
