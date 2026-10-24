@@ -132,12 +132,12 @@ whether Verus checks it:
 | `push_all` | `crates/msapi-core/src/decimal.rs:834` | spec |  |
 | `format_decimal` | `crates/msapi-core/src/decimal.rs:869` | spec |  |
 | `Slot::name` | `crates/msapi-core/src/equipment.rs:95` | unverified | a slot's wire name, the same table as its serde names (a test pins them) |
-| `ItemEquipment::check` | `crates/msapi-core/src/equipment.rs:325` | unverified | checks one recorded equipment window at run time; proofs cover formulas, not individual items |
-| `Item::check` | `crates/msapi-core/src/equipment.rs:342` | unverified | checks one recorded item at run time; proofs cover formulas, not individual items |
-| `Item::check_sums` | `crates/msapi-core/src/equipment.rs:406` | unverified | checks one recorded item at run time; proofs cover formulas, not individual items |
-| `sum` | `crates/msapi-core/src/equipment.rs:435` | unverified | checks one recorded item at run time; proofs cover formulas, not individual items |
-| `error` | `crates/msapi-core/src/equipment.rs:452` | unverified | builds an Issue for the run-time item checks |
-| `warning` | `crates/msapi-core/src/equipment.rs:456` | unverified | builds an Issue for the run-time item checks |
+| `ItemEquipment::check` | `crates/msapi-core/src/equipment.rs:328` | unverified | checks one recorded equipment window at run time; proofs cover formulas, not individual items |
+| `Item::check` | `crates/msapi-core/src/equipment.rs:345` | unverified | checks one recorded item at run time; proofs cover formulas, not individual items |
+| `Item::check_sums` | `crates/msapi-core/src/equipment.rs:409` | unverified | checks one recorded item at run time; proofs cover formulas, not individual items |
+| `sum` | `crates/msapi-core/src/equipment.rs:439` | unverified | checks one recorded item at run time; proofs cover formulas, not individual items |
+| `error` | `crates/msapi-core/src/equipment.rs:456` | unverified | builds an Issue for the run-time item checks |
+| `warning` | `crates/msapi-core/src/equipment.rs:460` | unverified | builds an Issue for the run-time item checks |
 | `Fixed::from_raw` | `crates/msapi-core/src/fixed.rs:82` | spec |  |
 | `Fixed::raw` | `crates/msapi-core/src/fixed.rs:89` | spec |  |
 | `FixedError::message` | `crates/msapi-core/src/fixed.rs:120` | spec |  |
@@ -343,15 +343,15 @@ whether Verus checks it:
 | `FromStr for $name::from_str` | `crates/msapi-core/src/units.rs:486` | spec |  |
 | `fmt::Display for $name::fmt` | `crates/msapi-core/src/units.rs:495` | unverified | writes the proven text to the std Formatter; vstd has no spec for Formatter::write_str |
 | `fmt::Debug for $name::fmt` | `crates/msapi-core/src/units.rs:501` | unverified | writes the proven debug_text to the std Formatter; vstd has no spec for Formatter::write_str |
-| `one_plus` | `crates/msapi-core/src/units.rs:664` | spec |  |
-| `DamagePct::factor` | `crates/msapi-core/src/units.rs:695` | spec |  |
-| `FinalDamage::factor` | `crates/msapi-core/src/units.rs:705` | spec |  |
-| `FinalDamage::stack` | `crates/msapi-core/src/units.rs:720` | spec |  |
-| `IgnoreDefense::remaining` | `crates/msapi-core/src/units.rs:749` | spec |  |
-| `IgnoreDefense::stack` | `crates/msapi-core/src/units.rs:766` | spec |  |
-| `IgnoreDefense::defense_factor` | `crates/msapi-core/src/units.rs:801` | spec |  |
-| `CritDamage::crit_factor` | `crates/msapi-core/src/units.rs:819` | spec |  |
-| `StatAttack::displayed` | `crates/msapi-core/src/units.rs:829` | spec |  |
+| `one_plus` | `crates/msapi-core/src/units.rs:667` | spec |  |
+| `DamagePct::factor` | `crates/msapi-core/src/units.rs:698` | spec |  |
+| `FinalDamage::factor` | `crates/msapi-core/src/units.rs:708` | spec |  |
+| `FinalDamage::stack` | `crates/msapi-core/src/units.rs:723` | spec |  |
+| `IgnoreDefense::remaining` | `crates/msapi-core/src/units.rs:752` | spec |  |
+| `IgnoreDefense::stack` | `crates/msapi-core/src/units.rs:769` | spec |  |
+| `IgnoreDefense::defense_factor` | `crates/msapi-core/src/units.rs:804` | spec |  |
+| `CritDamage::crit_factor` | `crates/msapi-core/src/units.rs:822` | spec |  |
+| `StatAttack::displayed` | `crates/msapi-core/src/units.rs:832` | spec |  |
 | `auth_data_layout` | `crates/msapi-core/src/webauthn.rs:69` | spec |  |
 | `counter_ok` | `crates/msapi-core/src/webauthn.rs:111` | spec |  |
 | `presence_ok` | `crates/msapi-core/src/webauthn.rs:123` | spec |  |

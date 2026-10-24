@@ -223,7 +223,7 @@ that part out.
 Option fields: `str`, `dex`, `int`, `luk`, `max_hp`, `max_mp`,
 `attack_power`, `magic_power` (Magic ATT), `armor` (Defense), `speed`,
 `jump`, `boss_damage`, `ignore_monster_armor` (Enemy DEF Ignored),
-`all_stat` (All Stats %), `damage`, `max_hp_rate` (Max HP %),
+`all_stat` (All Stats %), `damage`, `max_hp_rate` (Max HP %), `max_mp_rate`,
 `base_equipment_level` (base only) and `equipment_level_decrease` (a flame
 that lowers the required level; bonus only). Percentages are written as the
 number shown (`4`, not `0.04`).

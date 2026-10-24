@@ -19,8 +19,8 @@ use serde::{Deserialize, Serialize};
 use crate::stat::{Issue, Severity};
 use crate::time::Timestamp;
 use crate::units::{
-    AttackPower, DamagePct, Defense, Dex, HpPct, IgnoreDefense, Int, Jump, Luk, MagicAttack, MaxHp, MaxMp, Speed,
-    StatPct, Str,
+    AttackPower, DamagePct, Defense, Dex, HpPct, IgnoreDefense, Int, Jump, Luk, MagicAttack, MaxHp, MaxMp, MpPct,
+    Speed, StatPct, Str,
 };
 
 /// The most stars any item can hold.
@@ -194,6 +194,9 @@ pub struct ItemOption {
     /// Max HP %.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub max_hp_rate: Option<HpPct>,
+    /// Max MP %.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub max_mp_rate: Option<MpPct>,
     /// The required level the item has before flames lower it. Base only.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub base_equipment_level: Option<u16>,
@@ -426,6 +429,7 @@ impl Item {
         sum(out, slot, "all_stat", t.all_stat, parts.map(|p| p.all_stat));
         sum(out, slot, "damage", t.damage, parts.map(|p| p.damage));
         sum(out, slot, "max_hp_rate", t.max_hp_rate, parts.map(|p| p.max_hp_rate));
+        sum(out, slot, "max_mp_rate", t.max_mp_rate, parts.map(|p| p.max_mp_rate));
     }
 }
 
