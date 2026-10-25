@@ -1,0 +1,15 @@
+# msapi
+
+> A hand-rolled MapleStory API: people record their characters' stat windows
+> and equipment here, and tools and agents read them back.
+
+To read a character, fetch its page, /characters/{id},
+asking for Markdown (`Accept: text/markdown`), or GET /v1/characters/{id}/sheet.
+You get one short sheet: level, class, the stat window, and every equipped item
+flattened to its stars, potential, flame and totals. It is meant to answer
+questions like "what should I enhance next?" or "is this new item an upgrade?".
+Public characters need no token.
+
+- [API guide](/v1/docs): every route, field and rule, as Markdown
+- [Route index](/v1): JSON
+- [Classes](/v1/ref/classes), [worlds](/v1/ref/worlds), [regions](/v1/ref/regions): reference data

@@ -14,6 +14,7 @@ mod audit_log;
 mod characters;
 mod equipment;
 mod meta;
+mod sheet;
 mod stats;
 mod tokens;
 
@@ -112,6 +113,7 @@ fn run(route: Route, id: &str, conn: &mut Connection, ctx: &Ctx, req: &Request) 
         | Route::StatHistory
         | Route::GetItemEquipment
         | Route::ItemEquipmentHistory
+        | Route::CharacterSheet
         | Route::Health
         | Route::Index
         | Route::Docs
@@ -140,6 +142,7 @@ fn read(
         Route::StatHistory => stats::history(conn, principal, req, id),
         Route::GetItemEquipment => equipment::get(conn, principal, id),
         Route::ItemEquipmentHistory => equipment::history(conn, principal, req, id),
+        Route::CharacterSheet => sheet::get(conn, principal, id),
         _ => Err(ApiError::not_found_route(&req.path)),
     }
 }
@@ -194,7 +197,8 @@ const fn stage(route: Route) -> Stage {
         | Route::GetStat
         | Route::StatHistory
         | Route::GetItemEquipment
-        | Route::ItemEquipmentHistory => Stage::Open,
+        | Route::ItemEquipmentHistory
+        | Route::CharacterSheet => Stage::Open,
         _ => Stage::Authed,
     }
 }
@@ -348,7 +352,8 @@ spec fn stage_spec(route: Route) -> Stage {
     match route {
         Route::Health | Route::Index | Route::Docs | Route::RefRegions | Route::RefWorlds | Route::RefClasses => Stage::Public,
         Route::RegisterStart | Route::RegisterFinish | Route::LoginStart | Route::LoginFinish => Stage::Passkey,
-        Route::GetCharacter | Route::GetStat | Route::StatHistory | Route::GetItemEquipment | Route::ItemEquipmentHistory => Stage::Open,
+        Route::GetCharacter | Route::GetStat | Route::StatHistory | Route::GetItemEquipment | Route::ItemEquipmentHistory
+        | Route::CharacterSheet => Stage::Open,
         _ => Stage::Authed,
     }
 }

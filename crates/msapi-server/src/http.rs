@@ -177,6 +177,13 @@ pub fn word(w: Word) -> &'static str {
             }
             "item-equipment"
         }
+        Word::Sheet => {
+            proof! {
+                reveal_strlit("sheet");
+                assert("sheet"@ =~= msapi_core::msg::chars(api::word(w)));
+            }
+            "sheet"
+        }
         Word::SymbolEquipment => {
             proof! {
                 reveal_strlit("symbol-equipment");
@@ -979,6 +986,7 @@ mod tests {
             Word::Start,
             Word::Finish,
             Word::ItemEquipment,
+            Word::Sheet,
             Word::SymbolEquipment,
             Word::HyperStat,
             Word::Ability,

@@ -90,6 +90,15 @@ try {
   await page.getByRole("button", { name: "Superior Engraved Gollux Belt" }).click();
   check(await page.locator(".tip").textContent().then((t) => t?.includes("STR: +149 (60 +73 +16)")), "recorded equipment and read its tooltip");
   const characterUrl = page.url();
+  check(new URL(characterUrl).pathname.startsWith("/characters/chr_"), "the character page has a real path");
+
+  // An agent fetching the page's link reads the sheet.
+  const md = await fetch(characterUrl, { headers: { accept: "text/markdown" } }).then((r) => r.text());
+  check(md.startsWith(`# ${character}\n`) && md.includes("Superior Engraved Gollux Belt (18★/30)"), "an agent gets the Markdown sheet");
+  if (!base.includes("localhost")) {
+    const html = await fetch(characterUrl, { headers: { accept: "text/html" } }).then((r) => r.text());
+    check(html.includes('<pre class="sheet">') && html.includes("Gollux Belt"), "a fetch without JavaScript reads the sheet in the page");
+  }
 
   // A new context is an incognito window: no session, no token.
   const stranger = await (await browser.newContext()).newPage();

@@ -278,3 +278,6 @@ details[open] summary { margin-bottom: 10px; }
 .tip .pot.unique .pot-title { color: var(--grade-unique); }
 .tip .pot.legendary .pot-title { color: var(--grade-legendary); }
 .tip-desc { white-space: pre-line; color: var(--tip-muted); font-size: 12px; margin: 8px 0 0; border-top: 1px dashed var(--tip-line); padding-top: 8px; }
+
+/* A character's sheet, rendered in by the Worker until the app takes over. */
+.sheet { white-space: pre-wrap; font: 13px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--ink); }

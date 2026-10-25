@@ -80,6 +80,8 @@ pub enum Word {
     Finish,
     /// `item-equipment`.
     ItemEquipment,
+    /// `sheet`.
+    Sheet,
     /// `symbol-equipment`.
     SymbolEquipment,
     /// `hyper-stat`.
@@ -189,6 +191,7 @@ pub open spec fn word(w: Word) -> Seq<u8> {
         Word::Start => seq![115u8, 116u8, 97u8, 114u8, 116u8],
         Word::Finish => seq![102u8, 105u8, 110u8, 105u8, 115u8, 104u8],
         Word::ItemEquipment => seq![105u8, 116u8, 101u8, 109u8, 45u8, 101u8, 113u8, 117u8, 105u8, 112u8, 109u8, 101u8, 110u8, 116u8],
+        Word::Sheet => seq![115u8, 104u8, 101u8, 101u8, 116u8],
         Word::SymbolEquipment => seq![115u8, 121u8, 109u8, 98u8, 111u8, 108u8, 45u8, 101u8, 113u8, 117u8, 105u8, 112u8, 109u8, 101u8, 110u8, 116u8],
         Word::HyperStat => seq![104u8, 121u8, 112u8, 101u8, 114u8, 45u8, 115u8, 116u8, 97u8, 116u8],
         Word::Ability => seq![97u8, 98u8, 105u8, 108u8, 105u8, 116u8, 121u8],
@@ -262,6 +265,7 @@ pub fn word_bytes(w: Word) -> &'static [u8] {
         Word::Start => &[115u8, 116u8, 97u8, 114u8, 116u8],
         Word::Finish => &[102u8, 105u8, 110u8, 105u8, 115u8, 104u8],
         Word::ItemEquipment => &[105u8, 116u8, 101u8, 109u8, 45u8, 101u8, 113u8, 117u8, 105u8, 112u8, 109u8, 101u8, 110u8, 116u8],
+        Word::Sheet => &[115u8, 104u8, 101u8, 101u8, 116u8],
         Word::SymbolEquipment => &[115u8, 121u8, 109u8, 98u8, 111u8, 108u8, 45u8, 101u8, 113u8, 117u8, 105u8, 112u8, 109u8, 101u8, 110u8, 116u8],
         Word::HyperStat => &[104u8, 121u8, 112u8, 101u8, 114u8, 45u8, 115u8, 116u8, 97u8, 116u8],
         Word::Ability => &[97u8, 98u8, 105u8, 108u8, 105u8, 116u8, 121u8],
@@ -488,6 +492,8 @@ pub enum Route {
     ReplaceItemEquipment,
     /// `GET /v1/characters/{id}/item-equipment/history`.
     ItemEquipmentHistory,
+    /// `GET /v1/characters/{id}/sheet`.
+    CharacterSheet,
     /// `GET /v1/characters/{id}/{resource}` for a resource in [`PLANNED`],
     /// by its position there.
     Planned(u8),
@@ -624,6 +630,8 @@ pub open spec fn api_spec(m: Method, s: Seq<&[u8]>) -> Routed {
         two(m, Method::Get, Route::GetItemEquipment, Method::Put, Route::ReplaceItemEquipment)
     } else if n == 5 && at(s, 1, Word::Characters) && at(s, 3, Word::ItemEquipment) && at(s, 4, Word::History) {
         one(m, Method::Get, Route::ItemEquipmentHistory)
+    } else if n == 4 && at(s, 1, Word::Characters) && at(s, 3, Word::Sheet) {
+        one(m, Method::Get, Route::CharacterSheet)
     } else if n == 4 && at(s, 1, Word::Characters) {
         match planned_spec(s[3]@) {
             Some(k) => one(m, Method::Get, Route::Planned(k)),
@@ -690,7 +698,7 @@ pub open spec fn action_spec(r: Route) -> Option<Word> {
         Route::CreateAccount => Some(Word::AccountCreate),
         Route::UpdateAccount => Some(Word::AccountUpdate),
         Route::DeleteAccount => Some(Word::AccountDelete),
-        Route::ListAccountCharacters | Route::ListCharacters | Route::GetCharacter | Route::Planned(_) => {
+        Route::ListAccountCharacters | Route::ListCharacters | Route::GetCharacter | Route::CharacterSheet | Route::Planned(_) => {
             Some(Word::CharacterRead)
         },
         Route::CreateCharacter => Some(Word::CharacterCreate),
@@ -863,6 +871,8 @@ fn api(m: Method, s: &[&[u8]]) -> Routed {
         && seg_is(s, 4, Word::History)
     {
         pick1(m, Get, Route::ItemEquipmentHistory)
+    } else if n == 4 && seg_is(s, 1, Word::Characters) && seg_is(s, 3, Word::Sheet) {
+        pick1(m, Get, Route::CharacterSheet)
     } else if n == 4 && seg_is(s, 1, Word::Characters) {
         match planned(s[3]) {
             Some(k) => pick1(m, Get, Route::Planned(k)),
@@ -929,9 +939,11 @@ pub const fn action(r: Route) -> Option<Word> {
         Route::CreateAccount => Some(Word::AccountCreate),
         Route::UpdateAccount => Some(Word::AccountUpdate),
         Route::DeleteAccount => Some(Word::AccountDelete),
-        Route::ListAccountCharacters | Route::ListCharacters | Route::GetCharacter | Route::Planned(_) => {
-            Some(Word::CharacterRead)
-        }
+        Route::ListAccountCharacters
+        | Route::ListCharacters
+        | Route::GetCharacter
+        | Route::CharacterSheet
+        | Route::Planned(_) => Some(Word::CharacterRead),
         Route::CreateCharacter => Some(Word::CharacterCreate),
         Route::UpdateCharacter => Some(Word::CharacterUpdate),
         Route::DeleteCharacter => Some(Word::CharacterDelete),
@@ -1302,7 +1314,7 @@ mod tests {
     }
 
     /// Every word, kept complete by the exhaustive match below.
-    const ALL_WORDS: [Word; 61] = [
+    const ALL_WORDS: [Word; 62] = [
         Word::V1,
         Word::Me,
         Word::Tokens,
@@ -1324,6 +1336,7 @@ mod tests {
         Word::Start,
         Word::Finish,
         Word::ItemEquipment,
+        Word::Sheet,
         Word::SymbolEquipment,
         Word::HyperStat,
         Word::Ability,
@@ -1391,6 +1404,7 @@ mod tests {
                 | Word::Start
                 | Word::Finish
                 | Word::ItemEquipment
+                | Word::Sheet
                 | Word::SymbolEquipment
                 | Word::HyperStat
                 | Word::Ability
@@ -1453,6 +1467,8 @@ mod tests {
         assert_eq!(r(Method::Patch, "/v1/characters/chr_x"), Routed::Found(Route::UpdateCharacter));
         assert_eq!(r(Method::Get, "/v1/characters/chr_x/hyper-stat"), Routed::Found(Route::Planned(1)));
         assert_eq!(r(Method::Put, "/v1/characters/chr_x/item-equipment"), Routed::Found(Route::ReplaceItemEquipment));
+        assert_eq!(r(Method::Get, "/v1/characters/chr_x/sheet"), Routed::Found(Route::CharacterSheet));
+        assert_eq!(r(Method::Put, "/v1/characters/chr_x/sheet"), Routed::NotAllowed);
         assert_eq!(
             r(Method::Get, "/v1/characters/chr_x/item-equipment/history"),
             Routed::Found(Route::ItemEquipmentHistory)

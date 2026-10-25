@@ -166,18 +166,20 @@ function fmtNum(v) {
 }
 
 function go(hash) {
-  if (location.hash === hash) render();
+  // Character pages live at /characters/{id}; every other page is a hash on /.
+  if (location.pathname !== "/") location.assign(`/${hash}`);
+  else if (location.hash === hash) render();
   else location.hash = hash;
 }
 
 function renderSession() {
   sessionNav.replaceChildren();
   if (!session) {
-    if (location.hash.startsWith("#/characters/")) sessionNav.append(h("a", { href: "#/" }, "Sign in"));
+    if (location.pathname.startsWith("/characters/")) sessionNav.append(h("a", { href: "/#/" }, "Sign in"));
     return;
   }
   sessionNav.append(
-    h("a", { href: "#/tokens" }, "API tokens"),
+    h("a", { href: "/#/tokens" }, "API tokens"),
     h("span", {}, session.display_name),
     h("button", {
       class: "quiet",
@@ -245,7 +247,7 @@ async function home() {
       h("div", { class: "panel" },
         accounts.length
           ? h("ul", { class: "list" }, accounts.map((a) =>
-              h("li", {}, h("a", { href: `#/accounts/${a.id}` },
+              h("li", {}, h("a", { href: `/#/accounts/${a.id}` },
                 h("span", {}, a.label || a.region.toUpperCase()),
                 h("span", { class: "meta" }, `${a.region.toUpperCase()} · ${a.character_list.length} character${a.character_list.length === 1 ? "" : "s"}`)))))
           : h("p", { class: "empty" }, "No accounts yet. Add your first one.")),
@@ -276,11 +278,11 @@ async function accountPage(id) {
         character_class: data.get("character_class"),
         character_level: Number(data.get("character_level")),
       });
-      go(`#/characters/${c.id}`);
+      location.assign(`/characters/${c.id}`);
     },
   );
   return h("section", {},
-    h("div", { class: "crumbs" }, h("a", { href: "#/" }, "Accounts"), " / "),
+    h("div", { class: "crumbs" }, h("a", { href: "/#/" }, "Accounts"), " / "),
     h("h1", {}, account.label || account.region.toUpperCase()),
     h("p", { class: "sub" }, `${account.region.toUpperCase()} · added ${fmtDate(account.created_at)}`),
     h("div", { class: "grid" },
@@ -288,7 +290,7 @@ async function accountPage(id) {
         h("h2", {}, "Characters"),
         account.character_list.length
           ? h("ul", { class: "list" }, account.character_list.map((c) =>
-              h("li", {}, h("a", { href: `#/characters/${c.id}` },
+              h("li", {}, h("a", { href: `/characters/${c.id}` },
                 h("span", {}, c.character_name),
                 h("span", { class: "meta" }, `Lv. ${c.character_level} ${c.character_class} · ${c.world_name}`)))))
           : h("p", { class: "empty" }, "No characters on this account yet.")),
@@ -547,7 +549,7 @@ async function characterPage(id) {
   const shown = STAT_FIELDS.filter(([key]) => current?.[key] != null);
   const rows = history.history || [];
   return h("section", {},
-    owner ? h("div", { class: "crumbs" }, h("a", { href: "#/" }, "Accounts"), " / ", h("a", { href: `#/accounts/${c.account_id}` }, "Account"), " / ") : null,
+    owner ? h("div", { class: "crumbs" }, h("a", { href: "/#/" }, "Accounts"), " / ", h("a", { href: `/#/accounts/${c.account_id}` }, "Account"), " / ") : null,
     h("h1", {}, c.character_name),
     h("p", { class: "sub" }, `Lv. ${c.character_level} ${c.character_class} · ${c.world_name} (${c.world_type})`),
     result,
@@ -685,7 +687,7 @@ async function tokensPage() {
 
   const listPanel = h("div", { class: "panel" }, h("h2", {}, "Your tokens"), await tokenList(tokens));
   return h("section", {},
-    h("div", { class: "crumbs" }, h("a", { href: "#/" }, "Accounts"), " / "),
+    h("div", { class: "crumbs" }, h("a", { href: "/#/" }, "Accounts"), " / "),
     h("h1", {}, "API tokens"),
     h("p", { class: "sub" },
       "Give a tool or agent its own token, with only the scopes and accounts it needs. Every write it makes is audited under its label. ",
@@ -702,7 +704,14 @@ async function tokensPage() {
 
 async function render() {
   renderSession();
-  const path = location.hash.replace(/^#/, "") || "/";
+  // A character page has a real path, so agents fetching its link get the
+  // sheet (the Worker renders it in); old #/characters/ links move there.
+  const hashPath = location.hash.replace(/^#/, "") || "/";
+  if (hashPath.startsWith("/characters/")) {
+    location.replace(`/characters/${hashPath.split("/")[2]}`);
+    return;
+  }
+  const path = location.pathname.startsWith("/characters/") ? location.pathname : hashPath;
   let page;
   try {
     // Anyone may open a public character's page.
@@ -711,9 +720,9 @@ async function render() {
     else if (path === "/") page = await home();
     else if (path === "/tokens") page = await tokensPage();
     else if (path.startsWith("/accounts/")) page = await accountPage(path.split("/")[2]);
-    else page = h("p", {}, "Not found. ", h("a", { href: "#/" }, "Go home"));
+    else page = h("p", {}, "Not found. ", h("a", { href: "/#/" }, "Go home"));
   } catch (err) {
-    page = h("section", {}, notice("error", errorText(err)), h("a", { href: "#/" }, session ? "Back to accounts" : "Go to msapi"));
+    page = h("section", {}, notice("error", errorText(err)), h("a", { href: "/#/" }, session ? "Back to accounts" : "Go to msapi"));
   }
   app.replaceChildren(page);
 }
