@@ -190,3 +190,25 @@ crates/msapi-server/src/serve.rs::run | io | tiny_http socket I/O
 crates/msapi-server/src/serve.rs::worker | io | tiny_http socket I/O
 crates/msapi-server/src/serve.rs::read_request | io | tiny_http socket I/O
 crates/msapi-server/src/serve.rs::to_tiny | io | tiny_http socket I/O
+crates/msapi-server/src/routes/sheet.rs::get | view | SQL against SQLite for the character and its latest windows, then render
+crates/msapi-server/src/routes/sheet.rs::render | view | lays out the sheet's header and sections from serde_json values
+crates/msapi-server/src/routes/sheet.rs::Stats::of | view | reads the class's main stats for ordering and scoring
+crates/msapi-server/src/routes/sheet.rs::Stats::scored | view | whether the class has a single non-HP main stat to score flames by
+crates/msapi-server/src/routes/sheet.rs::Stats::describe | view | the sheet's line naming the class's stats
+crates/msapi-server/src/routes/sheet.rs::Stats::flame_score | view | a display heuristic (main stat + 4 x ATT + 10 x All%), not a game formula
+crates/msapi-server/src/routes/sheet.rs::main_stat | view | a main stat's option key and label
+crates/msapi-server/src/routes/sheet.rs::stat_section | view | lays out the stat window as lines of text
+crates/msapi-server/src/routes/sheet.rs::Unit::suffix | view | a display suffix
+crates/msapi-server/src/routes/sheet.rs::equipment_section | view | orders the items by slot and counts the sets worn
+crates/msapi-server/src/routes/sheet.rs::slot_label | view | a slot's label
+crates/msapi-server/src/routes/sheet.rs::item_lines | view | flattens one item to a few lines of text
+crates/msapi-server/src/routes/sheet.rs::is_weapon_like | view | which slots the flame score skips
+crates/msapi-server/src/routes/sheet.rs::option_parts | view | one item option's non-zero stats as text, the class's own first
+crates/msapi-server/src/routes/sheet.rs::potential_line | view | rewrites a potential line as players write it
+crates/msapi-server/src/routes/sheet.rs::captured | view | a window's capture date as text
+crates/msapi-server/src/routes/sheet.rs::str_at | view | reads a string out of serde_json
+crates/msapi-server/src/routes/sheet.rs::num_at | view | reads a number out of serde_json as text
+crates/msapi-server/src/routes/sheet.rs::title_case | view | capitalises a word
+crates/msapi-server/src/routes/sheet.rs::fmt_num | view | a serde_json number as text
+crates/msapi-server/src/routes/sheet.rs::fmt_f64 | view | a decimal as text without trailing zeros
+crates/msapi-server/src/routes/sheet.rs::group | view | thousands separators

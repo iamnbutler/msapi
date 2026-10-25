@@ -121,7 +121,7 @@ once per world per user (409 otherwise). Unknown fields are rejected.
 `visibility` is `public` (the default) or `private`. Anyone, with or without a
 token, can read a public character with these `GET`s:
 
-- `/v1/characters/{id}`
+- `/v1/characters/{id}` and `/v1/characters/{id}/sheet`
 - `/v1/characters/{id}/stat` and `/stat/history`
 - `/v1/characters/{id}/item-equipment` and `/item-equipment/history`
 
@@ -129,6 +129,33 @@ Anyone other than the owner gets the character without `account_id` and
 `notes`; those keys are left out, not `null`. Writes, the character lists and
 everything else still need the owner's token. A private character answers 404
 to anyone but its owner, as if it did not exist.
+
+### The character sheet
+
+To answer a question about a character ("what should I enhance next?", "is
+this new item an upgrade?"), start with its sheet rather than the JSON:
+
+| Method | Path | |
+|---|---|---|
+| GET | `/v1/characters/{id}/sheet` | `text/markdown` |
+| GET | `/characters/{id}` | the same sheet when asked for `text/markdown` (or not for HTML); the web page, with the sheet in it, otherwise |
+
+The sheet is a few kilobytes: the character, the latest stat window, and
+every equipped item flattened to a few lines, for example
+
+```
+**Gloves: Arcane Umbra Knight Gloves (17★/30)** · Lv 200 · Arcane Umbra Set (Warrior)
+- Potential: Legendary — 8% Crit Dmg, 10% MP, 10% HP
+- Flame (score 126): 126 STR, 24 INT, 36 LUK, 2,400 HP
+- Total: 236 STR, 110 DEX, 41 ATT
+```
+
+Stat names are abbreviated as players write them. `Total` keeps only what
+raises the class's damage. The flame score is the class's main stat plus
+4 × ATT (MATT for magic classes) plus 10 × All Stats %. It isn't given for
+Xenon or Demon Avenger, nor for weapons, secondaries and emblems, whose
+flames are judged by ATT tier (their base ATT is listed instead). The sheet
+ends with the sets worn. Anything it leaves out is in the JSON routes.
 
 ## The stat window
 

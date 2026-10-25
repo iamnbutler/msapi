@@ -8,6 +8,11 @@
 // the server rebuilds its database from the latest snapshot and the batches
 // after it. See crates/msapi-server/src/durable.rs for the other side.
 //
+// A character's page is /characters/{id}. Agents asking for Markdown (or
+// not for HTML) get its sheet from /v1/characters/{id}/sheet; browsers get the
+// web app with the sheet already in the page, so a fetch that runs no
+// JavaScript still reads the character.
+//
 // Game art (item icons) lives in the R2 bucket bound as GAME_ASSETS and is
 // served read-only at /assets/{key}. Only we put objects there (deploy/
 // upload-icons.ts); keys are content hashes, so responses never change.
@@ -32,6 +37,8 @@ const READY_TIMEOUT_MS = 90 * 1000;
 const CHUNK = 1024 * 1024;
 // The only asset keys served: item/icon/{sha256}.png.
 const ASSET_KEY = /^item\/icon\/[0-9a-f]{64}\.png$/;
+// A character page: /characters/{id}.
+const CHARACTER_PAGE = /^\/characters\/(chr_[0-9a-z]+)\/?$/;
 
 export default {
   async fetch(request, env): Promise<Response> {
@@ -50,9 +57,44 @@ export default {
     if (url.pathname.startsWith("/assets/")) {
       return asset(request, env, url.pathname.slice("/assets/".length));
     }
+    const page = CHARACTER_PAGE.exec(url.pathname);
+    if (page && (request.method === "GET" || request.method === "HEAD")) {
+      return characterPage(request, env, url, page[1]);
+    }
     return env.ASSETS.fetch(request);
   },
 } satisfies ExportedHandler<Env>;
+
+/** A character's page: its Markdown sheet, or the web app with the sheet in it. */
+async function characterPage(request: Request, env: Env, url: URL, id: string): Promise<Response> {
+  const sheetUrl = `/v1/characters/${id}/sheet`;
+  const headers = new Headers();
+  const authorization = request.headers.get("authorization");
+  if (authorization) headers.set("authorization", authorization);
+  const sheet = await env.API.getByName("main").fetch(new Request(new URL(sheetUrl, url), { headers }));
+  const accept = request.headers.get("accept") ?? "";
+  if (accept.includes("text/markdown") || !accept.includes("text/html")) {
+    const out = new Response(sheet.body, sheet);
+    out.headers.set("vary", "accept");
+    return out;
+  }
+  const app = await env.ASSETS.fetch(new Request(new URL("/", url)));
+  if (!sheet.ok) return new Response(app.body, { status: sheet.status === 404 ? 404 : 200, headers: app.headers });
+  const text = await sheet.text();
+  const name = text.match(/^# (.+)$/m)?.[1] ?? "Character";
+  const html = (await app.text())
+    .replace(/<title>[^<]*<\/title>/, `<title>${escapeHtml(name)} · msapi</title>`)
+    .replace("</head>", `  <link rel="alternate" type="text/markdown" href="${sheetUrl}">\n</head>`)
+    .replace(/<main id="app"([^>]*)><\/main>/, (_, attrs) =>
+      `<main id="app"${attrs}><pre class="sheet">${escapeHtml(text)}</pre></main>`);
+  return new Response(html, {
+    headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store", vary: "accept" },
+  });
+}
+
+function escapeHtml(s: string): string {
+  return s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
+}
 
 /** An object from GAME_ASSETS. Content-addressed, so cached for good. */
 async function asset(request: Request, env: Env, key: string): Promise<Response> {

@@ -243,6 +243,7 @@ CATEGORY = {
     "shim": "trait shim forwarding to a proven function (`Display`, `FromStr`, serde)",
     "glue": "moves data between a proven function and the server's types",
     "data": "checks one recorded item or window at run time; proofs cover formulas, not individual game data",
+    "view": "lays out one character's recorded data as text for people and agents; tested, not proven",
     "test": "test or example support",
 }
 

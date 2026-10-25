@@ -312,6 +312,11 @@ fn public_characters_read_without_a_token() {
     assert_eq!(get(&mut api, &format!("/v1/characters/{chr}/stat/history")).0, 200);
     assert_eq!(get(&mut api, &format!("/v1/characters/{chr}/item-equipment")).0, 200);
     assert_eq!(get(&mut api, &format!("/v1/characters/{chr}/item-equipment/history")).0, 200);
+    let sheet = routes::handle(&mut api.conn, &Request::new(Method::Get, &format!("/v1/characters/{chr}/sheet")));
+    assert_eq!((sheet.status, sheet.content_type), (200, "text/markdown; charset=utf-8"));
+    let sheet = String::from_utf8(sheet.body).unwrap();
+    assert!(sheet.starts_with("# Lutoren\n") && sheet.contains("Combat Power 123,456,789"), "{sheet}");
+    assert!(!sheet.contains("main bosser"), "the owner's notes stay off a stranger's sheet");
 
     // Reading is all a stranger gets; a bad token is still refused.
     assert_eq!(get(&mut api, "/v1/characters").0, 401);
@@ -326,6 +331,7 @@ fn public_characters_read_without_a_token() {
     assert_eq!(body["visibility"], "private");
     assert_eq!(get(&mut api, &format!("/v1/characters/{chr}")).0, 404);
     assert_eq!(get(&mut api, &format!("/v1/characters/{chr}/stat")).0, 404);
+    assert_eq!(get(&mut api, &format!("/v1/characters/{chr}/sheet")).0, 404);
     assert_eq!(api.call(&owner, Method::Get, &format!("/v1/characters/{chr}/stat"), None).0, 200);
     let bad = Some(json!({ "visibility": "friends" }));
     assert_eq!(api.call(&owner, Method::Patch, &format!("/v1/characters/{chr}"), bad).0, 400);

@@ -20,13 +20,13 @@ use crate::http::{Request, Response};
 
 /// One recorded equipment window.
 #[derive(Serialize, Debug)]
-struct Snapshot {
+pub(super) struct Snapshot {
     id: String,
     character_id: String,
     recorded_at: Timestamp,
     /// The audit event that recorded it.
     event_id: String,
-    equipment: ItemEquipment,
+    pub(super) equipment: ItemEquipment,
 }
 
 const SELECT: &str = "SELECT id, character_id, recorded_at, event_id, data FROM item_equipment_snapshots";
@@ -42,7 +42,7 @@ fn from_row(r: &Row<'_>) -> rusqlite::Result<Snapshot> {
     })
 }
 
-fn latest(conn: &Connection, character_id: &str) -> rusqlite::Result<Option<Snapshot>> {
+pub(super) fn latest(conn: &Connection, character_id: &str) -> rusqlite::Result<Option<Snapshot>> {
     conn.query_row(&format!("{SELECT} WHERE character_id = ?1 ORDER BY id DESC LIMIT 1"), [character_id], from_row)
         .optional()
 }

@@ -55,6 +55,7 @@ fn index() -> serde_json::Value {
             "GET    /v1/accounts/{id}/characters      POST /v1/accounts/{id}/characters",
             "GET    /v1/characters?world=",
             "GET    /v1/characters/{id}   PATCH /v1/characters/{id}   DELETE /v1/characters/{id}",
+            "GET    /v1/characters/{id}/sheet   (Markdown: start here to answer questions about a character)",
             "GET    /v1/characters/{id}/stat   PUT /v1/characters/{id}/stat   PATCH /v1/characters/{id}/stat",
             "GET    /v1/characters/{id}/stat/history",
             "GET    /v1/characters/{id}/item-equipment   PUT /v1/characters/{id}/item-equipment",
